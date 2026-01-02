@@ -1,0 +1,232 @@
+STRATEGIC INITIATIVE TEMPLATE
+==============================
+
+Purpose:
+A Strategic Initiative describes a significant business or customer problem
+that the organization wants to solve. It provides direction and intent,
+not a predefined solution.
+
+This template is designed for discovery:
+- It guides thinking before Epics are created
+- It focuses on outcomes over outputs
+- It supports validation of Desirability, Usability, Feasibility, and Viability
+
+A Strategic Initiative typically results in:
+- One or more Epics
+- Clear success criteria
+- A shared understanding of the problem and desired impact
+
+------------------------------------------------
+1. INITIATIVE NAME
+------------------------------------------------
+A short, memorable name that describes the intent (not the solution).
+
+[Fill in here]
+
+------------------------------------------------
+2. STRATEGIC CONTEXT
+------------------------------------------------
+Why does this initiative matter now?
+
+Consider:
+- Company strategy or strategic themes
+- Market changes, competitive pressure
+- Regulatory or technology shifts
+- Performance gaps or missed opportunities
+
+[Fill in here]
+
+------------------------------------------------
+3. CUSTOMER / USER SEGMENT (WHO)
+------------------------------------------------
+Who is this initiative for?
+
+Be as specific as possible:
+- B2B or B2C?
+- Industry, role, size, geography
+- Internal users (if applicable)
+
+[Fill in here]
+
+------------------------------------------------
+4. CUSTOMER PROBLEM / OPPORTUNITY (WHAT)
+------------------------------------------------
+What problem are we trying to solve, or what opportunity are we pursuing?
+
+Describe:
+- The customer’s situation today
+- Pain points, friction, unmet needs
+- Frequency and severity
+- Evidence (data, feedback, observations)
+
+[Fill in here]
+
+------------------------------------------------
+5. ROOT CAUSE HYPOTHESIS (WHY)
+------------------------------------------------
+Why do we believe this problem exists?
+
+Consider:
+- Process issues
+- Organizational constraints
+- Technology limitations
+- Policy or governance factors
+- Incorrect assumptions
+
+This is a hypothesis, not a conclusion.
+
+[Fill in here]
+
+------------------------------------------------
+6. DESIRED OUTCOMES (OUTCOMES, NOT OUTPUT)
+------------------------------------------------
+If this initiative is successful, what will be different?
+
+Describe measurable outcomes:
+- Customer behavior changes
+- Business impact
+- Operational improvements
+
+Examples:
+- Reduce onboarding time from X to Y
+- Increase adoption from X% to Y%
+- Reduce cost-to-serve by X%
+
+[Fill in here]
+
+------------------------------------------------
+7. LEADING INDICATORS
+------------------------------------------------
+What early signals will tell us we are on the right path?
+
+Examples:
+- Usage of a new capability
+- Reduction in manual steps
+- Engagement or conversion metrics
+- Time-to-first-value
+
+[Fill in here]
+
+------------------------------------------------
+8. ASSUMPTIONS & RISKS
+------------------------------------------------
+What assumptions are we making that need validation?
+
+Examples:
+- Customers actually want this
+- Users will change behavior
+- Technology can support it
+- Legal or regulatory constraints apply
+
+[Fill in here]
+
+------------------------------------------------
+9. PRODUCT DISCOVERY – DVFU CHECK
+------------------------------------------------
+Evaluate the four key risks:
+
+DESIRABILITY (Value Risk):
+- Why do we believe customers want this?
+- What evidence do we have today?
+
+[Fill in here]
+
+USABILITY (Usability Risk):
+- How will users interact with this?
+- What usability risks do we foresee?
+
+[Fill in here]
+
+FEASIBILITY (Feasibility Risk):
+- Can we build this with current skills, systems, and time?
+- What technical unknowns exist?
+
+[Fill in here]
+
+VIABILITY (Business Risk):
+- Does this work financially?
+- Any legal, regulatory, brand, or operational constraints?
+
+[Fill in here]
+
+------------------------------------------------
+10. DISCOVERY PLAN
+------------------------------------------------
+How will we validate the assumptions and risks above?
+
+Examples:
+- Customer interviews
+- Prototypes or mockups
+- Technical spikes
+- Data analysis
+- Experiments / pilots
+
+[Fill in here]
+
+------------------------------------------------
+11. SCOPE BOUNDARIES
+------------------------------------------------
+What is explicitly IN SCOPE and OUT OF SCOPE for this initiative?
+
+IN SCOPE:
+[Fill in here]
+
+OUT OF SCOPE:
+[Fill in here]
+
+------------------------------------------------
+12. MILESTONES
+------------------------------------------------
+What are the key milestones and timeline for this initiative?
+
+Define major checkpoints and time boundaries:
+
+MILESTONE 1:
+Description: [e.g., Discovery phase complete]
+Target Date: [e.g., Q1 2026]
+Success Criteria: [What must be achieved]
+
+MILESTONE 2:
+Description: [e.g., MVP validated with customers]
+Target Date: [e.g., Q2 2026]
+Success Criteria: [What must be achieved]
+
+MILESTONE 3:
+Description: [e.g., Full deployment to pilot group]
+Target Date: [e.g., Q3 2026]
+Success Criteria: [What must be achieved]
+
+MILESTONE 4:
+Description: [e.g., Scale to all customers]
+Target Date: [e.g., Q4 2026]
+Success Criteria: [What must be achieved]
+
+Notes:
+- Keep milestones realistic and measurable
+- Each milestone should demonstrate value or learning
+- Allow for pivots based on discovery outcomes
+
+[Fill in here]
+
+------------------------------------------------
+13. RELATION TO EPICS (IF KNOWN)
+------------------------------------------------
+If this initiative succeeds, what types of Epics might emerge?
+
+Do NOT list solutions in detail — describe intent only.
+
+[Fill in here]
+
+------------------------------------------------
+14. DECISION & NEXT STEP
+------------------------------------------------
+What decision do we need to make next?
+
+Examples:
+- Proceed with discovery
+- Narrow scope
+- Pause or stop
+- Form a product team
+- Initiate Epic creation
+
+[Fill in here]

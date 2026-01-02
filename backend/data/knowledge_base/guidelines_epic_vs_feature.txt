@@ -1,0 +1,155 @@
+GUIDELINES: EPIC VS FEATURE (SAFe)
+===================================
+
+Purpose:
+This document helps Epic Owners, Product Managers, and AI assistants distinguish
+between Epics and Features in a SAFe context. It provides clear definitions,
+patterns, anti-patterns, and decision rules.
+
+------------------------------------------------
+1. DEFINITIONS
+------------------------------------------------
+
+EPIC:
+- A large cross-cutting initiative requiring significant investment and analysis.
+- A hypothesis for business value and solution direction.
+- Typically spans multiple PIs.
+- Requires a Lean Business Case (Epic Hypothesis Statement).
+- Approved by Portfolio or Solution level.
+- Often includes multiple capabilities or features.
+
+FEATURE:
+- A service, capability, or function that delivers measurable value.
+- Small enough to be completed within a PI by a single Agile Release Train.
+- Has a clear Benefit Hypothesis and Acceptance Criteria.
+- Implements part of an Epic (but can also originate independently).
+- Often the smallest backlog item needed to deliver customer value at scale.
+
+------------------------------------------------
+2. QUICK DIFFERENCES
+------------------------------------------------
+
+SCOPE:
+- Epic → big, cross-team, multi-quarter  
+- Feature → specific capability, 1–2 PIs
+
+VALUE:
+- Epic → strategic, large-scale business impact  
+- Feature → direct customer or system behavior
+
+RISK:
+- Epic → high uncertainty, needs analysis  
+- Feature → low to medium, ready for implementation
+
+DECISION LEVEL:
+- Epic → portfolio/solution level  
+- Feature → program level
+
+ART INVOLVEMENT:
+- Epic → involves multiple ARTs or major coordination  
+- Feature → typically 1 ART (sometimes 2)
+
+------------------------------------------------
+3. WHEN TO CHOOSE AN EPIC
+------------------------------------------------
+Choose EPIC if:
+
+- The initiative requires coordination across several value streams or ARTs.
+- It addresses a major strategic theme or objective.
+- Investment exceeds threshold (budget or capacity).
+- Solution direction is unknown and needs analysis/spikes.
+- Lead time is > 1 PI.
+- It changes business processes, operating models, or architecture significantly.
+- It delivers multiple capabilities or features.
+
+Examples:
+- Introduce a new product line (e.g., SaaS security platform).
+- Modernize core telecom provisioning systems.
+- Establish a new onboarding experience across channels.
+- Introduce enterprise-wide identity & access management.
+
+------------------------------------------------
+4. WHEN TO CHOOSE A FEATURE
+------------------------------------------------
+Choose FEATURE if:
+
+- It can be delivered by one ART (or at most coordinated between two).
+- Clear definition of done exists.
+- It provides a discrete increment of value.
+- It is part of an Epic’s scope OR stands alone but is still small enough.
+- Lead time fits within one PI or less.
+
+Examples:
+- Add automated SIM activation validation.
+- Enable self-service number porting.
+- Expose SLA reporting API for enterprise customers.
+- Introduce new workflow for B2B service launch.
+
+------------------------------------------------
+5. COMMON ANTI-PATTERNS
+------------------------------------------------
+
+ANTI-PATTERN 1: Calling everything an Epic  
+→ Leads to slow decision cycles, unnecessary approval overhead.
+
+ANTI-PATTERN 2: Using Features as task lists  
+→ A Feature is NOT a set of technical tasks.
+
+ANTI-PATTERN 3: Very big Features  
+→ A Feature that spans multiple PIs or multiple ARTs → should be an Epic.
+
+ANTI-PATTERN 4: Epics described as technical upgrades  
+→ Epics should communicate business value.
+
+------------------------------------------------
+6. RULE OF THUMB
+------------------------------------------------
+
+Ask:
+“If we deliver this in one PI with one ART, and it has clear acceptance criteria,
+is it still too big?”  
+→ If yes = Epic. If no = Feature.
+
+Another:
+“If successful, does this fundamentally change customer experience,
+operating model, or major business KPIs?”  
+→ If yes = Epic.
+
+------------------------------------------------
+7. TELECOM-SPECIFIC INDICATORS
+------------------------------------------------
+
+Epic Indicators:
+- Impacts provisioning, billing, catalog, CRM, and customer portals.
+- Introduces a new commercial capability (e.g., IoT platform).
+- Requires regulatory or compliance-wide change (e.g., eSIM onboarding flow).
+- Impacts many customer journeys (acquisition, onboarding, support).
+
+Feature Indicators:
+- Adds a new capability to a service (e.g., new bundle logic).
+- Automates existing steps in provisioning.
+- Introduces a new reporting dashboard for B2B customers.
+- Migrates one specific component or API.
+
+------------------------------------------------
+8. DECISION TABLE (RAG-FRIENDLY)
+------------------------------------------------
+
+| Criterion                         | Epic                         | Feature                          |
+|----------------------------------|------------------------------|----------------------------------|
+| Delivery time                    | Multi-PI, multi-quarter     | 1 PI or less                    |
+| Investment level                 | High                         | Moderate/low                     |
+| ART involvement                  | Multiple                     | One (usually)                    |
+| Uncertainty                      | High                         | Low/medium                       |
+| Requires business case           | Yes                          | No                               |
+| Value type                       | Strategic                    | Incremental                      |
+| Breakdown                        | To capabilities & features   | To stories                       |
+| Approval                         | Portfolio/Solution           | Program (PO/PM)                  |
+
+------------------------------------------------
+9. AI ASSISTANT GUIDANCE (for your RAG agent)
+------------------------------------------------
+When the user posts text:
+- If it describes a problem, opportunity, strategic need → classify as Epic.
+- If it describes a concrete capability with acceptance criteria → classify as Feature.
+- If it is too vague, ask clarifying questions.

@@ -1,0 +1,220 @@
+LEAN BUSINESS CASE TEMPLATE
+===========================================
+Purpose:
+This template provides a structured approach to creating a Lean Business Case for SAFe Epics.
+It focuses on hypothesis-driven development, incremental implementation, and measurable outcomes.
+
+===========================================
+SECTION 1: EPIC OVERVIEW
+===========================================
+
+Epic Owner:
+[Who is the epic owner? Include name and role]
+
+Key Stakeholders:
+[List the names and roles of key stakeholders who will be involved in or affected by this epic]
+
+Epic Description:
+[Consider using the epic Hypothesis Statement from the epic article as a starting point. Describe what this epic is about, the problem it solves, and the value it delivers. Keep it concise and outcome-focused.]
+
+===========================================
+SECTION 2: BUSINESS OUTCOMES & METRICS
+===========================================
+
+Business Outcome Hypothesis:
+[Describe how the success of the epic will be measured. Use specific, measurable outcomes.
+Examples:
+- 50% increase in shoppers under age 25
+- Availability increases from 95% to 99.7%
+- Customer satisfaction score increases from 7.5 to 8.5
+- Processing time reduced from 5 days to 2 days]
+
+Leading Indicators:
+[Establish innovation accounting metrics to provide early signals of the outcomes hypothesis.
+Examples:
+- Measurable change in purchaser demographics within 30 days of feature release
+- 20% increase in feature adoption within first month
+- 15% reduction in support tickets within 60 days
+- User engagement metrics show 30% improvement in first quarter]
+
+===========================================
+SECTION 3: SCOPE DEFINITION
+===========================================
+
+In Scope:
+* [List specific capabilities, features, or work that IS included in this epic]
+* [Be specific about what will be delivered]
+* [Focus on outcomes and value, not detailed implementation]
+
+Out of Scope:
+* [List specific capabilities, features, or work that is NOT included in this epic]
+* [Clarify boundaries to avoid scope creep]
+* [Note items that may be addressed in future epics]
+
+Nonfunctional Requirements:
+* [Performance requirements - response times, throughput, capacity]
+* [Security and compliance requirements]
+* [Scalability, availability, and reliability requirements]
+* [Usability and accessibility requirements]
+* [Integration and compatibility requirements]
+
+===========================================
+SECTION 4: MVP & FEATURES
+===========================================
+
+Minimum Viable Product (MVP) Features:
+* [Feature or Capability 1 - Core functionality needed to test the hypothesis]
+* [Feature or Capability 2 - Essential features for minimum value delivery]
+* [Feature or Capability 3 - Critical components for validating the business outcome]
+
+Additional Potential Features:
+* [Feature or Capability 1 - Enhancements to consider after MVP validation]
+* [Feature or Capability 2 - Nice-to-have features that add incremental value]
+* [Feature or Capability 3 - Future capabilities based on MVP learnings]
+
+===========================================
+SECTION 5: ANALYSIS & RECOMMENDATION
+===========================================
+
+Analysis Summary:
+[Provide a brief summary of the analysis that has been performed to create this business case.
+Include:
+- Market research or customer feedback reviewed
+- Technical feasibility assessment
+- Competitive analysis
+- Risk assessment
+- Key assumptions]
+
+Go / No-Go Recommendation:
+[Clearly state Go or No-Go recommendation with supporting rationale]
+
+===========================================
+SECTION 6: SOLUTION ANALYSIS
+===========================================
+
+Internal and External Customer Impact:
+[Describe the user community and markets affected.
+Address:
+- Which customer segments are impacted?
+- How will their experience change?
+- What benefits will they receive?
+- Any potential disruption or change management needed?]
+
+Impact on Solutions, Programs, and Services:
+[Identify solutions, programs, services, teams, and departments that may be impacted by this epic.
+Consider:
+- System integrations and dependencies
+- Operational changes required
+- Training and support needs
+- Process changes]
+
+Impact on Sales, Distribution, Deployment, and Support:
+[For external solutions or products, describe potential impact on:
+- Sales processes and messaging
+- Distribution channels
+- Deployment and onboarding
+- Customer support and documentation
+- Marketing and communication]
+
+===========================================
+SECTION 7: FORECASTED COSTS
+===========================================
+
+MVP Cost:
+[What is the investment requested to fund the MVP?
+Include:
+- Development and testing costs
+- Infrastructure and tools
+- Training and documentation
+- Estimated timeframe]
+
+Estimated Implementation Cost:
+[What is the estimated investment (cost) of full implementation if the MVP hypothesis is proven true?
+Note: This estimate is refined over time based on learnings]
+
+Initial Estimate:
+[Express as a range with assumptions - Example: $200K - $350K for 6-9 months of development]
+
+Refined Estimate(s):
+[As experiments are run and learnings are gained, update the estimate here:
+- Date: [Date]
+- Updated Estimate: [Amount]
+- Rationale: [What changed and why]]
+
+===========================================
+SECTION 8: FORECASTED RETURNS
+===========================================
+
+Type of Return:
+[Identify the primary type(s) of return expected:
+- Increased revenue
+- Market share growth
+- Improved productivity/efficiency
+- Cost reduction
+- New markets served
+- Customer retention/satisfaction
+- Risk mitigation
+- Competitive advantage]
+
+Quantified Return Projection:
+[Provide specific projections where possible:
+- Revenue impact: [Amount per year]
+- Cost savings: [Amount per year]
+- Efficiency gains: [Percentage or time saved]
+- Market opportunity: [Size and capture potential]
+- ROI projection: [Return on Investment estimate]
+- Payback period: [Expected time to recoup investment]]
+
+===========================================
+SECTION 9: DEVELOPMENT STRATEGY
+===========================================
+
+In-house or Outsourced Development:
+[Provide recommendations for where and how the epic should be developed.
+Consider:
+- Strategic importance (core vs. non-core)
+- Internal capability and capacity
+- Speed to market requirements
+- Cost considerations
+- IP and security concerns
+- Recommended approach with rationale]
+
+Incremental Implementation Strategy:
+[Epics are defined as a single whole but undergo incremental implementation.
+Describe the strategy:
+- How will the epic be broken down into releases?
+- What is the learning and validation approach?
+- How will feedback be incorporated?
+- What are the key milestones and decision points?]
+
+Sequencing and Dependencies:
+[Describe constraints and dependencies:
+- Prerequisites that must be completed first
+- Dependencies on other epics or solutions
+- Resource constraints or timing considerations
+- External dependencies (vendors, partners, compliance)
+- Recommended sequencing with rationale]
+
+===========================================
+ADDITIONAL GUIDANCE
+===========================================
+
+Tips for Success:
+1. Focus on outcomes, not outputs
+2. Keep hypotheses testable and measurable
+3. Start small with MVP, learn, and iterate
+4. Update estimates as you learn
+5. Engage stakeholders early and often
+6. Consider both value and cost of delay
+7. Document assumptions and validate them
+8. Plan for change management and adoption
+
+Key Questions to Answer:
+- What problem are we solving and for whom?
+- How will we know if we're successful?
+- What's the smallest thing we can build to test our hypothesis?
+- What are the risks and how will we mitigate them?
+- What dependencies must we manage?
+- What's the expected return on investment?
+
+===========================================

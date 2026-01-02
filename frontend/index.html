@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="en">
+
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Evaluation Coach - Agile Team Analytics</title>
+        <link rel="icon"
+            href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>🎯</text></svg>">
+        <link rel="stylesheet" href="styles.css">
+    </head>
+
+    <body>
+        <div class="container">
+            <!-- Header -->
+            <div class="header">
+                <h1>🎯 Evaluation Coach</h1>
+                <p>AI-powered Agile & SAFe Analytics Platform</p>
+            </div>
+
+            <div class="main-content">
+                <!-- Sidebar -->
+                <div class="sidebar">
+                    <!-- Active Context Display -->
+                    <div class="active-context">
+                        <div class="active-context-title">Active Context</div>
+                        <div class="active-context-content" id="activeContext">
+                            Portfolio: All ARTs<br>
+                            Time Range: Last PI<br>
+                            Focus: Flow Efficiency
+                        </div>
+                    </div>
+
+                    <!-- Scope Selection -->
+                    <div class="sidebar-section">
+                        <div class="sidebar-title">Analysis Scope</div>
+                        <button class="sidebar-button active" onclick="selectScope('portfolio')">
+                            📊 Portfolio View
+                        </button>
+                        <button class="sidebar-button" onclick="selectScope('art')">
+                            🔄 ART View
+                        </button>
+                        <button class="sidebar-button" onclick="selectScope('team')">
+                            👥 Team View
+                        </button>
+                    </div>
+
+                    <!-- ART Selection -->
+                    <div class="sidebar-section" id="artSelection" style="display: none;">
+                        <div class="sidebar-title">Select ART</div>
+                        <select class="sidebar-input" id="artSelector" onchange="updateContext()">
+                            <option value="">-- Select ART --</option>
+                            <option value="platform">Platform Engineering</option>
+                            <option value="customer">Customer Experience</option>
+                            <option value="data">Data & Analytics</option>
+                        </select>
+                    </div>
+
+                    <!-- Team Selection -->
+                    <div class="sidebar-section" id="teamSelection" style="display: none;">
+                        <div class="sidebar-title">Select Team</div>
+                        <select class="sidebar-input" id="teamSelector" onchange="updateContext()">
+                            <option value="">-- Select Team --</option>
+                            <option value="backend">Backend Services</option>
+                            <option value="frontend">Frontend Platform</option>
+                            <option value="mobile">Mobile Apps</option>
+                            <option value="devops">DevOps & Infrastructure</option>
+                        </select>
+                    </div>
+
+                    <!-- Time Range -->
+                    <div class="sidebar-section">
+                        <div class="sidebar-title">Time Range</div>
+                        <select class="sidebar-input" id="timeRange" onchange="updateContext()">
+                            <option value="current_pi">Current PI</option>
+                            <option value="last_pi">Last PI</option>
+                            <option value="last_quarter">Last Quarter</option>
+                            <option value="last_6_months">Last 6 Months</option>
+                            <option value="last_year">Last Year</option>
+                        </select>
+                    </div>
+
+                    <!-- Metric Focus -->
+                    <div class="sidebar-section">
+                        <div class="sidebar-title">Metric Focus</div>
+                        <button class="sidebar-button" onclick="setMetricFocus('flow')">
+                            📈 Flow Metrics
+                        </button>
+                        <button class="sidebar-button" onclick="setMetricFocus('predictability')">
+                            🎯 Predictability
+                        </button>
+                        <button class="sidebar-button" onclick="setMetricFocus('quality')">
+                            ✅ Quality Metrics
+                        </button>
+                        <button class="sidebar-button" onclick="setMetricFocus('dependencies')">
+                            🔗 Dependencies
+                        </button>
+                    </div>
+
+                    <!-- Quick Actions -->
+                    <div class="sidebar-section">
+                        <div class="sidebar-title">Quick Actions</div>
+                        <button class="sidebar-button" onclick="generateScorecard()">
+                            📋 Generate Scorecard
+                        </button>
+                        <button class="sidebar-button" onclick="generateInsights()">
+                            💡 Generate Insights
+                        </button>
+                        <button class="sidebar-button" onclick="exportReport()">
+                            📥 Export Report
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Main Chat/Dashboard Area -->
+                <div class="chat-area">
+                    <!-- Main Tabs -->
+                    <div class="main-tabs">
+                        <button class="main-tab active" onclick="switchMainTab('dashboard')">
+                            📊 Dashboard
+                        </button>
+                        <button class="main-tab" onclick="switchMainTab('chat')">
+                            💬 AI Coach
+                        </button>
+                        <button class="main-tab" onclick="switchMainTab('insights')">
+                            💡 Insights
+                        </button>
+                        <button class="main-tab" onclick="switchMainTab('metrics')">
+                            📈 Metrics
+                        </button>
+                        <button class="main-tab" onclick="switchMainTab('admin')">
+                            ⚙️ Admin
+                        </button>
+                    </div>
+
+                    <!-- Dashboard Tab Content -->
+                    <div class="main-tab-content" id="dashboardContent">
+                        <div class="messages">
+                            <div class="active-context-inline">
+                                <div class="active-context-title-inline">Current Analysis Context</div>
+                                <div class="active-context-content-inline" id="inlineContext">
+                                    Scope: Portfolio | Time: Last PI | Focus: Flow Efficiency
+                                </div>
+                            </div>
+
+                            <h2 style="margin-bottom: 20px; color: #333;">Portfolio Health Dashboard</h2>
+
+                            <div
+                                style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin-bottom: 24px;">
+                                <!-- Metric Cards -->
+                                <div
+                                    style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; border-radius: 12px; color: white; box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);">
+                                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">Flow Efficiency
+                                    </div>
+                                    <div style="font-size: 32px; font-weight: bold; margin-bottom: 4px;">67%</div>
+                                    <div style="font-size: 12px; opacity: 0.8;">↑ 5% vs last PI</div>
+                                </div>
+
+                                <div
+                                    style="background: linear-gradient(135deg, #34C759 0%, #006F6C 100%); padding: 20px; border-radius: 12px; color: white; box-shadow: 0 4px 12px rgba(52, 199, 89, 0.3);">
+                                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">PI Predictability
+                                    </div>
+                                    <div style="font-size: 32px; font-weight: bold; margin-bottom: 4px;">82%</div>
+                                    <div style="font-size: 12px; opacity: 0.8;">↑ 3% vs last PI</div>
+                                </div>
+
+                                <div
+                                    style="background: linear-gradient(135deg, #FF9500 0%, #FF3B30 100%); padding: 20px; border-radius: 12px; color: white; box-shadow: 0 4px 12px rgba(255, 149, 0, 0.3);">
+                                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">Defect Escape Rate
+                                    </div>
+                                    <div style="font-size: 32px; font-weight: bold; margin-bottom: 4px;">4.2%</div>
+                                    <div style="font-size: 12px; opacity: 0.8;">↓ 1.2% vs last PI</div>
+                                </div>
+
+                                <div
+                                    style="background: linear-gradient(135deg, #007AFF 0%, #0051D5 100%); padding: 20px; border-radius: 12px; color: white; box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3);">
+                                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">Team Stability</div>
+                                    <div style="font-size: 32px; font-weight: bold; margin-bottom: 4px;">89%</div>
+                                    <div style="font-size: 12px; opacity: 0.8;">↑ 2% vs last PI</div>
+                                </div>
+                            </div>
+
+                            <!-- ART Comparison -->
+                            <h3 style="margin-bottom: 16px; color: #333;">ART Performance Comparison</h3>
+                            <div style="background: #f8f9fa; padding: 16px; border-radius: 8px; margin-bottom: 24px;">
+                                <table style="width: 100%; border-collapse: collapse;">
+                                    <thead>
+                                        <tr style="text-align: left; border-bottom: 2px solid #dee2e6;">
+                                            <th style="padding: 12px;">ART</th>
+                                            <th style="padding: 12px;">Flow Efficiency</th>
+                                            <th style="padding: 12px;">PI Predictability</th>
+                                            <th style="padding: 12px;">Quality</th>
+                                            <th style="padding: 12px;">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr style="border-bottom: 1px solid #e9ecef;">
+                                            <td style="padding: 12px; font-weight: 600;">Platform Engineering</td>
+                                            <td style="padding: 12px;">72%</td>
+                                            <td style="padding: 12px;">85%</td>
+                                            <td style="padding: 12px;">3.8%</td>
+                                            <td style="padding: 12px;"><span
+                                                    style="background: #34C759; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">Healthy</span>
+                                            </td>
+                                        </tr>
+                                        <tr style="border-bottom: 1px solid #e9ecef;">
+                                            <td style="padding: 12px; font-weight: 600;">Customer Experience</td>
+                                            <td style="padding: 12px;">65%</td>
+                                            <td style="padding: 12px;">78%</td>
+                                            <td style="padding: 12px;">5.2%</td>
+                                            <td style="padding: 12px;"><span
+                                                    style="background: #FF9500; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">Warning</span>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td style="padding: 12px; font-weight: 600;">Data & Analytics</td>
+                                            <td style="padding: 12px;">64%</td>
+                                            <td style="padding: 12px;">83%</td>
+                                            <td style="padding: 12px;">3.5%</td>
+                                            <td style="padding: 12px;"><span
+                                                    style="background: #34C759; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">Healthy</span>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <!-- Recent Insights -->
+                            <h3 style="margin-bottom: 16px; color: #333;">Recent Insights</h3>
+                            <div
+                                style="background: #fff3cd; padding: 16px; border-left: 4px solid #FF9500; border-radius: 4px; margin-bottom: 12px;">
+                                <div style="font-weight: 600; color: #856404; margin-bottom: 8px;">⚠️ High WIP Detected
+                                    - Customer Experience ART</div>
+                                <div style="font-size: 14px; color: #856404;">Average WIP ratio of 2.3 detected across 3
+                                    teams. Recommend limiting WIP to 1.5x team size.</div>
+                            </div>
+
+                            <div
+                                style="background: #d1ecf1; padding: 16px; border-left: 4px solid #007AFF; border-radius: 4px; margin-bottom: 12px;">
+                                <div style="font-weight: 600; color: #0c5460; margin-bottom: 8px;">ℹ️ Improving Trend -
+                                    Platform Engineering</div>
+                                <div style="font-size: 14px; color: #0c5460;">Flow efficiency increased by 8% over the
+                                    last 2 PIs. Reduced blocked time is the primary driver.</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Chat Tab Content -->
+                    <div class="main-tab-content" id="chatContent" style="display: none;">
+                        <div class="messages" id="chatMessages">
+                            <div class="message agent">
+                                <div class="message-content">
+                                    👋 Hello! I'm your AI Evaluation Coach. I can help you:
+                                    <ul style="margin-top: 8px; padding-left: 20px;">
+                                        <li>Analyze flow metrics and identify bottlenecks</li>
+                                        <li>Generate health scorecards for Portfolio/ART/Team</li>
+                                        <li>Provide evidence-based improvement recommendations</li>
+                                        <li>Answer questions about your Jira data and trends</li>
+                                    </ul>
+                                    What would you like to explore today?
+                                </div>
+                            </div>
+                        </div>
+                        <div class="input-area">
+                            <form class="input-form" onsubmit="sendMessage(event)">
+                                <input type="text" class="input-field" id="messageInput"
+                                    placeholder="Ask me about your team's performance, metrics, or improvements..."
+                                    autocomplete="off">
+                                <button type="submit" class="send-button" id="sendButton">
+                                    Send
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Insights Tab Content -->
+                    <div class="main-tab-content" id="insightsContent" style="display: none;">
+                        <div class="messages">
+                            <div class="active-context-inline">
+                                <div class="active-context-title-inline">Insight Filters</div>
+                                <div class="active-context-content-inline">
+                                    Severity: All | Confidence: High | Scope: Portfolio
+                                </div>
+                            </div>
+
+                            <h2 style="margin-bottom: 20px; color: #333;">Actionable Insights</h2>
+
+                            <!-- Insight Card 1 -->
+                            <div
+                                style="background: white; border: 2px solid #FF3B30; border-radius: 8px; padding: 20px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(255, 59, 48, 0.1);">
+                                <div
+                                    style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px;">
+                                    <h3 style="color: #FF3B30; margin: 0;">High WIP Across Multiple Teams</h3>
+                                    <span
+                                        style="background: #FF3B30; color: white; padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: 600;">CRITICAL</span>
+                                </div>
+                                <div style="display: flex; gap: 16px; margin-bottom: 12px; font-size: 14px;">
+                                    <span>🎯 Confidence: <strong>92%</strong></span>
+                                    <span>📊 Scope: <strong>ART</strong></span>
+                                    <span>⏱️ Impact: <strong>Immediate</strong></span>
+                                </div>
+                                <p style="color: #333; margin-bottom: 12px; line-height: 1.6;">
+                                    <strong>Observation:</strong> Customer Experience ART shows WIP ratio of 2.3 (vs
+                                    target 1.5),
+                                    affecting 3 teams with combined 43 active stories against 18 person capacity.
+                                </p>
+                                <p style="color: #333; margin-bottom: 12px; line-height: 1.6;">
+                                    <strong>Root Cause:</strong> Analysis suggests scattered focus due to external
+                                    dependencies and
+                                    lack of WIP limits enforcement in sprint planning.
+                                </p>
+                                <div
+                                    style="background: #f8f9fa; padding: 12px; border-radius: 6px; margin-bottom: 12px;">
+                                    <strong style="display: block; margin-bottom: 8px; color: #667eea;">Recommended
+                                        Actions:</strong>
+                                    <ul style="padding-left: 20px; line-height: 1.8; color: #555;">
+                                        <li><strong>Short-term:</strong> Implement hard WIP limits (1.5x team size) in
+                                            next sprint planning</li>
+                                        <li><strong>Medium-term:</strong> Review and reduce external dependencies with
+                                            dependency mapping</li>
+                                        <li><strong>Long-term:</strong> Establish WIP governance and team autonomy
+                                            charter</li>
+                                    </ul>
+                                </div>
+                                <div style="display: flex; gap: 8px;">
+                                    <button class="template-action-btn" onclick="acceptInsight(1)">✓ Accept</button>
+                                    <button class="template-action-btn" onclick="viewDetails(1)">📋 View
+                                        Details</button>
+                                    <button class="template-action-btn" style="background: #8E8E93;"
+                                        onclick="dismissInsight(1)">✕ Dismiss</button>
+                                </div>
+                            </div>
+
+                            <!-- Insight Card 2 -->
+                            <div
+                                style="background: white; border: 2px solid #FF9500; border-radius: 8px; padding: 20px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(255, 149, 0, 0.1);">
+                                <div
+                                    style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px;">
+                                    <h3 style="color: #FF9500; margin: 0;">Increasing Defect Escape Rate</h3>
+                                    <span
+                                        style="background: #FF9500; color: white; padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: 600;">WARNING</span>
+                                </div>
+                                <div style="display: flex; gap: 16px; margin-bottom: 12px; font-size: 14px;">
+                                    <span>🎯 Confidence: <strong>87%</strong></span>
+                                    <span>📊 Scope: <strong>Team</strong></span>
+                                    <span>⏱️ Impact: <strong>Within 2 sprints</strong></span>
+                                </div>
+                                <p style="color: #333; margin-bottom: 12px; line-height: 1.6;">
+                                    <strong>Observation:</strong> Mobile Apps team shows 7.2% defect escape rate (vs
+                                    target 5%),
+                                    with 12 production defects found in last sprint from 167 delivered stories.
+                                </p>
+                                <p style="color: #333; margin-bottom: 12px; line-height: 1.6;">
+                                    <strong>Root Cause:</strong> 68% of escaped defects lack automated test coverage.
+                                    Team velocity pressure may be reducing testing time.
+                                </p>
+                                <div
+                                    style="background: #f8f9fa; padding: 12px; border-radius: 6px; margin-bottom: 12px;">
+                                    <strong style="display: block; margin-bottom: 8px; color: #667eea;">Recommended
+                                        Actions:</strong>
+                                    <ul style="padding-left: 20px; line-height: 1.8; color: #555;">
+                                        <li><strong>Short-term:</strong> Add Definition of Done checklist requiring test
+                                            coverage review</li>
+                                        <li><strong>Medium-term:</strong> Establish 80% test coverage target and track
+                                            in sprint reviews</li>
+                                        <li><strong>Long-term:</strong> Implement automated testing pipeline with
+                                            quality gates</li>
+                                    </ul>
+                                </div>
+                                <div style="display: flex; gap: 8px;">
+                                    <button class="template-action-btn" onclick="acceptInsight(2)">✓ Accept</button>
+                                    <button class="template-action-btn" onclick="viewDetails(2)">📋 View
+                                        Details</button>
+                                    <button class="template-action-btn" style="background: #8E8E93;"
+                                        onclick="dismissInsight(2)">✕ Dismiss</button>
+                                </div>
+                            </div>
+
+                            <!-- Insight Card 3 -->
+                            <div
+                                style="background: white; border: 2px solid #34C759; border-radius: 8px; padding: 20px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(52, 199, 89, 0.1);">
+                                <div
+                                    style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px;">
+                                    <h3 style="color: #34C759; margin: 0;">Excellent Flow Efficiency Improvement</h3>
+                                    <span
+                                        style="background: #34C759; color: white; padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: 600;">SUCCESS</span>
+                                </div>
+                                <div style="display: flex; gap: 16px; margin-bottom: 12px; font-size: 14px;">
+                                    <span>🎯 Confidence: <strong>95%</strong></span>
+                                    <span>📊 Scope: <strong>ART</strong></span>
+                                    <span>⏱️ Impact: <strong>Sustained</strong></span>
+                                </div>
+                                <p style="color: #333; margin-bottom: 12px; line-height: 1.6;">
+                                    <strong>Observation:</strong> Platform Engineering ART achieved 72% flow efficiency
+                                    (up from 64%),
+                                    with 28% reduction in blocked time over last 2 PIs.
+                                </p>
+                                <p style="color: #333; margin-bottom: 12px; line-height: 1.6;">
+                                    <strong>Success Factors:</strong> Proactive dependency management, cross-team
+                                    collaboration ceremonies,
+                                    and dedicated architecture review sessions.
+                                </p>
+                                <div
+                                    style="background: #f8f9fa; padding: 12px; border-radius: 6px; margin-bottom: 12px;">
+                                    <strong style="display: block; margin-bottom: 8px; color: #34C759;">Recommendations
+                                        to Sustain:</strong>
+                                    <ul style="padding-left: 20px; line-height: 1.8; color: #555;">
+                                        <li>Document and share best practices with other ARTs</li>
+                                        <li>Continue current dependency management cadence</li>
+                                        <li>Monitor for regression indicators (blocked time trending up)</li>
+                                    </ul>
+                                </div>
+                                <div style="display: flex; gap: 8px;">
+                                    <button class="template-action-btn" onclick="shareSuccess(3)">📤 Share
+                                        Success</button>
+                                    <button class="template-action-btn" onclick="viewDetails(3)">📋 View
+                                        Details</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Metrics Tab Content -->
+                    <div class="main-tab-content" id="metricsContent" style="display: none;">
+                        <div class="messages">
+                            <h2 style="margin-bottom: 20px; color: #333;">Metrics Catalog</h2>
+
+                            <!-- Metrics Category Tabs -->
+                            <div class="action-tabs" style="margin-bottom: 20px;">
+                                <button class="action-tab active" onclick="showMetricCategory('flow')">Flow
+                                    Metrics</button>
+                                <button class="action-tab"
+                                    onclick="showMetricCategory('predictability')">Predictability</button>
+                                <button class="action-tab" onclick="showMetricCategory('quality')">Quality</button>
+                                <button class="action-tab" onclick="showMetricCategory('structure')">Structure</button>
+                            </div>
+
+                            <!-- Flow Metrics -->
+                            <div id="flowMetrics" class="metric-category">
+                                <div
+                                    style="background: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; margin-bottom: 16px;">
+                                    <h3 style="color: #667eea; margin-bottom: 12px;">Lead Time</h3>
+                                    <p style="margin-bottom: 12px; color: #555;">Time from story creation to completion
+                                        (In Progress → Done)</p>
+                                    <div
+                                        style="background: #f8f9fa; padding: 12px; border-radius: 6px; margin-bottom: 12px; font-family: monospace; font-size: 13px;">
+                                        Formula: median(completed_date - created_date)
+                                    </div>
+                                    <div
+                                        style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px;">
+                                        <div>
+                                            <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Industry
+                                                Average</div>
+                                            <div style="font-size: 20px; font-weight: 600; color: #FF9500;">12 days
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div style="font-size: 12px; color: #666; margin-bottom: 4px;">High
+                                                Performer</div>
+                                            <div style="font-size: 20px; font-weight: 600; color: #34C759;">6 days</div>
+                                        </div>
+                                        <div>
+                                            <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Your Current
+                                            </div>
+                                            <div style="font-size: 20px; font-weight: 600; color: #667eea;">8 days</div>
+                                        </div>
+                                    </div>
+                                    <div style="font-size: 13px; color: #666;">
+                                        <strong>Jira Field:</strong> <code>created</code>, <code>resolutiondate</code>
+                                    </div>
+                                </div>
+
+                                <div
+                                    style="background: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; margin-bottom: 16px;">
+                                    <h3 style="color: #667eea; margin-bottom: 12px;">Flow Efficiency</h3>
+                                    <p style="margin-bottom: 12px; color: #555;">Percentage of time spent in active work
+                                        vs waiting</p>
+                                    <div
+                                        style="background: #f8f9fa; padding: 12px; border-radius: 6px; margin-bottom: 12px; font-family: monospace; font-size: 13px;">
+                                        Formula: (active_time / total_lead_time) * 100
+                                    </div>
+                                    <div
+                                        style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px;">
+                                        <div>
+                                            <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Industry
+                                                Average</div>
+                                            <div style="font-size: 20px; font-weight: 600; color: #FF9500;">15%</div>
+                                        </div>
+                                        <div>
+                                            <div style="font-size: 12px; color: #666; margin-bottom: 4px;">High
+                                                Performer</div>
+                                            <div style="font-size: 20px; font-weight: 600; color: #34C759;">40%</div>
+                                        </div>
+                                        <div>
+                                            <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Your Current
+                                            </div>
+                                            <div style="font-size: 20px; font-weight: 600; color: #667eea;">67%</div>
+                                        </div>
+                                    </div>
+                                    <div style="font-size: 13px; color: #666;">
+                                        <strong>Jira Field:</strong> <code>status</code> transitions,
+                                        <code>changelog</code>
+                                    </div>
+                                </div>
+
+                                <div
+                                    style="background: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; margin-bottom: 16px;">
+                                    <h3 style="color: #667eea; margin-bottom: 12px;">Work in Progress (WIP)</h3>
+                                    <p style="margin-bottom: 12px; color: #555;">Number of active stories relative to
+                                        team size</p>
+                                    <div
+                                        style="background: #f8f9fa; padding: 12px; border-radius: 6px; margin-bottom: 12px; font-family: monospace; font-size: 13px;">
+                                        Formula: count(status = 'In Progress') / team_size
+                                    </div>
+                                    <div
+                                        style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px;">
+                                        <div>
+                                            <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Target</div>
+                                            <div style="font-size: 20px; font-weight: 600; color: #34C759;">≤ 1.5x</div>
+                                        </div>
+                                        <div>
+                                            <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Warning</div>
+                                            <div style="font-size: 20px; font-weight: 600; color: #FF9500;">1.5-2x</div>
+                                        </div>
+                                        <div>
+                                            <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Your Current
+                                            </div>
+                                            <div style="font-size: 20px; font-weight: 600; color: #667eea;">1.3x</div>
+                                        </div>
+                                    </div>
+                                    <div style="font-size: 13px; color: #666;">
+                                        <strong>Jira Field:</strong> <code>status</code>, <code>assignee</code>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Admin Tab Content -->
+                    <div class="main-tab-content" id="adminContent" style="display: none;">
+                        <div class="messages">
+                            <h2 style="margin-bottom: 20px; color: #333;">📁 Data Import & Administration</h2>
+
+                            <!-- Import Status -->
+                            <div id="importStatus"
+                                style="display: none; padding: 16px; margin-bottom: 20px; border-radius: 8px;"></div>
+
+                            <!-- Upload Section -->
+                            <div style="background: #f8f9fa; padding: 24px; border-radius: 12px; margin-bottom: 24px;">
+                                <h3 style="margin-bottom: 16px;">Import Excel Data</h3>
+                                <p style="color: #666; margin-bottom: 16px;">Upload an Excel file containing Epics,
+                                    Features, or User Stories. The data will be staged for review before being saved to
+                                    the database.</p>
+
+                                <div style="display: flex; gap: 12px; margin-bottom: 16px;">
+                                    <input type="file" id="excelFileInput" accept=".xlsx,.xls"
+                                        style="flex: 1; padding: 10px; border: 2px dashed #990AE3; border-radius: 8px; background: white;">
+                                    <button onclick="uploadExcelFile()"
+                                        style="padding: 12px 24px; background: #990AE3; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                                        📤 Upload & Preview
+                                    </button>
+                                </div>
+
+                                <div style="display: flex; gap: 12px;">
+                                    <button onclick="downloadTemplate()"
+                                        style="padding: 10px 20px; background: white; border: 2px solid #990AE3; color: #990AE3; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                                        📥 Download Template
+                                    </button>
+                                    <button onclick="showTemplates()"
+                                        style="padding: 10px 20px; background: white; border: 2px solid #34C759; color: #34C759; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                                        📋 View Templates
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Staged Data Preview -->
+                            <div id="stagedDataSection" style="display: none;">
+                                <div
+                                    style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                                    <h3>Staged Issues for Review</h3>
+                                    <div>
+                                        <button onclick="commitAllIssues()"
+                                            style="padding: 10px 20px; background: #34C759; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; margin-right: 8px;">
+                                            ✅ Commit All Valid
+                                        </button>
+                                        <button onclick="clearStaging()"
+                                            style="padding: 10px 20px; background: #FF3B30; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                                            ❌ Clear Staging
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div id="stagedDataStats"
+                                    style="background: #e3f2fd; padding: 16px; border-radius: 8px; margin-bottom: 16px;">
+                                </div>
+
+                                <!-- Staged Issues Table -->
+                                <div
+                                    style="background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                                    <table style="width: 100%; border-collapse: collapse;">
+                                        <thead style="background: #990AE3; color: white;">
+                                            <tr>
+                                                <th style="padding: 12px; text-align: left;">Row</th>
+                                                <th style="padding: 12px; text-align: left;">Issue Key</th>
+                                                <th style="padding: 12px; text-align: left;">Type</th>
+                                                <th style="padding: 12px; text-align: left;">Summary</th>
+                                                <th style="padding: 12px; text-align: left;">Status</th>
+                                                <th style="padding: 12px; text-align: left;">Validation</th>
+                                                <th style="padding: 12px; text-align: center;">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="stagedIssuesTable">
+                                            <!-- Dynamically populated -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <!-- Issue Editor Modal (hidden by default) -->
+                            <div id="issueEditorModal"
+                                style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; padding: 40px;">
+                                <div
+                                    style="background: white; max-width: 1200px; width: 95%; margin: 0 auto; border-radius: 12px; padding: 24px; max-height: 90vh; overflow-y: auto; resize: both;">
+                                    <div
+                                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                                        <h3>Edit Staged Issue</h3>
+                                        <button onclick="closeIssueEditor()"
+                                            style="font-size: 24px; background: none; border: none; cursor: pointer;">×</button>
+                                    </div>
+                                    <div id="issueEditorContent">
+                                        <!-- Dynamically populated -->
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Status Bar -->
+            <div class="status-bar">
+                <span id="statusText">Ready | Last updated: Just now | Data source: Jira Cloud</span>
+            </div>
+        </div>
+
+        <script src="app.js"></script>
+    </body>
+
+</html>

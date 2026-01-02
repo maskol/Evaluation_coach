@@ -1,0 +1,89 @@
+# Python
+*.py[cod]
+*$py.class
+*.so
+__pycache__/
+*.egg
+*.egg-info/
+dist/
+build/
+.Python
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+evaluation_coach.db
+
+# Excel files
+*.xls
+*.xlsx
+*.xlsm
+*.xlsb
+*.csv
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+backend.log
+frontend.log
+start.log
+
+# Uploads and temporary files
+backend/data/uploads/
+backend/data/templates/*.xlsx
+backend/data/templates/*.xls
+*.tmp
+*.temp
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Distribution / packaging
+.Python
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.manifest
+*.spec
+
+# PyInstaller
+*.spec
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# OS
+.DS_Store
+Thumbs.db

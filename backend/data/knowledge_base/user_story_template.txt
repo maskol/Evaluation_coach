@@ -1,0 +1,136 @@
+USER STORY TEMPLATE – Agile User Story
+---------------------------------------
+Purpose:
+Use this template to describe User Stories that deliver small increments of 
+value. User Stories are the building blocks of Features and should be 
+completable within a single sprint (1-2 weeks).
+
+Guidance:
+- Follow the "As a... I want... So that..." format
+- Keep stories small and focused on user value
+- Include clear acceptance criteria
+- Stories should be independently deliverable when possible
+
+--------------------------------------------
+1. USER STORY NAME
+Brief, descriptive title.
+
+[Fill in here]
+
+
+2. USER STORY STATEMENT
+As a [type of user]
+I want [an action or feature]
+So that [benefit or value]
+
+[Fill in here]
+
+
+3. STORY DESCRIPTION
+2-4 sentences providing context and details.
+
+What:
+[Fill in here]
+
+Why:
+[Fill in here]
+
+Who:
+[Fill in here]
+
+
+4. ACCEPTANCE CRITERIA
+Clear, testable criteria in Given-When-Then or checklist format.
+
+AC1:
+[Fill in here]
+
+AC2:
+[Fill in here]
+
+AC3:
+[Fill in here]
+
+AC4 (optional):
+[Fill in here]
+
+
+5. TECHNICAL NOTES (OPTIONAL)
+Implementation guidance, API endpoints, data models, etc.
+
+[Fill in here]
+
+
+6. DEPENDENCIES
+Other stories, systems, or teams needed.
+
+[Fill in here]
+
+
+7. STORY POINTS / ESTIMATE
+Relative sizing (1, 2, 3, 5, 8, 13, etc.)
+
+[Fill in here]
+
+
+8. DEFINITION OF DONE
+What must be true for this story to be considered complete?
+
+- [ ] Code complete and peer reviewed
+- [ ] Unit tests written and passing
+- [ ] Acceptance criteria validated
+- [ ] Documentation updated
+- [ ] Deployed to test environment
+
+[Fill in here - add more as needed]
+
+
+--------------------------------------------
+EXAMPLE (SIMPLE, FICTIONAL)
+--------------------------------------------
+USER STORY TITLE:
+View Connection Quality Dashboard
+
+USER STORY STATEMENT:
+As a network administrator
+I want to view a real-time dashboard of connection quality metrics
+So that I can quickly identify and respond to connectivity issues
+
+STORY DESCRIPTION:
+What:
+A web-based dashboard that displays key connection quality metrics including 
+latency, packet loss, and bandwidth utilization for all active connections.
+
+Why:
+Network administrators need quick visibility into connection health to 
+proactively address issues before they impact customers.
+
+Who:
+Network operations team, NOC staff, technical support personnel.
+
+ACCEPTANCE CRITERIA:
+AC1: Dashboard displays real-time metrics updated every 30 seconds
+AC2: Users can filter connections by region, customer, or service type
+AC3: Metrics include latency (ms), packet loss (%), and bandwidth (Mbps)
+AC4: Dashboard loads within 3 seconds with up to 1000 active connections
+
+TECHNICAL NOTES:
+- Use WebSocket connection for real-time updates
+- Cache aggregated metrics in Redis for performance
+- API endpoint: GET /api/connections/metrics
+- Frontend: React with Chart.js for visualizations
+
+DEPENDENCIES:
+- Metrics collection service must be deployed (Story #234)
+- Access to production monitoring database
+
+STORY POINTS:
+5
+
+DEFINITION OF DONE:
+- [x] Code complete and peer reviewed
+- [x] Unit tests written (>80% coverage)
+- [x] Acceptance criteria validated by PO
+- [x] Dashboard responsive on desktop and tablet
+- [x] Documentation updated with screenshots
+- [x] Deployed to staging environment

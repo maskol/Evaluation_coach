@@ -1,0 +1,178 @@
+FEATURE TEMPLATE – SAFe FEATURE DESCRIPTION
+--------------------------------------------
+Purpose:
+Use this template to describe Features at the program level. A Feature should
+deliver clear customer/business value and be small enough to complete within
+a PI (or less).
+
+Guidance:
+- A Feature is not a technical task.
+- Focus on value, capability, and the outcome delivered.
+- Acceptance criteria should be testable and outcome-oriented.
+
+IMPORTANT - FEATURE SELECTION PROCESS:
+When breaking down an Epic into multiple MVP features:
+1. Present the list of 3-5 proposed features to the user
+2. ASK the user which feature they want to draft first
+3. WAIT for the user to select a specific feature
+4. Only then draft the selected feature in detail
+
+DO NOT automatically draft the first feature without user selection.
+The user should choose which feature is most important to detail first.
+
+--------------------------------------------
+1. FEATURE NAME
+Short, clear name.
+
+[Fill in here]
+
+
+2. FEATURE TYPE (OPTIONAL)
+Examples:
+- Business Feature
+- Enabler Feature
+
+[Fill in here]
+
+
+3. DESCRIPTION
+3–6 sentences describing what the Feature enables.
+
+Suggested structure:
+- Who is the user/beneficiary?
+- What problem/need does it address?
+- What capability will be delivered?
+
+[Fill in here]
+
+
+4. BENEFIT HYPOTHESIS
+What effect do we expect if this feature is delivered?
+
+Example:
+“We believe this feature will reduce manual processing time by X% and improve
+customer satisfaction by enabling Y.”
+
+[Fill in here]
+
+
+5. ACCEPTANCE CRITERIA (AC)
+Outcome- and behavior-focused. 3–5 criteria.
+
+AC1:
+[Fill in here]
+
+AC2:
+[Fill in here]
+
+AC3:
+[Fill in here]
+
+AC4 (optional):
+[Fill in here]
+
+AC5 (optional):
+[Fill in here]
+
+
+6. NON-FUNCTIONAL REQUIREMENTS (NFR)
+Performance, security, compliance, availability, scalability — as applicable.
+
+[Fill in here]
+
+
+7. DEPENDENCIES
+Other teams, systems, initiatives required to deliver this feature.
+
+[Fill in here]
+
+
+8. ASSUMPTIONS & CONSTRAINTS
+ASSUMPTIONS:
+[Fill in here]
+
+CONSTRAINTS:
+[Fill in here]
+
+
+9. WSJF – HIGH LEVEL (OPTIONAL)
+BUSINESS / USER VALUE:
+[Fill in here]
+
+TIME CRITICALITY:
+[Fill in here]
+
+RISK REDUCTION / OPPORTUNITY ENABLEMENT:
+[Fill in here]
+
+JOB SIZE:
+[Fill in here]
+
+CALCULATED WSJF:
+(WSJF = (Value + Time Criticality + Risk Reduction) / Job Size)
+
+
+10. IMPLEMENTATION NOTES (OPTIONAL)
+Short notes that help teams understand important considerations without
+dictating solution design.
+
+[Fill in here]
+
+
+--------------------------------------------
+EXAMPLE (SIMPLE, FICTIONAL)
+--------------------------------------------
+FEATURE NAME:
+Standardized Launch Flow for New B2B Services
+
+FEATURE TYPE:
+Business Feature
+
+DESCRIPTION:
+This feature introduces a standardized, guided launch flow for new B2B services
+from idea approval to production readiness. It includes clear steps,
+responsibilities, and checklists aimed at reducing handovers and increasing
+predictability.
+
+BENEFIT HYPOTHESIS:
+We believe this feature will reduce coordination and planning time per launch
+by 20% and improve handover quality across business and IT.
+
+ACCEPTANCE CRITERIA:
+AC1:
+At least 80% of new B2B launches use the standardized flow within 3 months.
+
+AC2:
+Users can start, track, and complete a launch without manual PMO support.
+
+AC3:
+Each step has defined responsibilities, inputs/outputs, and approval points.
+
+AC4:
+Pilot launches produce actionable feedback leading to at least 2 improvements.
+
+NON-FUNCTIONAL REQUIREMENTS:
+- Documentation and process guidance must be searchable.
+- Any digital support must run on standard corporate browsers.
+- Access must follow internal security policies.
+
+DEPENDENCIES:
+- Coordination with PMO for governance alignment.
+- Integration with existing workflow/portfolio tools.
+
+ASSUMPTIONS & CONSTRAINTS:
+ASSUMPTIONS:
+- Leadership will mandate usage of the new flow.
+
+CONSTRAINTS:
+- No major tooling investments allowed during 2026.
+
+WSJF – HIGH LEVEL:
+BUSINESS / USER VALUE: 16
+TIME CRITICALITY: 12
+RISK REDUCTION: 10
+JOB SIZE: 8
+
+IMPLEMENTATION NOTES:
+- Start with 1–2 priority B2B segments as pilots.
+- Align with value stream work and portfolio initiatives.

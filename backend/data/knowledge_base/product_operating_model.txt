@@ -1,0 +1,92 @@
+PRODUCT OPERATING MODEL (DISCOVERY + DELIVERY)
+============================================================
+
+Purpose:
+Provide guidance for empowered product teams working in a modern product model.
+Validates that solutions are Desirable, Usable, Feasible, and Viable (DVFU).
+
+------------------------------------------------
+1. PRODUCT TEAM PRINCIPLES
+------------------------------------------------
+- Teams are empowered, cross-functional, and mission-oriented.
+- Teams own outcomes, not output.
+- Teams solve customer problems, not deliver stakeholder requirements.
+- Leadership sets strategic context; teams solve how.
+
+------------------------------------------------
+2. DISCOVERY VS DELIVERY
+------------------------------------------------
+Discovery:
+- Rapid experiments to validate value, usability, feasibility, and viability.
+- Focus on learning, prototyping, testing.
+- Minimal code; maximum speed.
+- Objective: Reduce risk *before* committing to delivery.
+
+Delivery:
+- Engineering builds scalable, high-quality solutions.
+- Objective: Ship production-grade value.
+
+------------------------------------------------
+3. THE FOUR RISKS (DVFU)
+------------------------------------------------
+VALUE RISK (Desirable):
+- Will customers buy or choose this?
+- Does it solve a real problem?
+
+USABILITY RISK (Usable):
+- Can users understand how to use it?
+
+FEASIBILITY RISK (Feasible):
+- Can engineering build it with available skills and technology?
+
+VIABILITY RISK (Viable):
+- Does this work for the business (legal, finance, operations, brand constraints)?
+
+------------------------------------------------
+4. PRODUCT ARTIFACTS
+------------------------------------------------
+Opportunity Assessment:
+- Customer problem
+- Target users
+- Evidence (data + insights)
+- Alternatives
+
+Discovery Experiments:
+- Prototypes
+- User tests
+- Fake door tests
+- A/B tests
+
+Solution Definition:
+- Problem statement
+- Desired outcome
+- High-level solution concept
+- DVFU validation notes
+
+------------------------------------------------
+5. ALIGNMENT WITH SAFe AND SCRUM
+------------------------------------------------
+Epics:
+- Should include problem framing and DVFU risks.
+- Discovery must validate hypotheses before moving to implementation.
+
+Features:
+- Should include value validation notes.
+- Should not proceed to development without discovery evidence.
+
+Scrum:
+- Teams own outcomes within the sprint boundaries.
+- Discovery work can occur in parallel to delivery.
+
+SAFe:
+- Epics map to opportunities + large bets.
+- Features map to validated capabilities from discovery.
+
+------------------------------------------------
+6. GUIDANCE FOR AI ASSISTANT
+------------------------------------------------
+When reviewing or creating an Epic or Feature:
+- Ask about the customer problem.
+- Ask whether value/usability/feasibility/viability were validated.
+- Encourage discovery over assumption.
+- Compare with both SAFe structure and product model principles.

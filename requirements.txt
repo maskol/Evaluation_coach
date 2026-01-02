@@ -1,9 +1,12 @@
-# Discovery Coach - Required Dependencies
+# Evaluation Coach - Python Dependencies
+# Last updated: 2026-01-02
+# Requires: Python 3.11+
 
 # Web Framework
 fastapi>=0.115.0
 uvicorn==0.38.0
 pydantic==2.11.1
+pydantic-settings>=2.1.0
 
 # LangChain Core
 langchain==1.1.2
@@ -28,3 +31,47 @@ langchain-chroma>=0.1.0
 
 # Environment Variables
 python-dotenv==1.1.0
+
+# HTTP & Jira Integration
+httpx>=0.26.0                  # Async HTTP client for Jira
+requests>=2.31.0               # Backup HTTP library
+
+# Data Processing & Analytics
+pandas>=2.1.4                  # Data manipulation and analysis
+numpy>=1.26.3                  # Numerical computing
+scipy>=1.11.4                  # Statistical functions
+
+# Database
+sqlalchemy>=2.0.25             # ORM
+alembic>=1.13.1                # Database migrations
+psycopg2-binary>=2.9.9         # PostgreSQL driver (optional, use SQLite for dev)
+
+# Utilities
+pyyaml>=6.0.1                  # YAML configuration parsing
+python-dateutil>=2.8.2         # Date/time utilities
+
+# Logging & Monitoring
+structlog>=24.1.0              # Structured logging
+python-json-logger>=2.0.7      # JSON logging format
+
+# Testing
+pytest>=7.4.4                  # Test framework
+pytest-asyncio>=0.23.3         # Async test support
+pytest-cov>=4.1.0              # Coverage reporting
+pytest-mock>=3.12.0            # Mocking utilities
+faker>=22.0.0                  # Fake data generation for tests
+
+# Code Quality (Development only)
+black>=23.12.1                 # Code formatter
+ruff>=0.1.11                   # Fast linter
+mypy>=1.8.0                    # Type checking
+pre-commit>=3.6.0              # Git hooks for code quality
+
+# Documentation (Development only)
+mkdocs>=1.5.3                  # Documentation generator
+mkdocs-material>=9.5.3         # Material theme for docs
+
+# Development Tools
+ipython>=8.19.0                # Enhanced Python shell
+jupyter>=1.0.0                 # Jupyter notebooks for exploration
+openpyxl>=3.1.0

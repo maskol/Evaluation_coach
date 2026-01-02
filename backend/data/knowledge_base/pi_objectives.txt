@@ -1,0 +1,171 @@
+PI OBJECTIVES TEMPLATE – SAFe
+==============================
+
+Purpose:
+PI Objectives describe the key business and technical outcomes that a team or ART
+plans to achieve during a Program Increment (PI).
+
+PI Objectives:
+- Focus on outcomes, not tasks or detailed feature lists
+- Provide alignment between strategy, Epics, Features, and delivery
+- Enable business and technical stakeholders to understand what value will be delivered
+- Support confidence-based planning and dependency management
+
+This template is designed for a 13-week PI with 2-week iterations.
+
+------------------------------------------------
+1. PROGRAM INCREMENT CONTEXT
+------------------------------------------------
+PI Length:
+- 13 weeks
+- 2-week iterations (typically 6 iterations + IP iteration)
+
+ART / TEAM:
+[Fill in here]
+
+PI NAME / TIMEFRAME:
+[Fill in here]
+
+------------------------------------------------
+2. STRATEGIC INTENT
+------------------------------------------------
+What is the strategic intent for this PI?
+
+Describe:
+- Strategic theme(s)
+- Business priorities
+- Key problems or opportunities this PI contributes to
+
+[Fill in here]
+
+------------------------------------------------
+3. RELATED EPICS
+------------------------------------------------
+Which Portfolio or Solution Epics does this PI support?
+
+List Epic names (do not restate full epic details).
+
+[Fill in here]
+
+------------------------------------------------
+4. KEY FEATURES IN SCOPE
+------------------------------------------------
+Which Features primarily enable these objectives?
+
+List feature names only. Avoid detailed descriptions.
+
+[Fill in here]
+
+------------------------------------------------
+5. PI OBJECTIVES (OUTCOME-FOCUSED)
+------------------------------------------------
+Define 3–7 objectives that describe *what will be achieved*, not *what will be built*.
+
+Guidelines:
+- Each objective should express customer or business value
+- Objectives may span multiple iterations
+- Use measurable language where possible
+- Avoid listing features or technical tasks directly
+
+Objective 1:
+[Describe the outcome to be achieved]
+
+Business Value (1–10):
+[Assigned collaboratively with Business Owners]
+
+------------------------------------------------
+Objective 2:
+[Describe the outcome to be achieved]
+
+Business Value (1–10):
+[Fill in here]
+
+------------------------------------------------
+Objective 3:
+[Describe the outcome to be achieved]
+
+Business Value (1–10):
+[Fill in here]
+
+------------------------------------------------
+(Optional additional objectives)
+
+------------------------------------------------
+6. STRETCH OBJECTIVES (OPTIONAL)
+------------------------------------------------
+Stretch objectives are desirable but not committed.
+
+Stretch Objective:
+[Fill in here]
+
+------------------------------------------------
+7. MEASUREMENT & SUCCESS CRITERIA
+------------------------------------------------
+How will we know each PI Objective has been achieved?
+
+For each objective, define:
+- Success criteria
+- Measurable indicators
+
+Example:
+- Adoption rate reaches X%
+- Cycle time reduced from X to Y
+- Error rate below X%
+
+[Fill in here]
+
+------------------------------------------------
+8. DEPENDENCIES & RISKS
+------------------------------------------------
+Key dependencies:
+- Other ARTs
+- External suppliers
+- Shared platforms or services
+
+Key risks:
+- Capacity constraints
+- Technical uncertainty
+- Organizational dependencies
+
+[Fill in here]
+
+------------------------------------------------
+9. NON-FUNCTIONAL REQUIREMENTS (PI-LEVEL)
+------------------------------------------------
+Critical NFRs that apply across objectives in this PI.
+
+Examples:
+- Performance thresholds
+- Security or compliance requirements
+- Availability or reliability targets
+
+[Fill in here]
+
+------------------------------------------------
+10. CONFIDENCE STATEMENT
+------------------------------------------------
+Team confidence vote after PI Planning (ROAM-informed).
+
+Confidence level (1–5):
+[Fill in here]
+
+Summary rationale:
+Why does the team feel confident or uncertain?
+
+[Fill in here]
+
+------------------------------------------------
+11. ALIGNMENT & NEXT STEPS
+------------------------------------------------
+How do these PI Objectives support:
+- Strategic Initiatives?
+- Epics and Features?
+- Longer-term roadmap?
+
+What happens after the PI?
+- Continue
+- Pivot
+- Stop
+- Expand scope
+
+[Fill in here]

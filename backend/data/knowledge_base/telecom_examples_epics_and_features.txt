@@ -1,0 +1,150 @@
+TELECOM EXAMPLES – EPICS AND FEATURES
+======================================
+
+This document provides anonymized, realistic telecom examples for SAFe Epic and
+Feature creation: B2B, B2C, network, provisioning, catalog, onboarding, and billing.
+
+------------------------------------------------
+SECTION 1: TELECOM EPIC EXAMPLES
+------------------------------------------------
+
+------------------------------------------------
+EPIC EXAMPLE A: Unified B2B Onboarding Experience
+------------------------------------------------
+EPIC NAME:
+Unified B2B Customer Onboarding Experience
+
+EPIC OWNER:
+Head of B2B Digital Transformation
+
+PROBLEM / OPPORTUNITY:
+B2B customers experience long onboarding times (10–30 days) due to manual
+identity checks, provisioning delays, and disconnected tools.
+
+TARGET CUSTOMERS:
+Medium and large enterprise customers purchasing connectivity and managed services.
+
+HYPOTHESIS:
+We believe that by introducing a unified digital onboarding flow across sales,
+catalog, provisioning, and billing, we will reduce onboarding time by 40%
+and improve NPS for new customers by 15 points.
+
+DESIRED BUSINESS OUTCOMES:
+- Reduce onboarding lead time from 15 days to <7 days.
+- Reduce manual coordination workload by 50%.
+- Increase win rate in strategic segments by 8%.
+
+------------------------------------------------
+EPIC EXAMPLE B: Migration to Cloud-Native Provisioning
+------------------------------------------------
+EPIC NAME:
+Cloud-Native Provisioning Modernization
+
+PROBLEM / OPPORTUNITY:
+Legacy provisioning systems cause high failure rates, long cycle times,
+and limit new product introductions.
+
+HYPOTHESIS:
+Modernizing provisioning to cloud-native microservices will reduce failures,
+enable real-time activation, and support 5G/IoT services.
+
+BUSINESS OUTCOMES:
+- Reduce provisioning failures from 12% to <3%.
+- Enable same-day activation for 90% of services.
+- Reduce operational cost by 20%.
+
+------------------------------------------------
+EPIC EXAMPLE C: New IoT Device Management Platform
+------------------------------------------------
+EPIC NAME:
+IoT Device Lifecycle Management Platform
+
+PROBLEM / OPPORTUNITY:
+Enterprise customers require large-scale SIM and device management with automation.
+
+BUSINESS OUTCOMES:
+- Unlock new revenue streams in IoT.
+- Reduce manual overhead for enterprise customers.
+
+LEADING INDICATORS:
+- Active IoT connections
+- Automated provisioning steps
+
+------------------------------------------------
+SECTION 2: TELECOM FEATURE EXAMPLES
+------------------------------------------------
+
+------------------------------------------------
+FEATURE EXAMPLE 1: Automated SIM Activation Validation
+------------------------------------------------
+DESCRIPTION:
+Introduce automated validation checks for SIM activation (identity, eligibility,
+credit profile). Replaces manual back-office validation.
+
+BENEFIT HYPOTHESIS:
+We believe this will reduce activation errors and cut activation time by 60%.
+
+ACCEPTANCE CRITERIA:
+- AC1: SIM activation requests are automatically validated using internal rules.
+- AC2: Failed validation triggers customer notification with recommended actions.
+- AC3: Validation logs are available to customer support.
+
+------------------------------------------------
+FEATURE EXAMPLE 2: Enterprise SLA Reporting API
+------------------------------------------------
+DESCRIPTION:
+Expose real-time SLA metrics (latency, uptime, ticket status) through a secure
+API for enterprise customers.
+
+BENEFIT HYPOTHESIS:
+Improves transparency and reduces incoming support tickets.
+
+ACCEPTANCE CRITERIA:
+- AC1: Enterprise customers can retrieve SLA metrics via API.
+- AC2: API enforces authentication via OAuth2.
+- AC3: Data refresh rate <5 minutes.
+
+------------------------------------------------
+FEATURE EXAMPLE 3: Self-Service Number Porting
+------------------------------------------------
+DESCRIPTION:
+Enable customers to request number porting through the digital portal, with
+automated validation and status tracking.
+
+BENEFIT HYPOTHESIS:
+Reduce customer support load and speed up porting.
+
+ACCEPTANCE CRITERIA:
+- AC1: Customer can submit porting request digitally.
+- AC2: Customer can track porting status in real time.
+- AC3: Failed ports generate actionable error messages.
+
+------------------------------------------------
+FEATURE EXAMPLE 4: Catalog-Driven Product Bundling
+------------------------------------------------
+DESCRIPTION:
+Allow product managers to configure B2B and B2C bundles using existing catalog
+components without code changes.
+
+BENEFIT HYPOTHESIS:
+Reduces time-to-market for new offers and improves configurability.
+
+ACCEPTANCE CRITERIA:
+- AC1: PM can create bundles consisting of existing catalog items.
+- AC2: Bundle propagation to provisioning and billing is automatic.
+- AC3: Incorrect configurations generate validation errors.
+
+------------------------------------------------
+FEATURE EXAMPLE 5: Real-Time Provisioning Dashboard
+------------------------------------------------
+DESCRIPTION:
+Provide real-time monitoring of provisioning status (pending, failed, completed)
+for back-office and ops teams.
+
+BENEFIT HYPOTHESIS:
+Reduces time-to-resolution for provisioning errors.
+
+ACCEPTANCE CRITERIA:
+- AC1: Dashboard shows status of provisioning steps with timestamps.
+- AC2: Errors include detailed error codes and recommended actions.
+- AC3: Filtering by product, customer type, and channel is supported.
