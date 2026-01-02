@@ -1,0 +1,30 @@
+# Discovery Coach - Required Dependencies
+
+# Web Framework
+fastapi>=0.115.0
+uvicorn==0.38.0
+pydantic==2.11.1
+
+# LangChain Core
+langchain==1.1.2
+langchain-core==1.1.1
+langchain-community==0.4.1
+langchain-openai==1.1.0
+langchain-ollama>=0.2.0
+langchain-text-splitters==1.0.0
+
+# LangGraph for stateful workflows
+langgraph>=0.2.0
+
+# LangSmith for monitoring and evaluation
+langsmith>=0.1.0
+
+# OpenAI
+openai>=1.109.1
+
+# Vector Database
+chromadb>=1.0.0
+langchain-chroma>=0.1.0
+
+# Environment Variables
+python-dotenv==1.1.0
