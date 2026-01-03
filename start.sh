@@ -7,7 +7,7 @@ echo ""
 
 # Check if virtual environment exists
 if [ ! -d "venv" ]; then
-    echo "❌ Virtual environment not found. Please run 'python3 -m venv venv' first."
+    echo "❌ Virtual environment not found. Please run 'python3.13 -m venv venv' first."
     exit 1
 fi
 
@@ -38,13 +38,33 @@ trap cleanup INT TERM
 # Activate virtual environment
 source venv/bin/activate
 
+# Check if dependencies are installed
+echo "📦 Checking dependencies..."
+if ! python -c "import uvicorn" 2>/dev/null; then
+    echo "⚠️  Installing dependencies from requirements.txt..."
+    pip install -r requirements.txt
+    if [ $? -ne 0 ]; then
+        echo "❌ Failed to install dependencies"
+        exit 1
+    fi
+    echo "✅ Dependencies installed"
+fi
+echo ""
+
 # Initialize database if needed
 echo "📦 Checking database..."
-python backend/database.py
+if ! python backend/database.py; then
+    echo "❌ Database initialization failed"
+    exit 1
+fi
 echo ""
 
 # Start Backend Server
 echo "🚀 Starting Backend API on port 8850..."
+if ! command -v uvicorn &> /dev/null; then
+    echo "❌ uvicorn not found. Please install requirements.txt"
+    exit 1
+fi
 cd backend
 uvicorn main:app --reload --host 0.0.0.0 --port 8850 > ../backend.log 2>&1 &
 BACKEND_PID=$!
