@@ -128,6 +128,9 @@ class DashboardData(BaseModel):
     art_comparison: List[Dict[str, Any]]
     recent_insights: List[InsightResponse]
     trends: Dict[str, Any]
+    current_pi: Optional[str] = None
+    available_pis: Optional[List[str]] = None
+    selected_pis: Optional[List[str]] = None
 
 
 class ARTPerformance(BaseModel):

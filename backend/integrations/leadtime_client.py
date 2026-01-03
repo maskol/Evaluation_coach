@@ -340,6 +340,35 @@ class LeadTimeClient:
 
         return self._get("/api/analysis/summary", params=params if params else None)
 
+    def get_throughput_data(
+        self,
+        art: Optional[str] = None,
+        pi: Optional[str] = None,
+        team: Optional[str] = None,
+        limit: int = 10000,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get throughput data - features with status DONE (delivered features).
+
+        Args:
+            art: Optional ART filter
+            pi: Optional PI filter
+            team: Optional team filter
+            limit: Maximum number of records to return
+
+        Returns:
+            List of delivered features with throughput=1
+        """
+        params = {"limit": limit}
+        if art:
+            params["art"] = art
+        if pi:
+            params["pi"] = pi
+        if team:
+            params["team"] = team
+
+        return self._get("/api/leadtime_thr_data", params=params if params else None)
+
     def get_available_filters(self) -> Dict[str, List[str]]:
         """
         Get all available filter values (ARTs, PIs, Teams, etc.).
@@ -377,15 +406,6 @@ class LeadTimeClient:
             List of features with their data
         """
         return self._get("/api/feature_data")
-
-    def get_pip_data(self) -> List[Dict[str, Any]]:
-        """
-        Get PI Planning data.
-
-        Returns:
-            List of PI planning items
-        """
-        return self._get("/api/pip_data")
 
     # === Health Check ===
 

@@ -7,12 +7,139 @@ const appState = {
     scope: 'portfolio',
     selectedART: '',
     selectedTeam: '',
-    timeRange: 'last_pi',
+    selectedPIs: [],  // Array of selected PIs
+    selectedARTs: [],  // Array of selected ARTs for filtering
     metricFocus: 'flow',
     activeTab: 'dashboard',
     messages: [],
-    sessionId: generateSessionId()
+    sessionId: generateSessionId(),
+    currentInsights: [],  // Store current insights for actions
+    isLoading: false  // Track loading state
 };
+
+// Default Filters (loaded from localStorage)
+function loadDefaultFilters() {
+    const savedDefaults = localStorage.getItem('defaultFilters');
+    if (savedDefaults) {
+        try {
+            const defaults = JSON.parse(savedDefaults);
+            appState.selectedPIs = defaults.pis || [];
+            appState.selectedARTs = defaults.arts || [];
+            console.log('📋 Loaded default filters:', defaults);
+        } catch (e) {
+            console.warn('⚠️ Failed to parse saved default filters');
+        }
+    }
+}
+
+function saveDefaultFilters() {
+    const defaultPICheckboxes = document.querySelectorAll('#defaultPISelector .default-pi-checkbox:checked');
+    const defaultARTCheckboxes = document.querySelectorAll('#defaultARTSelector .default-art-checkbox:checked');
+
+    const defaults = {
+        pis: Array.from(defaultPICheckboxes).map(cb => cb.value),
+        arts: Array.from(defaultARTCheckboxes).map(cb => cb.value)
+    };
+
+    localStorage.setItem('defaultFilters', JSON.stringify(defaults));
+
+    // Apply to current state
+    appState.selectedPIs = defaults.pis;
+    appState.selectedARTs = defaults.arts;
+
+    // Update dashboard with new defaults
+    loadDashboardData();
+    updatePIDisplay();
+
+    alert(`✅ Default filters saved!\n\nPIs: ${defaults.pis.length > 0 ? defaults.pis.join(', ') : 'All'}\nARTs: ${defaults.arts.length > 0 ? defaults.arts.join(', ') : 'All'}`);
+}
+
+function clearDefaultFilters() {
+    localStorage.removeItem('defaultFilters');
+    appState.selectedPIs = [];
+    appState.selectedARTs = [];
+
+    // Uncheck all checkboxes in admin panel
+    document.querySelectorAll('#defaultPISelector input[type="checkbox"]').forEach(cb => cb.checked = false);
+    document.querySelectorAll('#defaultARTSelector input[type="checkbox"]').forEach(cb => cb.checked = false);
+
+    // Update dashboard to show all data
+    loadDashboardData();
+    updatePIDisplay();
+
+    alert('✅ Default filters cleared! Dashboard will show all PIs and ARTs.');
+}
+
+// Loading Banner Functions (Non-blocking)
+function showLoadingOverlay(message = 'Loading...') {
+    let banner = document.getElementById('loadingBanner');
+    if (!banner) {
+        banner = document.createElement('div');
+        banner.id = 'loadingBanner';
+        banner.style.cssText = `
+            position: fixed;
+            top: 60px;
+            left: 0;
+            right: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+            animation: slideDown 0.3s ease-out;
+        `;
+
+        banner.innerHTML = `
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <div style="
+                    width: 18px;
+                    height: 18px;
+                    border: 3px solid rgba(255, 255, 255, 0.3);
+                    border-top: 3px solid white;
+                    border-radius: 50%;
+                    animation: spin 0.8s linear infinite;
+                "></div>
+                <div id="loadingMessage" style="
+                    font-size: 14px;
+                    font-weight: 600;
+                ">${message}</div>
+            </div>
+            <style>
+                @keyframes spin {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                }
+                @keyframes slideDown {
+                    from { transform: translateY(-100%); opacity: 0; }
+                    to { transform: translateY(0); opacity: 1; }
+                }
+            </style>
+        `;
+        document.body.appendChild(banner);
+    } else {
+        banner.style.display = 'flex';
+        const messageEl = document.getElementById('loadingMessage');
+        if (messageEl) messageEl.textContent = message;
+    }
+}
+
+function hideLoadingOverlay() {
+    const banner = document.getElementById('loadingBanner');
+    if (banner) {
+        banner.style.animation = 'slideUp 0.3s ease-out';
+        setTimeout(() => {
+            banner.style.display = 'none';
+        }, 300);
+    }
+}
+
+function updateLoadingMessage(message) {
+    const messageEl = document.getElementById('loadingMessage');
+    if (messageEl) messageEl.textContent = message;
+}
 
 // Generate unique session ID
 function generateSessionId() {
@@ -22,6 +149,7 @@ function generateSessionId() {
 // Initialize app on page load
 document.addEventListener('DOMContentLoaded', () => {
     console.log('🎯 Evaluation Coach initialized');
+    loadDefaultFilters();  // Load saved defaults
     checkBackendHealth();
     loadARTsAndTeams();
     loadDashboardData();
@@ -94,13 +222,43 @@ async function loadARTsAndTeams() {
 // Load dashboard data from API
 async function loadDashboardData() {
     try {
-        const response = await fetch(`${API_BASE_URL}/v1/dashboard?scope=${appState.scope}&time_range=${appState.timeRange}`);
+        // Show loading indicator
+        showLoadingOverlay('Fetching dashboard data...');
+        appState.isLoading = true;
+
+        let url = `${API_BASE_URL}/v1/dashboard?scope=${appState.scope}&time_range=last_pi`;
+        if (appState.selectedPIs && appState.selectedPIs.length > 0) {
+            url += `&pis=${appState.selectedPIs.join(',')}`;
+        }
+
+        // Priority: scope-specific ART selection overrides default ARTs filter
+        if (appState.scope === 'art' && appState.selectedART) {
+            // ART View - use the selected ART from dropdown
+            url += `&arts=${appState.selectedART}`;
+        } else if (appState.selectedARTs && appState.selectedARTs.length > 0) {
+            // Portfolio View - use default ARTs filter from Admin
+            url += `&arts=${appState.selectedARTs.join(',')}`;
+        }
+
+        console.log('📊 Loading dashboard data from:', url);
+        const response = await fetch(url);
         if (response.ok) {
             const data = await response.json();
             console.log('📊 Dashboard data loaded:', data);
+            console.log('📊 ART comparison data:', data.art_comparison);
+            console.log('📊 Selected PIs:', data.selected_pis || 'All PIs');
             updateDashboardUI(data);
+            hideLoadingOverlay();
+            appState.isLoading = false;
+        } else {
+            console.error('❌ Dashboard request failed:', response.status);
+            hideLoadingOverlay();
+            appState.isLoading = false;
         }
     } catch (error) {
+        console.error('❌ Error loading dashboard:', error);
+        hideLoadingOverlay();
+        appState.isLoading = false;
         console.log('Using demo dashboard data');
         updateStatusBar('Demo mode - Could not load real data');
     }
@@ -109,6 +267,35 @@ async function loadDashboardData() {
 // Update Dashboard UI with real data
 function updateDashboardUI(data) {
     if (!data) return;
+
+    // Show active filters - respect scope priority
+    const activeFiltersDisplay = document.getElementById('activeFiltersDisplay');
+    const activeFiltersText = document.getElementById('activeFiltersText');
+    if (activeFiltersDisplay && activeFiltersText) {
+        const filters = [];
+        if (appState.selectedPIs && appState.selectedPIs.length > 0) {
+            filters.push(`PIs: ${appState.selectedPIs.join(', ')}`);
+        }
+
+        // Priority: scope-specific ART selection overrides default ARTs filter
+        if (appState.scope === 'art' && appState.selectedART) {
+            // ART View - show the selected ART
+            filters.push(`ART: ${appState.selectedART}`);
+        } else if (appState.selectedARTs && appState.selectedARTs.length > 0) {
+            // Portfolio View - show default ARTs filter
+            const artText = appState.selectedARTs.length <= 5
+                ? appState.selectedARTs.join(', ')
+                : `${appState.selectedARTs.slice(0, 5).join(', ')} +${appState.selectedARTs.length - 5} more`;
+            filters.push(`ARTs: ${artText}`);
+        }
+
+        if (filters.length > 0) {
+            activeFiltersText.textContent = filters.join(' | ');
+            activeFiltersDisplay.style.display = 'block';
+        } else {
+            activeFiltersDisplay.style.display = 'none';
+        }
+    }
 
     // Update portfolio metrics
     if (data.portfolio_metrics) {
@@ -139,7 +326,16 @@ function updateDashboardUI(data) {
     if (data.art_comparison) {
         const artTableBody = document.getElementById('artComparisonBody');
         if (artTableBody) {
-            artTableBody.innerHTML = data.art_comparison.map(art => {
+            // Filter ARTs if selectedARTs is specified
+            let displayedARTs = data.art_comparison;
+            if (appState.selectedARTs && appState.selectedARTs.length > 0) {
+                displayedARTs = data.art_comparison.filter(art =>
+                    appState.selectedARTs.includes(art.art_name)
+                );
+            }
+
+            console.log('📊 Updating ART comparison table with', displayedARTs.length, 'ARTs');
+            artTableBody.innerHTML = displayedARTs.map(art => {
                 const statusColor = art.status === 'healthy' ? '#34C759' :
                     art.status === 'warning' ? '#FF9500' : '#FF3B30';
                 const statusLabel = art.status.charAt(0).toUpperCase() + art.status.slice(1);
@@ -158,6 +354,7 @@ function updateDashboardUI(data) {
                     </tr>
                 `;
             }).join('');
+            console.log('✅ ART comparison table updated');
         }
     }
 
@@ -187,6 +384,17 @@ function updateDashboardUI(data) {
         }
     }
 
+    // Update PI information in the header/status bar
+    if (data.current_pi || data.available_pis) {
+        updatePIDisplay(data.current_pi, data.available_pis);
+    }
+
+    // Populate admin panel default filters
+    if (data.available_pis && data.art_comparison) {
+        const availableARTs = data.art_comparison.map(art => art.art_name);
+        populateAdminDefaultFilters(data.available_pis, availableARTs);
+    }
+
     updateStatusBar('Dashboard updated with real data');
 }
 
@@ -197,6 +405,132 @@ function adjustColor(color, amount) {
     const g = Math.max(0, Math.min(255, ((num >> 8) & 0x00FF) + amount));
     const b = Math.max(0, Math.min(255, (num & 0x0000FF) + amount));
     return '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0');
+}
+
+// Update PI display in the dashboard
+function updatePIDisplay(currentPI, availablePIs) {
+    // Update the PI selector if it exists
+    const piSelector = document.getElementById('piSelector');
+    if (piSelector && availablePIs && availablePIs.length > 0) {
+        // Create multi-select with checkboxes
+        piSelector.innerHTML = `
+            <div style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; padding: 8px; background: white;">
+                <label style="display: block; padding: 4px; cursor: pointer; font-weight: 600;">
+                    <input type="checkbox" id="selectAllPIs" style="margin-right: 8px;">
+                    <span>Select All</span>
+                </label>
+                <hr style="margin: 8px 0; border: none; border-top: 1px solid #eee;">
+                ${availablePIs.map(pi => `
+                    <label style="display: block; padding: 4px; cursor: pointer;">
+                        <input type="checkbox" class="pi-checkbox" value="${pi}" style="margin-right: 8px;" 
+                               ${appState.selectedPIs.includes(pi) ? 'checked' : ''}>
+                        <span>${pi}</span>
+                    </label>
+                `).join('')}
+            </div>
+        `;
+
+        // Add event listeners after HTML is inserted
+        const selectAll = document.getElementById('selectAllPIs');
+        if (selectAll) {
+            selectAll.addEventListener('change', function () {
+                toggleAllPIs(this.checked);
+            });
+        }
+
+        const checkboxes = document.querySelectorAll('.pi-checkbox');
+        checkboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', handlePISelection);
+        });
+    }
+
+    // PI info is now shown in Active Filters banner - no separate display needed
+    console.log(`📅 PI Info - Current: ${currentPI}, Selected: ${appState.selectedPIs.length || 'All'}, Available: ${availablePIs?.length || 0}`);
+}
+
+// Handle PI checkbox selection
+function handlePISelection() {
+    const checkboxes = document.querySelectorAll('.pi-checkbox');
+    appState.selectedPIs = Array.from(checkboxes)
+        .filter(cb => cb.checked)
+        .map(cb => cb.value);
+
+    // Update "Select All" checkbox state
+    const selectAll = document.getElementById('selectAllPIs');
+    if (selectAll) {
+        selectAll.checked = appState.selectedPIs.length === checkboxes.length;
+    }
+
+    console.log(`📅 PI selection changed: ${appState.selectedPIs.join(', ') || 'All PIs'}`);
+    loadDashboardData();
+    updateContext();
+}
+
+// Toggle all PIs
+function toggleAllPIs(checked) {
+    const checkboxes = document.querySelectorAll('.pi-checkbox');
+    checkboxes.forEach(cb => cb.checked = checked);
+    handlePISelection();
+}
+
+// Populate default filters in admin panel
+function populateAdminDefaultFilters(availablePIs, availableARTs) {
+    // Get saved defaults
+    const savedDefaults = JSON.parse(localStorage.getItem('defaultFilters') || '{"pis":[],"arts":[]}');
+
+    // Populate default PI selector
+    const defaultPISelector = document.getElementById('defaultPISelector');
+    if (defaultPISelector && availablePIs && availablePIs.length > 0) {
+        defaultPISelector.innerHTML = `
+            <label style="display: block; padding: 4px; cursor: pointer; font-weight: 600; border-bottom: 1px solid #eee; margin-bottom: 8px;">
+                <input type="checkbox" id="selectAllDefaultPIs" style="margin-right: 8px;">
+                <span>Select All</span>
+            </label>
+            ${availablePIs.map(pi => `
+                <label style="display: block; padding: 4px; cursor: pointer;">
+                    <input type="checkbox" class="default-pi-checkbox" value="${pi}" style="margin-right: 8px;" 
+                           ${savedDefaults.pis.includes(pi) ? 'checked' : ''}>
+                    <span>${pi}</span>
+                </label>
+            `).join('')}
+        `;
+
+        // Add select all handler
+        const selectAllPIs = document.getElementById('selectAllDefaultPIs');
+        if (selectAllPIs) {
+            selectAllPIs.addEventListener('change', function () {
+                document.querySelectorAll('.default-pi-checkbox').forEach(cb => cb.checked = this.checked);
+            });
+        }
+    }
+
+    // Populate default ART selector
+    const defaultARTSelector = document.getElementById('defaultARTSelector');
+    if (defaultARTSelector && availableARTs && availableARTs.length > 0) {
+        defaultARTSelector.innerHTML = `
+            <label style="display: block; padding: 4px; cursor: pointer; font-weight: 600; border-bottom: 1px solid #eee; margin-bottom: 8px;">
+                <input type="checkbox" id="selectAllDefaultARTs" style="margin-right: 8px;">
+                <span>Select All</span>
+            </label>
+            ${availableARTs.map(art => `
+                <label style="display: block; padding: 4px; cursor: pointer;">
+                    <input type="checkbox" class="default-art-checkbox" value="${art}" style="margin-right: 8px;" 
+                           ${savedDefaults.arts.includes(art) ? 'checked' : ''}>
+                    <span>${art}</span>
+                </label>
+            `).join('')}
+        `;
+
+        // Add select all handler
+        const selectAllARTs = document.getElementById('selectAllDefaultARTs');
+        if (selectAllARTs) {
+            selectAllARTs.addEventListener('change', function () {
+                document.querySelectorAll('.default-art-checkbox').forEach(cb => cb.checked = this.checked);
+            });
+        }
+    }
+
+    console.log('⚙️ Admin default filters populated');
 }
 
 // Scope Selection
@@ -223,6 +557,9 @@ function selectScope(scope) {
         artSelection.style.display = 'none';
         teamSelection.style.display = 'none';
     }
+
+    // Reload dashboard with new scope
+    loadDashboardData();
 }
 
 async function generateScorecard() {
@@ -313,11 +650,24 @@ function setMetricFocus(focus) {
 
 // Update context function
 function updateContext() {
+    // Build simplified context without filter details (shown in Active Filters banner)
     let contextText = `Context: ${capitalizeFirst(appState.scope)}`;
     if (appState.selectedART) contextText += ` | ART: ${appState.selectedART}`;
     if (appState.selectedTeam) contextText += ` | Team: ${appState.selectedTeam}`;
     contextText += ` | Focus: ${capitalizeFirst(appState.metricFocus)}`;
-    // Update UI if needed
+
+    // Update context displays
+    const activeContext = document.getElementById('activeContext');
+    if (activeContext) {
+        activeContext.innerHTML = contextText.replace(/Context: /, '').replace(/ \| /g, '<br>');
+    }
+
+    const inlineContext = document.getElementById('inlineContext');
+    if (inlineContext) {
+        inlineContext.textContent = contextText.replace(/Context: /, '');
+    }
+
+    console.log('📊 Context updated:', contextText);
 }
 
 async function generateInsights() {
@@ -501,11 +851,313 @@ function switchMainTab(tabName) {
         }
     });
 
+    // Load insights data when switching to insights tab
+    if (tabName === 'insights') {
+        renderInsightsTab();
+    }
+
     updateStatusBar(`Switched to ${tabName} view`);
 }
 
-// Expose function to global scope for onclick handlers
-window.switchMainTab = switchMainTab;
+// Render detailed insights in the Insights tab
+function renderInsightsTab() {
+    console.log('📊 Loading Insights tab...');
+
+    const insightsContent = document.getElementById('insightsContent');
+    if (!insightsContent) return;
+
+    const filterInfo = [
+        appState.scope.charAt(0).toUpperCase() + appState.scope.slice(1),
+        appState.selectedPIs.length > 0 ? `PI: ${appState.selectedPIs.join(', ')}` : 'All PIs',
+        appState.selectedARTs.length > 0 ? `ARTs: ${appState.selectedARTs.length}` : 'All ARTs'
+    ].join(' | ');
+
+    // Show initial view with Generate button
+    insightsContent.innerHTML = `
+        <div class="messages">
+            <div class="active-context-inline">
+                <div class="active-context-title-inline">📊 Active Filters</div>
+                <div class="active-context-content-inline">
+                    ${filterInfo}
+                </div>
+            </div>
+
+            <div style="background: white; border-radius: 8px; padding: 40px; text-align: center;">
+                <div style="font-size: 48px; margin-bottom: 16px;">🤖</div>
+                <h2 style="margin-bottom: 16px; color: #333;">AI-Powered Expert Insights</h2>
+                <p style="color: #666; margin-bottom: 24px; line-height: 1.6;">
+                    Generate comprehensive insights using advanced AI analysis with 15+ years of industry experience.
+                    <br>This will analyze your data patterns, bottlenecks, and provide actionable recommendations.
+                </p>
+                <button 
+                    onclick="generateInsights()" 
+                    style="
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        color: white;
+                        border: none;
+                        padding: 16px 32px;
+                        font-size: 16px;
+                        font-weight: 600;
+                        border-radius: 8px;
+                        cursor: pointer;
+                        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+                        transition: all 0.3s ease;
+                    "
+                    onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 16px rgba(102, 126, 234, 0.5)'"
+                    onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(102, 126, 234, 0.4)'"
+                >
+                    🚀 Generate AI Insights
+                </button>
+                <div style="margin-top: 16px; font-size: 12px; color: #8E8E93;">
+                    ⚠️ This may take 10-15 seconds as the AI analyzes your data
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// Generate insights using AI analysis
+function generateInsights() {
+    console.log('🤖 Generating AI insights...');
+
+    showLoadingOverlay('🤔 AI Coach analyzing your data...');
+
+    const params = new URLSearchParams();
+    params.append('scope', appState.scope);
+
+    if (appState.selectedPIs.length > 0) {
+        params.append('pis', appState.selectedPIs.join(','));
+    }
+    if (appState.selectedARTs.length > 0) {
+        params.append('arts', appState.selectedARTs.join(','));
+    }
+
+    // Update message after 2 seconds (LLM processing)
+    const llmTimer = setTimeout(() => {
+        updateLoadingMessage('🧠 Expert analysis in progress with industry knowledge...');
+    }, 2000);
+
+    fetch(`${API_BASE_URL}/v1/insights/generate?${params.toString()}`, {
+        method: 'POST'
+    })
+        .then(response => response.json())
+        .then(data => {
+            clearTimeout(llmTimer);
+            const insights = data.insights || [];
+            displayGeneratedInsights(insights);
+            hideLoadingOverlay();
+        })
+        .catch(error => {
+            clearTimeout(llmTimer);
+            console.error('❌ Error generating insights:', error);
+            const insightsContent = document.getElementById('insightsContent');
+            if (insightsContent) {
+                insightsContent.innerHTML = `
+                    <div class="messages">
+                        <div style="background: white; border-radius: 8px; padding: 40px; text-align: center; color: #FF3B30;">
+                            <div style="font-size: 48px; margin-bottom: 16px;">⚠️</div>
+                            <div style="font-size: 18px; margin-bottom: 8px;">Error Generating Insights</div>
+                            <div style="font-size: 14px; color: #666; margin-bottom: 24px;">${error.message}</div>
+                            <button onclick="renderInsightsTab()" style="
+                                background: #667eea;
+                                color: white;
+                                border: none;
+                                padding: 12px 24px;
+                                border-radius: 6px;
+                                cursor: pointer;
+                                font-weight: 600;
+                            ">Try Again</button>
+                        </div>
+                    </div>
+                `;
+            }
+            hideLoadingOverlay();
+        });
+}
+
+// Display generated insights
+function displayGeneratedInsights(insights) {
+    const insightsContent = document.getElementById('insightsContent');
+    if (!insightsContent) return;
+
+    const severityConfig = {
+        'critical': { color: '#FF3B30', label: 'CRITICAL', badge: '#FF3B30' },
+        'warning': { color: '#FF9500', label: 'WARNING', badge: '#FF9500' },
+        'info': { color: '#34C759', label: 'INFO', badge: '#34C759' }
+    };
+
+    const filterInfo = [
+        appState.scope.charAt(0).toUpperCase() + appState.scope.slice(1),
+        appState.selectedPIs.length > 0 ? `PI: ${appState.selectedPIs.join(', ')}` : 'All PIs',
+        appState.selectedARTs.length > 0 ? `ARTs: ${appState.selectedARTs.length}` : 'All ARTs'
+    ].join(' | ');
+
+    const insightsHTML = `
+        <div class="messages">
+            <div class="active-context-inline">
+                <div class="active-context-title-inline">📊 Active Filters</div>
+                <div class="active-context-content-inline">
+                    ${filterInfo}
+                </div>
+            </div>
+            
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 style="margin: 0; color: #333;">AI Expert Insights (${insights.length})</h2>
+                <button 
+                    onclick="generateInsights()" 
+                    style="
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        color: white;
+                        border: none;
+                        padding: 10px 20px;
+                        font-size: 14px;
+                        font-weight: 600;
+                        border-radius: 6px;
+                        cursor: pointer;
+                        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+                    "
+                >
+                    🔄 Regenerate Insights
+                </button>
+            </div>
+            
+            ${insights.length === 0 ? `
+                <div style="background: white; border-radius: 8px; padding: 40px; text-align: center; color: #8E8E93;">
+                    <div style="font-size: 48px; margin-bottom: 16px;">💡</div>
+                    <div style="font-size: 18px; margin-bottom: 8px;">No insights available</div>
+                    <div style="font-size: 14px;">Try adjusting your filters or generate new insights</div>
+                </div>
+            ` : insights.map((insight, index) => {
+        const config = severityConfig[insight.severity] || severityConfig['info'];
+        const confidence = Math.round((insight.confidence || 0) * 100);
+        const actions = insight.recommended_actions || [];
+        const rootCauses = insight.root_causes || [];
+        const expectedOutcomes = insight.expected_outcomes || {};
+
+        return `
+                            <div style="background: white; border: 2px solid ${config.color}; border-radius: 8px; padding: 20px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);">
+                                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px;">
+                                    <h3 style="color: ${config.color}; margin: 0;">${insight.title}</h3>
+                                    <span style="background: ${config.badge}; color: white; padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: 600;">${config.label}</span>
+                                </div>
+                                
+                                <div style="display: flex; gap: 16px; margin-bottom: 12px; font-size: 14px; color: #666;">
+                                    <span>🎯 Confidence: <strong>${confidence}%</strong></span>
+                                    <span>📊 Scope: <strong>${insight.scope || 'Portfolio'}</strong></span>
+                                    <span>📈 Insights: <strong>#${index + 1}</strong></span>
+                                </div>
+                                
+                                ${insight.observation ? `
+                                    <p style="color: #333; margin-bottom: 12px; line-height: 1.6;">
+                                        <strong>📋 Observation:</strong> ${insight.observation}
+                                    </p>
+                                ` : ''}
+                                
+                                ${insight.interpretation ? `
+                                    <p style="color: #333; margin-bottom: 12px; line-height: 1.6;">
+                                        <strong>💭 Interpretation:</strong> ${insight.interpretation}
+                                    </p>
+                                ` : ''}
+                                
+                                ${rootCauses.length > 0 ? `
+                                    <div style="background: #f8f9fa; padding: 12px; border-radius: 6px; margin-bottom: 12px;">
+                                        <strong style="display: block; margin-bottom: 8px; color: #667eea;">🔍 Root Causes:</strong>
+                                        <ul style="padding-left: 20px; line-height: 1.8; color: #555; margin: 0;">
+                                            ${rootCauses.map(rc => `
+                                                <li>
+                                                    <strong>${rc.description}</strong>
+                                                    ${rc.evidence && rc.evidence.length > 0 ? `
+                                                        <ul style="font-size: 13px; color: #666; margin-top: 4px;">
+                                                            ${rc.evidence.map(e => `<li>${e}</li>`).join('')}
+                                                        </ul>
+                                                    ` : ''}
+                                                    ${rc.confidence ? `<span style="font-size: 12px; color: #888;">(${Math.round(rc.confidence * 100)}% confidence)</span>` : ''}
+                                                </li>
+                                            `).join('')}
+                                        </ul>
+                                    </div>
+                                ` : ''}
+                                
+                                ${actions.length > 0 ? `
+                                    <div style="background: #e8f5e9; padding: 12px; border-radius: 6px; margin-bottom: 12px;">
+                                        <strong style="display: block; margin-bottom: 8px; color: #2e7d32;">✅ Recommended Actions:</strong>
+                                        <ul style="padding-left: 20px; line-height: 1.8; color: #333; margin: 0;">
+                                            ${actions.map(action => `
+                                                <li>
+                                                    <strong>[${action.timeframe.replace('_', ' ').toUpperCase()}]</strong> ${action.description}
+                                                    <div style="font-size: 13px; color: #666; margin-top: 4px;">
+                                                        👤 Owner: ${action.owner || 'TBD'} | 
+                                                        ⏱️ Effort: ${action.effort || 'TBD'}
+                                                        ${action.success_signal ? `<br/>🎯 Success Signal: ${action.success_signal}` : ''}
+                                                    </div>
+                                                </li>
+                                            `).join('')}
+                                        </ul>
+                                    </div>
+                                ` : ''}
+                                
+                                ${expectedOutcomes.timeline || expectedOutcomes.metrics_to_watch ? `
+                                    <div style="background: #fff9e6; padding: 12px; border-radius: 6px; margin-bottom: 12px;">
+                                        <strong style="display: block; margin-bottom: 8px; color: #f57f17;">📊 Expected Outcomes:</strong>
+                                        ${expectedOutcomes.timeline ? `<div style="font-size: 14px; color: #666; margin-bottom: 4px;">⏱️ Timeline: <strong>${expectedOutcomes.timeline}</strong></div>` : ''}
+                                        ${expectedOutcomes.metrics_to_watch && expectedOutcomes.metrics_to_watch.length > 0 ? `
+                                            <div style="font-size: 13px; color: #666;">
+                                                📈 Metrics to Watch: ${expectedOutcomes.metrics_to_watch.join(', ')}
+                                            </div>
+                                        ` : ''}
+                                        ${expectedOutcomes.leading_indicators && expectedOutcomes.leading_indicators.length > 0 ? `
+                                            <div style="font-size: 13px; color: #666; margin-top: 4px;">
+                                                ⚡ Leading Indicators: ${expectedOutcomes.leading_indicators.join(', ')}
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                ` : ''}
+                                
+                                <div style="display: flex; gap: 8px; margin-top: 16px;">
+                                    <button class="template-action-btn" onclick="viewInsightDetails(${index})">📋 View Full Details</button>
+                                    <button class="template-action-btn" style="background: #34C759;" onclick="exportInsight(${index})">💾 Export</button>
+                                </div>
+                            </div>
+                        `;
+    }).join('')}
+        </div>
+    `;
+
+    insightsContent.innerHTML = insightsHTML;
+
+    // Store insights in appState for actions
+    appState.currentInsights = insights;
+
+    console.log(`✅ Displayed ${insights.length} AI-generated insights`);
+}
+
+// View insight details (placeholder for future modal/detail view)
+function viewInsightDetails(index) {
+    const insight = appState.currentInsights?.[index];
+    if (insight) {
+        console.log('📊 Viewing insight details:', insight);
+        alert(`Insight Details:\n\nTitle: ${insight.title}\n\nThis would open a detailed modal view with full insight information, evidence, and action items.`);
+    }
+}
+
+// Export insight (placeholder for future export functionality)
+function exportInsight(index) {
+    const insight = appState.currentInsights?.[index];
+    if (insight) {
+        console.log('💾 Exporting insight:', insight);
+        const json = JSON.stringify(insight, null, 2);
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `insight-${insight.title.replace(/\s+/g, '-').toLowerCase()}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        updateStatusBar('Insight exported successfully');
+    }
+}
 
 // Add message to chat
 function addMessage(message) {
@@ -665,6 +1317,10 @@ document.addEventListener('DOMContentLoaded', () => {
         artSelector.addEventListener('change', (e) => {
             appState.selectedART = e.target.value;
             updateContext();
+            // Reload dashboard when ART is selected in ART view
+            if (appState.scope === 'art') {
+                loadDashboardData();
+            }
         });
     }
 
@@ -1095,6 +1751,8 @@ window.viewDetails = viewDetails;
 window.dismissInsight = dismissInsight;
 window.shareSuccess = shareSuccess;
 window.showMetricCategory = showMetricCategory;
+window.viewInsightDetails = viewInsightDetails;
+window.exportInsight = exportInsight;
 window.uploadExcelFile = uploadExcelFile;
 window.loadStagedData = loadStagedData;
 window.editStagedIssue = editStagedIssue;

@@ -10,11 +10,13 @@ from typing import Any, Dict, List, Optional
 
 import uvicorn
 from api_models import (
+    Action,
     AnalysisRequest,
     ARTPerformance,
     ChatRequest,
     ChatResponse,
     DashboardData,
+    ExpectedOutcome,
     HealthScorecard,
     InsightFeedback,
     InsightResponse,
@@ -23,6 +25,7 @@ from api_models import (
     MetricValue,
     ReportRequest,
     ReportResponse,
+    RootCause,
     SystemStatus,
 )
 from database import Base, engine, get_db, init_db
@@ -130,13 +133,126 @@ async def root():
     }
 
 
+# Insights Generation Endpoint
+@app.post("/api/v1/insights/generate")
+async def generate_insights_endpoint(
+    scope: str = "portfolio",
+    pis: Optional[str] = None,
+    arts: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """Generate AI-powered insights using expert analysis (LLM)
+
+    This is a separate endpoint to allow on-demand insight generation
+    without slowing down the initial dashboard load.
+    """
+    try:
+        from agents.nodes.advanced_insights import generate_advanced_insights
+
+        # Parse filter parameters
+        selected_pis = (
+            [pi.strip() for pi in pis.split(",") if pi.strip()] if pis else []
+        )
+        selected_arts = (
+            [art.strip() for art in arts.split(",") if art.strip()] if arts else []
+        )
+
+        # Fetch ART comparison data for insights
+        art_comparison = []
+        if leadtime_service and leadtime_service.is_available():
+            try:
+                params = {}
+                if selected_arts:
+                    params["arts"] = selected_arts[:1]  # Use first ART
+                if selected_pis:
+                    params["pis"] = selected_pis[:1]  # Use first PI
+
+                # Get analysis summary
+                analysis_summary = leadtime_service.client.get_analysis_summary(
+                    **params
+                )
+
+                # Also get ART comparison for context
+                pip_data = leadtime_service.client.get_pip_data()
+                if pip_data:
+                    art_comparison = [
+                        {
+                            "art_name": art.get("art_name", "Unknown"),
+                            "flow_efficiency": float(
+                                art.get("flow_efficiency_percent", 0)
+                            ),
+                            "pi_predictability": float(art.get("pi_predictability", 0)),
+                            "quality_score": float(art.get("quality_score", 0)),
+                            "status": (
+                                "healthy"
+                                if float(art.get("flow_efficiency_percent", 0)) >= 70
+                                else "warning"
+                            ),
+                        }
+                        for art in pip_data
+                        if (not selected_arts or art.get("art_name") in selected_arts)
+                    ]
+
+                # Generate insights with LLM
+                insights = generate_advanced_insights(
+                    analysis_summary=analysis_summary,
+                    art_comparison=art_comparison,
+                    selected_arts=selected_arts,
+                    selected_pis=selected_pis,
+                    llm_service=llm_service,
+                )
+
+                print(f"✅ Generated {len(insights)} AI-powered insights")
+
+                return {
+                    "status": "success",
+                    "insights": [insight.dict() for insight in insights],
+                    "count": len(insights),
+                }
+            except Exception as e:
+                print(f"❌ Error generating insights: {e}")
+                import traceback
+
+                traceback.print_exc()
+                raise HTTPException(
+                    status_code=500, detail=f"Failed to generate insights: {str(e)}"
+                )
+        else:
+            raise HTTPException(
+                status_code=503, detail="Lead-time service not available"
+            )
+    except Exception as e:
+        print(f"❌ Error in generate insights endpoint: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # Dashboard Endpoints
 @app.get("/api/v1/dashboard", response_model=DashboardData)
 async def get_dashboard(
-    scope: str = "portfolio", time_range: str = "last_pi", db: Session = Depends(get_db)
+    scope: str = "portfolio",
+    time_range: str = "last_pi",
+    pis: Optional[str] = None,
+    arts: Optional[str] = None,
+    generate_insights: bool = False,
+    db: Session = Depends(get_db),
 ):
-    """Get dashboard data for specified scope"""
+    """Get dashboard data for specified scope and optional PI/ART filter(s)
+
+    Args:
+        pis: Comma-separated list of PIs (e.g., "24Q1,24Q2,25Q1")
+        arts: Comma-separated list of ARTs (e.g., "ACEART,C4ART,CIART")
+        generate_insights: Whether to generate AI-powered insights (expensive LLM calls)
+    """
     try:
+        # Parse filter parameters
+        selected_pis = []
+        if pis:
+            selected_pis = [pi.strip() for pi in pis.split(",") if pi.strip()]
+
+        selected_arts = []
+        if arts:
+            selected_arts = [art.strip() for art in arts.split(",") if art.strip()]
+
         # Get portfolio metrics from lead-time service
         portfolio_metrics = []
 
@@ -147,34 +263,145 @@ async def get_dashboard(
 
         if leadtime_service and leadtime_service.is_available():
             try:
+                # Apply PI filter if specified (use selected PIs or None for all)
+                pi_filter = selected_pis if selected_pis else None
+                print(f"🔍 Calculating portfolio metrics with PI filter: {pi_filter}")
+
                 # Get planning accuracy for PI Predictability
-                planning_data = leadtime_service.get_planning_accuracy()
-                if planning_data and "predictability_score" in planning_data:
-                    pi_predictability = round(planning_data["predictability_score"], 1)
+                # Fetch pip_data - if ARTs are specified, fetch per-ART to ensure completeness
+                if selected_arts:
+                    # Fetch per ART to ensure we get all pip data
+                    all_pip_features = []
+                    for art in selected_arts:
+                        art_pip_features = leadtime_service.client.get_pip_data(
+                            art=art, limit=10000
+                        )
+                        all_pip_features.extend(art_pip_features)
+                else:
+                    # Get all pip_data when no ART filter
+                    all_pip_features = leadtime_service.client.get_pip_data(limit=10000)
 
-                # Get lead-time statistics for Flow Efficiency
-                stats = leadtime_service.get_leadtime_statistics()
-                if stats and "stage_statistics" in stats:
-                    stage_stats = stats["stage_statistics"]
+                # Filter by selected PIs
+                filtered_pip_features = all_pip_features
+                if selected_pis:
+                    filtered_pip_features = [
+                        f for f in filtered_pip_features if f.get("pi") in selected_pis
+                    ]
 
-                    # Calculate flow efficiency: value-add time / total time
-                    # Value-add stages: in_progress, in_reviewing
-                    # Non-value-add: in_backlog, in_planned, in_analysis, waiting stages
-                    value_add_time = stage_stats.get("in_progress", {}).get(
-                        "mean", 0
-                    ) + stage_stats.get("in_reviewing", {}).get("mean", 0)
-
-                    total_time = sum(
-                        stage.get("mean", 0) for stage in stage_stats.values()
+                # Calculate PI Predictability from filtered data
+                # Match DL Webb App logic: delivered means plc_delivery is not null/empty/"0"
+                if filtered_pip_features:
+                    planned_committed = sum(
+                        1
+                        for f in filtered_pip_features
+                        if f.get("planned_committed", 0) > 0
                     )
 
-                    if total_time > 0:
-                        flow_efficiency = round((value_add_time / total_time) * 100, 1)
+                    # Delivered: planned_committed > 0 AND plc_delivery is truthy and not "0"
+                    def is_delivered(plc_delivery):
+                        if not plc_delivery:
+                            return False
+                        if plc_delivery in ["0", "", "null"]:
+                            return False
+                        return True
 
-                # Get throughput
-                throughput_data = leadtime_service.get_throughput_metrics()
-                if throughput_data and "items_delivered" in throughput_data:
-                    throughput_count = throughput_data["items_delivered"]
+                    delivered = sum(
+                        1
+                        for f in filtered_pip_features
+                        if f.get("planned_committed", 0) > 0
+                        and is_delivered(f.get("plc_delivery"))
+                    )
+
+                    if planned_committed > 0:
+                        pi_predictability = round(
+                            (delivered / planned_committed) * 100, 1
+                        )
+                        filter_desc = []
+                        if selected_pis:
+                            filter_desc.append(f"{len(selected_pis)} PIs")
+                        if selected_arts:
+                            filter_desc.append(f"{len(selected_arts)} ARTs")
+                        print(
+                            f"✅ PI Predictability: {pi_predictability}% (filtered by {', '.join(filter_desc) if filter_desc else 'all'})"
+                        )
+
+                # Get lead-time statistics for Flow Efficiency
+                # Fetch features - if ARTs are specified, fetch per-ART to avoid missing data
+                if selected_arts:
+                    # Fetch per ART to ensure we get all features
+                    all_features = []
+                    for art in selected_arts:
+                        art_features = leadtime_service.client.get_flow_leadtime(
+                            art=art, limit=10000
+                        )
+                        all_features.extend(art_features)
+                else:
+                    # Get all features when no ART filter
+                    all_features = leadtime_service.client.get_flow_leadtime(
+                        limit=10000
+                    )
+
+                # Filter by selected PIs if specified
+                filtered_features = all_features
+                if selected_pis:
+                    filtered_features = [
+                        f for f in filtered_features if f.get("pi") in selected_pis
+                    ]
+
+                if filtered_features:
+                    value_add_times = []
+                    total_times = []
+
+                    for feature in filtered_features:
+                        value_add = feature.get("in_progress", 0) + feature.get(
+                            "in_reviewing", 0
+                        )
+                        total = feature.get("total_leadtime", 0)
+
+                        if total > 0:
+                            value_add_times.append(value_add)
+                            total_times.append(total)
+
+                    if value_add_times and total_times:
+                        avg_value_add = sum(value_add_times) / len(value_add_times)
+                        avg_total = sum(total_times) / len(total_times)
+                        flow_efficiency = (
+                            round((avg_value_add / avg_total) * 100, 1)
+                            if avg_total > 0
+                            else 0
+                        )
+                        print(
+                            f"✅ Flow Efficiency: {flow_efficiency}% from {len(filtered_features)} features"
+                        )
+
+                # Get throughput - use leadtime_thr_data which contains ALL features delivered in a PI
+                # This includes features planned in this PI OR previous PIs but delivered during this PI time period
+                # Note: Data may have sync delays, so recent PIs might show incomplete counts
+                if selected_arts:
+                    # Fetch per ART to ensure completeness
+                    all_throughput_features = []
+                    for art in selected_arts:
+                        art_throughput = leadtime_service.client.get_throughput_data(
+                            art=art, limit=10000
+                        )
+                        all_throughput_features.extend(art_throughput)
+                else:
+                    # Get all throughput data when no ART filter
+                    all_throughput_features = (
+                        leadtime_service.client.get_throughput_data(limit=10000)
+                    )
+
+                # Filter by selected PIs
+                filtered_throughput = all_throughput_features
+                if selected_pis:
+                    filtered_throughput = [
+                        f for f in filtered_throughput if f.get("pi") in selected_pis
+                    ]
+
+                throughput_count = len(filtered_throughput)
+                print(
+                    f"✅ Features Delivered: {throughput_count} (from leadtime_thr_data - may have sync delays)"
+                )
 
             except Exception as e:
                 print(f"⚠️  Could not fetch metrics from lead-time service: {e}")
@@ -198,9 +425,9 @@ async def get_dashboard(
             ),
             MetricValue(
                 name="Features Delivered",
-                value=throughput_count if throughput_count > 0 else 156.0,
+                value=throughput_count,
                 unit="features",
-                status="healthy",
+                status="healthy" if throughput_count >= 150 else "warning",
                 trend="up",
                 benchmark={"target": 150.0},
             ),
@@ -220,14 +447,31 @@ async def get_dashboard(
             try:
                 # Get available ARTs from lead-time server
                 filters = leadtime_service.get_available_filters()
-                arts_list = filters.get("arts", [])[:10]  # Limit to first 10 ARTs
+                all_arts = filters.get("arts", [])
+
+                # Filter by selected ARTs if specified
+                if selected_arts:
+                    arts_list = [art for art in all_arts if art in selected_arts]
+                    print(
+                        f"🎯 Filtering to {len(arts_list)} ARTs: {', '.join(arts_list)}"
+                    )
+                else:
+                    arts_list = all_arts
+                    print(f"📊 Processing all {len(arts_list)} ARTs")
 
                 for art_name in arts_list:
                     try:
                         # Get raw feature data for this ART to calculate accurate metrics
+                        # Note: API expects single PI, so we filter in memory if multiple PIs selected
                         features = leadtime_service.client.get_flow_leadtime(
                             art=art_name, limit=10000
                         )
+
+                        # Filter by selected PIs if specified
+                        if selected_pis:
+                            features = [
+                                f for f in features if f.get("pi") in selected_pis
+                            ]
 
                         if features and len(features) > 0:
                             # Calculate flow efficiency from actual feature data
@@ -264,6 +508,14 @@ async def get_dashboard(
                             pip_features = leadtime_service.client.get_pip_data(
                                 art=art_name, limit=10000
                             )
+
+                            # Filter by selected PIs if specified
+                            if selected_pis:
+                                pip_features = [
+                                    f
+                                    for f in pip_features
+                                    if f.get("pi") in selected_pis
+                                ]
                             if pip_features:
                                 planned_committed = sum(
                                     1
@@ -283,7 +535,7 @@ async def get_dashboard(
                             else:
                                 pi_predictability = 0
 
-                            # Quality score: Estimate based on consistency (lower is better)
+                            # Quality score: Estimate based on consistency (lower variability = better)
                             # Using coefficient of variation of total lead time
                             if total_times and len(total_times) > 1:
                                 import statistics
@@ -291,20 +543,20 @@ async def get_dashboard(
                                 mean_lt = statistics.mean(total_times)
                                 stdev_lt = statistics.stdev(total_times)
                                 coeff_var = (stdev_lt / mean_lt) if mean_lt > 0 else 1.0
-                                # Convert to 1-5 scale (lower variability = better quality)
+                                # Convert to percentage score (lower variability = higher score)
                                 quality_score = max(
-                                    1.0, min(5.0, 5.0 - (coeff_var * 2))
+                                    0.0, min(100.0, 100.0 - (coeff_var * 50))
                                 )
                             else:
-                                quality_score = 3.0
+                                quality_score = 50.0
 
                             # Status based on PI predictability
                             if pi_predictability >= 70:
-                                status = "healthy"
+                                status_val = "healthy"
                             elif pi_predictability >= 50:
-                                status = "warning"
+                                status_val = "warning"
                             else:
-                                status = "critical"
+                                status_val = "critical"
 
                             art_comparison.append(
                                 {
@@ -312,7 +564,7 @@ async def get_dashboard(
                                     "flow_efficiency": round(flow_efficiency, 1),
                                     "pi_predictability": round(pi_predictability, 1),
                                     "quality_score": round(quality_score, 1),
-                                    "status": status,
+                                    "status": status_val,
                                 }
                             )
                         else:
@@ -320,18 +572,33 @@ async def get_dashboard(
                             art_comparison.append(
                                 {
                                     "art_name": art_name,
-                                    "flow_efficiency": 0,
-                                    "pi_predictability": 0,
-                                    "quality_score": 0,
+                                    "flow_efficiency": 0.0,
+                                    "pi_predictability": 0.0,
+                                    "quality_score": 0.0,
                                     "status": "no_data",
                                 }
                             )
                     except Exception as e:
                         print(f"⚠️  Error calculating metrics for ART {art_name}: {e}")
+                        import traceback
+
+                        traceback.print_exc()
+                        art_comparison.append(
+                            {
+                                "art_name": art_name,
+                                "flow_efficiency": 0.0,
+                                "pi_predictability": 0.0,
+                                "quality_score": 0.0,
+                                "status": "error",
+                            }
+                        )
                         continue
 
             except Exception as e:
                 print(f"⚠️  Could not fetch ART data from lead-time service: {e}")
+                import traceback
+
+                traceback.print_exc()
 
         # Fallback to sample data if lead-time service not available
         if not art_comparison:
@@ -385,11 +652,288 @@ async def get_dashboard(
                 )
             )
 
+        # Generate automatic insights only if requested (expensive LLM operation)
+        if generate_insights and not recent_insights:
+            from agents.nodes.advanced_insights import generate_advanced_insights
+
+            # Try to fetch comprehensive analysis summary for advanced insights
+            if leadtime_service and leadtime_service.is_available() and art_comparison:
+                try:
+                    # Build params for analysis summary - use lists for arts and pis
+                    params = {}
+                    if selected_arts:
+                        params["arts"] = selected_arts[
+                            :1
+                        ]  # Use first ART for summary analysis
+                    if selected_pis:
+                        params["pis"] = selected_pis[
+                            :1
+                        ]  # Use first PI for summary analysis
+
+                    # Fetch comprehensive analysis
+                    analysis_summary = leadtime_service.client.get_analysis_summary(
+                        **params
+                    )
+
+                    # Generate advanced insights with LLM expert commentary
+                    recent_insights = generate_advanced_insights(
+                        analysis_summary=analysis_summary,
+                        art_comparison=art_comparison,
+                        selected_arts=selected_arts,
+                        selected_pis=selected_pis,
+                        llm_service=llm_service,
+                    )
+
+                    print(
+                        f"✅ Generated {len(recent_insights)} advanced insights from analysis summary"
+                    )
+                    if recent_insights:
+                        print(
+                            f"   First insight: {recent_insights[0].title if hasattr(recent_insights[0], 'title') else 'Unknown'}"
+                        )
+                except Exception as e:
+                    print(f"⚠️  Could not generate advanced insights: {e}")
+                    import traceback
+
+                    traceback.print_exc()
+                    # Fall back to basic insights
+                    recent_insights = []
+
+        # Fallback to basic insights if advanced generation failed
+        if not recent_insights and art_comparison:
+            from datetime import datetime
+
+            # Flow efficiency insights
+            low_flow_arts = [
+                art for art in art_comparison if art.get("flow_efficiency", 0) < 30
+            ]
+            if low_flow_arts:
+                recent_insights.append(
+                    InsightResponse(
+                        id=0,
+                        title=f"Low Flow Efficiency Detected in {len(low_flow_arts)} ART(s)",
+                        severity="warning",
+                        confidence=0.85,
+                        scope="portfolio",
+                        scope_id=None,
+                        observation=f"ARTs with flow efficiency below 30%: {', '.join([art['art_name'] for art in low_flow_arts[:3]])}",
+                        interpretation="These teams are spending too much time waiting (in backlog, planned stages) vs. active work.",
+                        root_causes=[
+                            RootCause(
+                                description="Excessive work in progress (WIP)",
+                                evidence=[],
+                                confidence=0.8,
+                                reference=None,
+                            ),
+                            RootCause(
+                                description="Bottlenecks in workflow",
+                                evidence=[],
+                                confidence=0.75,
+                                reference=None,
+                            ),
+                        ],
+                        recommended_actions=[
+                            Action(
+                                timeframe="short-term",
+                                description="Implement WIP limits",
+                                owner="ART leadership",
+                                effort="medium",
+                                dependencies=[],
+                                success_signal="Reduced cycle time",
+                            ),
+                            Action(
+                                timeframe="medium-term",
+                                description="Identify and remove bottlenecks",
+                                owner="Process improvement team",
+                                effort="high",
+                                dependencies=[],
+                                success_signal="Improved flow efficiency",
+                            ),
+                        ],
+                        expected_outcomes=ExpectedOutcome(
+                            metrics_to_watch=["flow_efficiency", "cycle_time"],
+                            leading_indicators=["WIP reduction", "Bottleneck removal"],
+                            lagging_indicators=["Increased throughput"],
+                            timeline="2-3 PIs",
+                            risks=["Team resistance to change"],
+                        ),
+                        metric_references=[
+                            f"{art['art_name']}: {art['flow_efficiency']}%"
+                            for art in low_flow_arts[:3]
+                        ],
+                        evidence=["Historical flow data", "ART comparison metrics"],
+                        status="active",
+                        created_at=datetime.now(),
+                    )
+                )
+
+            # PI Predictability insights
+            low_predictability_arts = [
+                art for art in art_comparison if art.get("pi_predictability", 0) < 70
+            ]
+            if low_predictability_arts:
+                recent_insights.append(
+                    InsightResponse(
+                        id=0,
+                        title=f"Planning Accuracy Below Target in {len(low_predictability_arts)} ART(s)",
+                        severity="warning",
+                        confidence=0.9,
+                        scope="portfolio",
+                        scope_id=None,
+                        observation=f"{len(low_predictability_arts)} ARTs are below 70% PI Predictability target",
+                        interpretation="Teams are not consistently delivering what they commit to during PI Planning.",
+                        root_causes=[
+                            RootCause(
+                                description="Over-commitment during planning",
+                                evidence=[],
+                                confidence=0.85,
+                                reference=None,
+                            ),
+                            RootCause(
+                                description="Mid-PI scope changes",
+                                evidence=[],
+                                confidence=0.7,
+                                reference=None,
+                            ),
+                        ],
+                        recommended_actions=[
+                            Action(
+                                timeframe="short-term",
+                                description="Review PI Planning process and capacity calculation",
+                                owner="RTE",
+                                effort="low",
+                                dependencies=[],
+                                success_signal="More realistic commitments",
+                            ),
+                            Action(
+                                timeframe="medium-term",
+                                description="Implement 20% buffer for unknowns",
+                                owner="Team leads",
+                                effort="low",
+                                dependencies=[],
+                                success_signal="Improved predictability",
+                            ),
+                        ],
+                        expected_outcomes=ExpectedOutcome(
+                            metrics_to_watch=["pi_predictability"],
+                            leading_indicators=[
+                                "More conservative planning",
+                                "Buffer utilization",
+                            ],
+                            lagging_indicators=["Stakeholder satisfaction"],
+                            timeline="1-2 PIs",
+                            risks=["Perceived as under-committing"],
+                        ),
+                        metric_references=[
+                            f"{art['art_name']}: {art['pi_predictability']}%"
+                            for art in low_predictability_arts[:3]
+                        ],
+                        evidence=["PI planning data", "Delivery metrics"],
+                        status="active",
+                        created_at=datetime.now(),
+                    )
+                )
+
+            # High performers
+            high_performers = [
+                art
+                for art in art_comparison
+                if art.get("flow_efficiency", 0) > 50
+                and art.get("pi_predictability", 0) > 80
+            ]
+            if high_performers:
+                recent_insights.append(
+                    InsightResponse(
+                        id=0,
+                        title=f"High Performing Teams: {', '.join([art['art_name'] for art in high_performers[:3]])}",
+                        severity="info",
+                        confidence=0.95,
+                        scope="portfolio",
+                        scope_id=None,
+                        observation=f"{len(high_performers)} ART(s) showing excellent flow efficiency (>50%) and predictability (>80%)",
+                        interpretation="These teams have optimized workflows and reliable planning practices worth sharing.",
+                        root_causes=[
+                            RootCause(
+                                description="Effective WIP management",
+                                evidence=[],
+                                confidence=0.9,
+                                reference=None,
+                            ),
+                            RootCause(
+                                description="Strong team collaboration and practices",
+                                evidence=[],
+                                confidence=0.85,
+                                reference=None,
+                            ),
+                        ],
+                        recommended_actions=[
+                            Action(
+                                timeframe="short-term",
+                                description="Conduct Communities of Practice sessions to share best practices",
+                                owner="Portfolio leadership",
+                                effort="low",
+                                dependencies=[],
+                                success_signal="Knowledge sharing sessions held",
+                            ),
+                            Action(
+                                timeframe="medium-term",
+                                description="Document and replicate successful patterns",
+                                owner="CoP leaders",
+                                effort="medium",
+                                dependencies=[],
+                                success_signal="Practice guides published",
+                            ),
+                        ],
+                        expected_outcomes=ExpectedOutcome(
+                            metrics_to_watch=["flow_efficiency", "pi_predictability"],
+                            leading_indicators=[
+                                "Practice adoption",
+                                "Cross-team collaboration",
+                            ],
+                            lagging_indicators=["Portfolio-wide improvement"],
+                            timeline="2-3 PIs",
+                            risks=["Context differences between teams"],
+                        ),
+                        metric_references=[
+                            f"{art['art_name']}: {art['flow_efficiency']}% flow, {art['pi_predictability']}% predictability"
+                            for art in high_performers[:3]
+                        ],
+                        evidence=["Performance metrics", "ART comparison data"],
+                        status="active",
+                        created_at=datetime.now(),
+                    )
+                )
+
+        # Get PI data from lead-time service
+        current_pi = None
+        available_pis = []
+
+        if leadtime_service and leadtime_service.is_available():
+            try:
+                filters = leadtime_service.get_available_filters()
+                all_pis = filters.get("pis", [])
+                # Filter to show only PIs from 24Q1 onwards and sort descending
+                available_pis = sorted(
+                    [pi for pi in all_pis if pi >= "24Q1"], reverse=True
+                )
+                # Set current PI to the most recent one
+                if available_pis:
+                    current_pi = available_pis[0]
+
+                # Log selected PIs if any
+                if selected_pis:
+                    print(f"📅 Filtering by PIs: {selected_pis}")
+            except Exception as e:
+                print(f"⚠️  Could not fetch PI data: {e}")
+
         return DashboardData(
             portfolio_metrics=portfolio_metrics,
             art_comparison=art_comparison,
             recent_insights=recent_insights,
             trends={},
+            current_pi=current_pi,
+            available_pis=available_pis,
+            selected_pis=selected_pis if selected_pis else None,
         )
     except Exception as e:
         raise HTTPException(
