@@ -48,7 +48,20 @@ curl http://localhost:8850/api/leadtime/status
 }
 ```
 
-### 3. Get Available Filters
+### 3. Get Real ARTs, Teams, and PIs
+
+```bash
+# Get all ARTs (14 available)
+curl http://localhost:8850/api/arts
+
+# Get all teams (100+ available)
+curl http://localhost:8850/api/teams
+
+# Get all Program Increments (24 available)
+curl http://localhost:8850/api/pis
+```
+
+### 4. Get Available Filters
 
 ```bash
 curl http://localhost:8850/api/leadtime/filters

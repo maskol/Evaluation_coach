@@ -23,6 +23,7 @@ function generateSessionId() {
 document.addEventListener('DOMContentLoaded', () => {
     console.log('🎯 Evaluation Coach initialized');
     checkBackendHealth();
+    loadARTsAndTeams();
     loadDashboardData();
     updateStatusBar('Application ready');
     updateContext();
@@ -43,6 +44,53 @@ async function checkBackendHealth() {
     }
 }
 
+// Load ARTs and Teams from API
+async function loadARTsAndTeams() {
+    try {
+        // Load ARTs
+        const artsResponse = await fetch(`${API_BASE_URL}/arts`);
+        if (artsResponse.ok) {
+            const artsData = await artsResponse.json();
+            const artSelector = document.getElementById('artSelector');
+            if (artSelector && artsData.arts) {
+                // Clear existing options except the first one
+                artSelector.innerHTML = '<option value="">-- Select ART --</option>';
+
+                // Add real ARTs
+                artsData.arts.forEach(art => {
+                    const option = document.createElement('option');
+                    option.value = art;
+                    option.textContent = art;
+                    artSelector.appendChild(option);
+                });
+                console.log(`✅ Loaded ${artsData.count} ARTs`);
+            }
+        }
+
+        // Load Teams
+        const teamsResponse = await fetch(`${API_BASE_URL}/teams`);
+        if (teamsResponse.ok) {
+            const teamsData = await teamsResponse.json();
+            const teamSelector = document.getElementById('teamSelector');
+            if (teamSelector && teamsData.teams) {
+                // Clear existing options except the first one
+                teamSelector.innerHTML = '<option value="">-- Select Team --</option>';
+
+                // Add real teams
+                teamsData.teams.forEach(team => {
+                    const option = document.createElement('option');
+                    option.value = team;
+                    option.textContent = team;
+                    teamSelector.appendChild(option);
+                });
+                console.log(`✅ Loaded ${teamsData.count} teams`);
+            }
+        }
+    } catch (error) {
+        console.warn('⚠️ Could not load ARTs/Teams:', error);
+    }
+}
+
 // Load dashboard data from API
 async function loadDashboardData() {
     try {
@@ -50,27 +98,121 @@ async function loadDashboardData() {
         if (response.ok) {
             const data = await response.json();
             console.log('📊 Dashboard data loaded:', data);
-            // UI would be updated here with real data
+            updateDashboardUI(data);
         }
     } catch (error) {
         console.log('Using demo dashboard data');
+        updateStatusBar('Demo mode - Could not load real data');
     }
+}
+
+// Update Dashboard UI with real data
+function updateDashboardUI(data) {
+    if (!data) return;
+
+    // Update portfolio metrics
+    if (data.portfolio_metrics) {
+        const metricsContainer = document.getElementById('portfolioMetrics');
+        if (metricsContainer) {
+            metricsContainer.innerHTML = data.portfolio_metrics.map(metric => {
+                const statusColorMap = {
+                    'good': '#34C759',
+                    'warning': '#FF9500',
+                    'critical': '#FF3B30'
+                };
+                const statusColor = statusColorMap[metric.status] || '#667eea';
+
+                const trendIcon = metric.trend === 'up' ? '↑' : metric.trend === 'down' ? '↓' : '→';
+
+                return `
+                    <div style="background: linear-gradient(135deg, ${statusColor} 0%, ${adjustColor(statusColor, -30)} 100%); padding: 20px; border-radius: 12px; color: white; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);">
+                        <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">${metric.name}</div>
+                        <div style="font-size: 32px; font-weight: bold; margin-bottom: 4px;">${metric.value}${metric.unit || '%'}</div>
+                        <div style="font-size: 12px; opacity: 0.8;">${trendIcon} ${metric.change || 'N/A'}</div>
+                    </div>
+                `;
+            }).join('');
+        }
+    }
+
+    // Update ART comparison table
+    if (data.art_comparison) {
+        const artTableBody = document.getElementById('artComparisonBody');
+        if (artTableBody) {
+            artTableBody.innerHTML = data.art_comparison.map(art => {
+                const statusColor = art.status === 'healthy' ? '#34C759' :
+                    art.status === 'warning' ? '#FF9500' : '#FF3B30';
+                const statusLabel = art.status.charAt(0).toUpperCase() + art.status.slice(1);
+
+                return `
+                    <tr style="border-bottom: 1px solid #e9ecef;">
+                        <td style="padding: 12px; font-weight: 600;">${art.art_name}</td>
+                        <td style="padding: 12px;">${art.flow_efficiency?.toFixed(1) || 'N/A'}%</td>
+                        <td style="padding: 12px;">${art.pi_predictability?.toFixed(1) || 'N/A'}%</td>
+                        <td style="padding: 12px;">${art.quality_score?.toFixed(1) || 'N/A'}%</td>
+                        <td style="padding: 12px;">
+                            <span style="background: ${statusColor}; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">
+                                ${statusLabel}
+                            </span>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+    }
+
+    // Update recent insights
+    if (data.recent_insights) {
+        const insightsContainer = document.getElementById('recentInsights');
+        if (insightsContainer) {
+            insightsContainer.innerHTML = data.recent_insights.map(insight => {
+                const severityMap = {
+                    'critical': { color: '#FF3B30', bg: '#fff3cd', icon: '🔴' },
+                    'warning': { color: '#FF9500', bg: '#fff3cd', icon: '⚠️' },
+                    'info': { color: '#007AFF', bg: '#d1ecf1', icon: 'ℹ️' }
+                };
+                const severity = severityMap[insight.severity] || severityMap['info'];
+
+                return `
+                    <div style="background: ${severity.bg}; padding: 16px; border-left: 4px solid ${severity.color}; border-radius: 4px; margin-bottom: 12px;">
+                        <div style="font-weight: 600; color: ${severity.color}; margin-bottom: 8px;">
+                            ${severity.icon} ${insight.title}
+                        </div>
+                        <div style="font-size: 14px; color: #333;">
+                            ${insight.observation || insight.description || ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+    }
+
+    updateStatusBar('Dashboard updated with real data');
+}
+
+// Helper function to adjust color brightness
+function adjustColor(color, amount) {
+    const num = parseInt(color.slice(1), 16);
+    const r = Math.max(0, Math.min(255, (num >> 16) + amount));
+    const g = Math.max(0, Math.min(255, ((num >> 8) & 0x00FF) + amount));
+    const b = Math.max(0, Math.min(255, (num & 0x0000FF) + amount));
+    return '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0');
 }
 
 // Scope Selection
 function selectScope(scope) {
     appState.scope = scope;
-    
+
     // Update button states
     document.querySelectorAll('.sidebar-section button').forEach(btn => {
         btn.classList.remove('active');
     });
     event.target.classList.add('active');
-    
+
     // Show/hide ART and Team selectors
     const artSelection = document.getElementById('artSelection');
     const teamSelection = document.getElementById('teamSelection');
-    
+
     if (scope === 'art') {
         artSelection.style.display = 'block';
         teamSelection.style.display = 'none';
@@ -85,7 +227,7 @@ function selectScope(scope) {
 
 async function generateScorecard() {
     updateStatusBar('Generating scorecard...');
-    
+
     try {
         const response = await fetch(`${API_BASE_URL}/v1/scorecard`, {
             method: 'POST',
@@ -99,11 +241,11 @@ async function generateScorecard() {
                 metric_focus: appState.metricFocus
             })
         });
-        
+
         if (response.ok) {
             const scorecard = await response.json();
             console.log('✅ Scorecard generated:', scorecard);
-            
+
             const message = {
                 type: 'agent',
                 content: `📋 <strong>Scorecard Generated for ${capitalizeFirst(appState.scope)}</strong><br><br>
@@ -114,13 +256,13 @@ async function generateScorecard() {
                     ${Object.entries(scorecard.dimension_scores).map(([dim, score]) => `• ${capitalizeFirst(dim)}: ${score.toFixed(0)}/100`).join('<br>')}`,
                 timestamp: new Date()
             };
-            
+
             if (appState.activeTab === 'chat') {
                 addMessage(message);
             } else {
                 appState.messages.push(message);
             }
-            
+
             updateStatusBar('Scorecard generated successfully from API');
         }
     } catch (error) {
@@ -143,20 +285,20 @@ function generateScorecardDemo() {
             <strong>Top Recommendation:</strong> Address high WIP in Customer Experience ART to improve flow efficiency further.`,
         timestamp: new Date()
     };
-    
+
     if (appState.activeTab === 'chat') {
         addMessage(message);
     } else {
         appState.messages.push(message);
     }
-    
+
     updateStatusBar('Scorecard generated (demo mode)');
 }
 
 // Metric Focus Selection
 function setMetricFocus(focus) {
     appState.metricFocus = focus;
-    
+
     // Update button states
     document.querySelectorAll('#metricFocusButtons .sidebar-button').forEach(btn => {
         btn.classList.remove('active');
@@ -164,7 +306,7 @@ function setMetricFocus(focus) {
     if (event && event.target) {
         event.target.classList.add('active');
     }
-    
+
     updateStatusBar(`Metric focus changed to ${focus}`);
     updateContext();
 }
@@ -180,7 +322,7 @@ function updateContext() {
 
 async function generateInsights() {
     updateStatusBar('Analyzing data and generating insights...');
-    
+
     try {
         const response = await fetch(`${API_BASE_URL}/v1/insights/generate`, {
             method: 'POST',
@@ -193,17 +335,17 @@ async function generateInsights() {
                 time_range: appState.timeRange
             })
         });
-        
+
         if (response.ok) {
             const insights = await response.json();
             console.log('✅ Insights generated:', insights);
-            
-            const summaryText = insights.map((insight, idx) => 
+
+            const summaryText = insights.map((insight, idx) =>
                 `<strong>${idx + 1}. ${insight.severity.toUpperCase()}: ${insight.title}</strong><br>
                 Confidence: ${insight.confidence.toFixed(0)}% | Scope: ${insight.scope}<br>
                 ${insight.observation.substring(0, 120)}...`
             ).join('<br><br>');
-            
+
             const message = {
                 type: 'agent',
                 content: `💡 <strong>${insights.length} Insights Generated</strong><br><br>
@@ -211,13 +353,13 @@ async function generateInsights() {
                     Switch to the <strong>Insights</strong> tab for detailed analysis and recommendations.`,
                 timestamp: new Date()
             };
-            
+
             if (appState.activeTab === 'chat') {
                 addMessage(message);
             } else {
                 appState.messages.push(message);
             }
-            
+
             updateStatusBar(`Insights generated - ${insights.length} actionable items found`);
         }
     } catch (error) {
@@ -243,20 +385,20 @@ function generateInsightsDemo() {
             Switch to the <strong>Insights</strong> tab for detailed analysis and recommendations.`,
         timestamp: new Date()
     };
-    
+
     if (appState.activeTab === 'chat') {
         addMessage(message);
     } else {
         appState.messages.push(message);
     }
-    
+
     updateStatusBar('Insights generated - 3 actionable items found');
 }
 
 // Export Report
 function exportReport() {
     updateStatusBar('Preparing report for export...');
-    
+
     setTimeout(() => {
         alert('📥 Report Export\n\nYour report has been generated and would be downloaded as:\n\n"evaluation_coach_report_' + new Date().toISOString().split('T')[0] + '.pdf"\n\nContents:\n• Health Scorecard\n• Key Metrics Dashboard\n• Actionable Insights\n• Improvement Recommendations\n\n(Demo mode - actual export requires backend integration)');
         updateStatusBar('Report export completed');
@@ -265,12 +407,12 @@ function exportReport() {
 
 async function sendMessage(event) {
     event.preventDefault();
-    
+
     const input = document.getElementById('messageInput');
     const messageText = input.value.trim();
-    
+
     if (!messageText) return;
-    
+
     // Add user message
     const userMessage = {
         type: 'user',
@@ -278,15 +420,15 @@ async function sendMessage(event) {
         timestamp: new Date()
     };
     addMessage(userMessage);
-    
+
     // Clear input
     input.value = '';
-    
+
     // Disable send button
     const sendButton = document.getElementById('sendButton');
     sendButton.disabled = true;
     sendButton.textContent = 'Thinking...';
-    
+
     try {
         // Send to API
         const response = await fetch(`${API_BASE_URL}/v1/chat`, {
@@ -305,7 +447,7 @@ async function sendMessage(event) {
                 }
             })
         });
-        
+
         if (response.ok) {
             const data = await response.json();
             const agentMessage = {
@@ -338,18 +480,18 @@ async function sendMessage(event) {
 function switchMainTab(tabName) {
     console.log('Switching to tab:', tabName);
     appState.activeTab = tabName;
-    
+
     // Update tab button states
     document.querySelectorAll('.main-tab').forEach(tab => {
         tab.classList.remove('active');
     });
-    
+
     // Add active class to clicked button
     const clickedButton = window.event?.target || document.querySelector(`[onclick*="${tabName}"]`);
     if (clickedButton) {
         clickedButton.classList.add('active');
     }
-    
+
     // Show/hide tab content
     const tabs = ['dashboard', 'chat', 'insights', 'metrics', 'admin'];
     tabs.forEach(tab => {
@@ -358,7 +500,7 @@ function switchMainTab(tabName) {
             content.style.display = tab === tabName ? 'flex' : 'none';
         }
     });
-    
+
     updateStatusBar(`Switched to ${tabName} view`);
 }
 
@@ -368,27 +510,27 @@ window.switchMainTab = switchMainTab;
 // Add message to chat
 function addMessage(message) {
     const messagesContainer = document.getElementById('chatMessages');
-    
+
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${message.type}`;
-    
+
     const contentDiv = document.createElement('div');
     contentDiv.className = 'message-content';
     contentDiv.innerHTML = message.content;
-    
+
     messageDiv.appendChild(contentDiv);
     messagesContainer.appendChild(messageDiv);
-    
+
     // Scroll to bottom
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
-    
+
     appState.messages.push(message);
 }
 
 // Generate AI response based on user input
 function generateAIResponse(input) {
     const lowerInput = input.toLowerCase();
-    
+
     // Keyword-based responses
     if (lowerInput.includes('wip') || lowerInput.includes('work in progress')) {
         return `📊 <strong>Work in Progress Analysis</strong><br><br>
@@ -399,7 +541,7 @@ function generateAIResponse(input) {
             However, Customer Experience ART shows 2.3x ratio, which requires attention. 
             Would you like me to generate specific recommendations for this ART?`;
     }
-    
+
     if (lowerInput.includes('flow') || lowerInput.includes('efficiency')) {
         return `📈 <strong>Flow Efficiency Insights</strong><br><br>
             Your current flow efficiency: <strong>67%</strong><br>
@@ -412,7 +554,7 @@ function generateAIResponse(input) {
             • Cross-team collaboration improvements<br><br>
             Platform Engineering ART is leading at 72%. Want to see their best practices?`;
     }
-    
+
     if (lowerInput.includes('quality') || lowerInput.includes('defect')) {
         return `✅ <strong>Quality Metrics Overview</strong><br><br>
             Defect Escape Rate: <strong>4.2%</strong><br>
@@ -425,7 +567,7 @@ function generateAIResponse(input) {
             3. Add automated testing pipeline<br><br>
             Would you like detailed analysis for Mobile Apps team?`;
     }
-    
+
     if (lowerInput.includes('team') || lowerInput.includes('stability')) {
         return `👥 <strong>Team Stability Analysis</strong><br><br>
             Overall team stability: <strong>89%</strong><br>
@@ -435,7 +577,7 @@ function generateAIResponse(input) {
             This is a key enabler for your strong flow efficiency results.<br><br>
             Want to see team-specific breakdowns?`;
     }
-    
+
     if (lowerInput.includes('scorecard') || lowerInput.includes('health')) {
         return `📋 <strong>Health Scorecard Request</strong><br><br>
             I can generate a comprehensive scorecard for:<br>
@@ -445,7 +587,7 @@ function generateAIResponse(input) {
             Your current context: <strong>${capitalizeFirst(appState.scope)}</strong><br><br>
             Use the <strong>"Generate Scorecard"</strong> button in the sidebar, or tell me which scope you'd like to analyze!`;
     }
-    
+
     if (lowerInput.includes('improve') || lowerInput.includes('recommendation')) {
         return `💡 <strong>Improvement Recommendations</strong><br><br>
             Based on your current metrics, top 3 priorities:<br><br>
@@ -457,7 +599,7 @@ function generateAIResponse(input) {
             Platform Engineering's success patterns can be shared across ARTs.<br><br>
             Click <strong>"Generate Insights"</strong> for detailed action plans!`;
     }
-    
+
     // Default response
     return `🤔 <strong>I can help you with:</strong><br><br>
         • <strong>Metrics analysis</strong> - Ask about flow, quality, predictability, or WIP<br>
@@ -497,9 +639,9 @@ function showMetricCategory(category) {
         tab.classList.remove('active');
     });
     event.target.classList.add('active');
-    
+
     updateStatusBar(`Viewing ${category} metrics`);
-    
+
     // In a full implementation, this would show/hide different metric categories
     // For now, we just show the flow metrics as a demo
 }
@@ -525,7 +667,7 @@ document.addEventListener('DOMContentLoaded', () => {
             updateContext();
         });
     }
-    
+
     const teamSelector = document.getElementById('teamSelector');
     if (teamSelector) {
         teamSelector.addEventListener('change', (e) => {
@@ -533,7 +675,7 @@ document.addEventListener('DOMContentLoaded', () => {
             updateContext();
         });
     }
-    
+
     const timeRange = document.getElementById('timeRange');
     if (timeRange) {
         timeRange.addEventListener('change', (e) => {
@@ -558,30 +700,30 @@ let currentEditingRow = null;
 async function uploadExcelFile() {
     const fileInput = document.getElementById('excelFileInput');
     const file = fileInput.files[0];
-    
+
     if (!file) {
         showImportStatus('Please select a file first', 'error');
         return;
     }
-    
+
     const formData = new FormData();
     formData.append('file', file);
-    
+
     try {
         updateStatusBar('Uploading file...');
         showImportStatus('Uploading and parsing Excel file...', 'info');
-        
+
         const response = await fetch(`${API_BASE_URL}/v1/admin/import/upload`, {
             method: 'POST',
             body: formData
         });
-        
+
         const result = await response.json();
-        
+
         if (result.success) {
             showImportStatus(`✅ Successfully imported ${result.total_issues} issues! ${result.issues_with_errors} errors, ${result.issues_with_warnings} warnings.`, 'success');
             updateStatusBar(`Imported ${result.total_issues} issues for review`);
-            
+
             // Load staged data
             await loadStagedData();
         } else {
@@ -597,14 +739,14 @@ function showImportStatus(message, type) {
     const statusDiv = document.getElementById('importStatus');
     statusDiv.style.display = 'block';
     statusDiv.innerHTML = message;
-    
+
     const colors = {
         success: '#d4edda',
         error: '#f8d7da',
         info: '#d1ecf1',
         warning: '#fff3cd'
     };
-    
+
     statusDiv.style.background = colors[type] || colors.info;
     statusDiv.style.border = `1px solid ${type === 'success' ? '#c3e6cb' : type === 'error' ? '#f5c6cb' : '#bee5eb'}`;
 }
@@ -613,9 +755,9 @@ async function loadStagedData() {
     try {
         const response = await fetch(`${API_BASE_URL}/v1/admin/import/staged?limit=1000`);
         const result = await response.json();
-        
+
         stagedData = result.issues;
-        
+
         if (stagedData.length > 0) {
             document.getElementById('stagedDataSection').style.display = 'block';
             renderStagedIssues();
@@ -630,11 +772,11 @@ async function loadStagedData() {
 
 function renderStagedStats(result) {
     const statsDiv = document.getElementById('stagedDataStats');
-    
+
     const validCount = stagedData.filter(issue => issue.validation_errors.length === 0).length;
     const errorCount = stagedData.filter(issue => issue.validation_errors.length > 0).length;
     const warningCount = stagedData.filter(issue => issue.validation_warnings.length > 0).length;
-    
+
     statsDiv.innerHTML = `
         <div style="display: flex; gap: 24px; align-items: center;">
             <div>
@@ -656,14 +798,14 @@ function renderStagedStats(result) {
 function renderStagedIssues() {
     const tbody = document.getElementById('stagedIssuesTable');
     tbody.innerHTML = '';
-    
+
     stagedData.forEach(issue => {
         const row = document.createElement('tr');
         row.style.borderBottom = '1px solid #e9ecef';
-        
+
         const hasErrors = issue.validation_errors.length > 0;
         const hasWarnings = issue.validation_warnings.length > 0;
-        
+
         row.innerHTML = `
             <td style="padding: 12px;">${issue.row_number}</td>
             <td style="padding: 12px;"><code>${issue.issue_key || 'N/A'}</code></td>
@@ -684,7 +826,7 @@ function renderStagedIssues() {
                 </button>
             </td>
         `;
-        
+
         tbody.appendChild(row);
     });
 }
@@ -692,11 +834,11 @@ function renderStagedIssues() {
 function editStagedIssue(rowNumber) {
     const issue = stagedData.find(i => i.row_number === rowNumber);
     if (!issue) return;
-    
+
     currentEditingRow = rowNumber;
     const modal = document.getElementById('issueEditorModal');
     const content = document.getElementById('issueEditorContent');
-    
+
     content.innerHTML = `
         <form id="issueEditForm" style="display: grid; gap: 16px;">
             <div>
@@ -798,20 +940,20 @@ function editStagedIssue(rowNumber) {
             </div>
         </form>
     `;
-    
+
     // Add form submit handler
     document.getElementById('issueEditForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         await saveIssueEdits(rowNumber, new FormData(e.target));
     });
-    
+
     modal.style.display = 'block';
 }
 
 async function saveIssueEdits(rowNumber, formData) {
     const updates = {};
     const custom_fields = {};
-    
+
     for (const [key, value] of formData.entries()) {
         // Handle custom fields separately
         if (key.startsWith('custom_field_')) {
@@ -821,21 +963,21 @@ async function saveIssueEdits(rowNumber, formData) {
             updates[key] = value;
         }
     }
-    
+
     // Add custom fields to updates if any exist
     if (Object.keys(custom_fields).length > 0) {
         updates.custom_fields = custom_fields;
     }
-    
+
     try {
         const response = await fetch(`${API_BASE_URL}/v1/admin/import/staged/${rowNumber}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(updates)
         });
-        
+
         const result = await response.json();
-        
+
         if (result.success) {
             showImportStatus('✅ Issue updated successfully', 'success');
             await loadStagedData();
@@ -858,14 +1000,14 @@ async function deleteStagedIssue(rowNumber) {
     if (!confirm('Are you sure you want to remove this issue from staging?')) {
         return;
     }
-    
+
     try {
         const response = await fetch(`${API_BASE_URL}/v1/admin/import/staged/${rowNumber}`, {
             method: 'DELETE'
         });
-        
+
         const result = await response.json();
-        
+
         if (result.success) {
             showImportStatus('✅ Issue removed from staging', 'success');
             await loadStagedData();
@@ -880,22 +1022,22 @@ async function commitAllIssues() {
     if (!confirm(`Commit all valid issues to the database? This action cannot be undone.`)) {
         return;
     }
-    
+
     try {
         updateStatusBar('Committing issues to database...');
         showImportStatus('Committing issues to database...', 'info');
-        
+
         const response = await fetch(`${API_BASE_URL}/v1/admin/import/commit`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
         });
-        
+
         const result = await response.json();
-        
+
         if (result.success) {
             showImportStatus(`✅ Successfully committed ${result.committed} issues! ${result.skipped} skipped. ${result.remaining_staged} issues remain in staging.`, 'success');
             updateStatusBar(`Committed ${result.committed} issues to database`);
-            
+
             if (result.remaining_staged === 0) {
                 document.getElementById('stagedDataSection').style.display = 'none';
                 document.getElementById('excelFileInput').value = '';
@@ -915,7 +1057,7 @@ function clearStaging() {
     if (!confirm('Clear all staged data? This will discard all uploaded issues that haven\'t been committed.')) {
         return;
     }
-    
+
     stagedData = [];
     document.getElementById('stagedDataSection').style.display = 'none';
     document.getElementById('excelFileInput').value = '';
@@ -926,7 +1068,7 @@ async function downloadTemplate() {
     try {
         const response = await fetch(`${API_BASE_URL}/v1/admin/import/template`);
         const result = await response.json();
-        
+
         showImportStatus('✅ Template ready for download! Check the backend/data/templates folder.', 'success');
     } catch (error) {
         console.error('Template error:', error);

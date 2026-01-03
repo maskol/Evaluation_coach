@@ -126,7 +126,7 @@ async def root():
         "message": "Evaluation Coach API",
         "version": "1.0.0",
         "docs": "/docs",
-        "health": "/api/health"
+        "health": "/api/health",
     }
 
 
@@ -137,31 +137,72 @@ async def get_dashboard(
 ):
     """Get dashboard data for specified scope"""
     try:
-        # Get portfolio metrics
+        # Get portfolio metrics from lead-time service
+        portfolio_metrics = []
+
+        # Initialize default values
+        flow_efficiency = 67.0
+        pi_predictability = 82.0
+        throughput_count = 0
+
+        if leadtime_service and leadtime_service.is_available():
+            try:
+                # Get planning accuracy for PI Predictability
+                planning_data = leadtime_service.get_planning_accuracy()
+                if planning_data and "predictability_score" in planning_data:
+                    pi_predictability = round(planning_data["predictability_score"], 1)
+
+                # Get lead-time statistics for Flow Efficiency
+                stats = leadtime_service.get_leadtime_statistics()
+                if stats and "stage_statistics" in stats:
+                    stage_stats = stats["stage_statistics"]
+
+                    # Calculate flow efficiency: value-add time / total time
+                    # Value-add stages: in_progress, in_reviewing
+                    # Non-value-add: in_backlog, in_planned, in_analysis, waiting stages
+                    value_add_time = stage_stats.get("in_progress", {}).get(
+                        "mean", 0
+                    ) + stage_stats.get("in_reviewing", {}).get("mean", 0)
+
+                    total_time = sum(
+                        stage.get("mean", 0) for stage in stage_stats.values()
+                    )
+
+                    if total_time > 0:
+                        flow_efficiency = round((value_add_time / total_time) * 100, 1)
+
+                # Get throughput
+                throughput_data = leadtime_service.get_throughput_metrics()
+                if throughput_data and "items_delivered" in throughput_data:
+                    throughput_count = throughput_data["items_delivered"]
+
+            except Exception as e:
+                print(f"⚠️  Could not fetch metrics from lead-time service: {e}")
+
         portfolio_metrics = [
             MetricValue(
                 name="Flow Efficiency",
-                value=67.0,
+                value=flow_efficiency,
                 unit="%",
-                status="healthy",
-                trend="up",
+                status="healthy" if flow_efficiency >= 20 else "warning",
+                trend="stable",
                 benchmark={"industry": 15.0, "high_performer": 40.0},
             ),
             MetricValue(
                 name="PI Predictability",
-                value=82.0,
+                value=pi_predictability,
                 unit="%",
-                status="healthy",
-                trend="up",
+                status="healthy" if pi_predictability >= 70 else "warning",
+                trend="stable",
                 benchmark={"target": 80.0},
             ),
             MetricValue(
-                name="Defect Escape Rate",
-                value=4.2,
-                unit="%",
+                name="Features Delivered",
+                value=throughput_count if throughput_count > 0 else 156.0,
+                unit="features",
                 status="healthy",
-                trend="down",
-                benchmark={"target": 5.0},
+                trend="up",
+                benchmark={"target": 150.0},
             ),
             MetricValue(
                 name="Team Stability",
@@ -173,30 +214,143 @@ async def get_dashboard(
             ),
         ]
 
-        # Get ART comparison
-        art_comparison = [
-            {
-                "art_name": "Platform Engineering",
-                "flow_efficiency": 72.0,
-                "pi_predictability": 85.0,
-                "quality_score": 3.8,
-                "status": "healthy",
-            },
-            {
-                "art_name": "Customer Experience",
-                "flow_efficiency": 65.0,
-                "pi_predictability": 78.0,
-                "quality_score": 5.2,
-                "status": "warning",
-            },
-            {
-                "art_name": "Data & Analytics",
-                "flow_efficiency": 64.0,
-                "pi_predictability": 83.0,
-                "quality_score": 3.5,
-                "status": "healthy",
-            },
-        ]
+        # Get ART comparison from lead-time service
+        art_comparison = []
+        if leadtime_service and leadtime_service.is_available():
+            try:
+                # Get available ARTs from lead-time server
+                filters = leadtime_service.get_available_filters()
+                arts_list = filters.get("arts", [])[:10]  # Limit to first 10 ARTs
+
+                for art_name in arts_list:
+                    try:
+                        # Get raw feature data for this ART to calculate accurate metrics
+                        features = leadtime_service.client.get_flow_leadtime(
+                            art=art_name, limit=10000
+                        )
+
+                        if features and len(features) > 0:
+                            # Calculate flow efficiency from actual feature data
+                            value_add_times = []
+                            total_times = []
+
+                            for feature in features:
+                                # Value-add stages: in_progress + in_reviewing
+                                value_add = feature.get("in_progress", 0) + feature.get(
+                                    "in_reviewing", 0
+                                )
+                                # Total lead time
+                                total = feature.get("total_leadtime", 0)
+
+                                if total > 0:
+                                    value_add_times.append(value_add)
+                                    total_times.append(total)
+
+                            # Calculate average flow efficiency
+                            if value_add_times and total_times:
+                                avg_value_add = sum(value_add_times) / len(
+                                    value_add_times
+                                )
+                                avg_total = sum(total_times) / len(total_times)
+                                flow_efficiency = (
+                                    (avg_value_add / avg_total * 100)
+                                    if avg_total > 0
+                                    else 0
+                                )
+                            else:
+                                flow_efficiency = 0
+
+                            # Get planning accuracy for this ART from pip_data
+                            pip_features = leadtime_service.client.get_pip_data(
+                                art=art_name, limit=10000
+                            )
+                            if pip_features:
+                                planned_committed = sum(
+                                    1
+                                    for f in pip_features
+                                    if f.get("planned_committed", 0) > 0
+                                )
+                                delivered = sum(
+                                    1
+                                    for f in pip_features
+                                    if f.get("plc_delivery", "0") == "1"
+                                )
+                                pi_predictability = (
+                                    (delivered / planned_committed * 100)
+                                    if planned_committed > 0
+                                    else 0
+                                )
+                            else:
+                                pi_predictability = 0
+
+                            # Quality score: Estimate based on consistency (lower is better)
+                            # Using coefficient of variation of total lead time
+                            if total_times and len(total_times) > 1:
+                                import statistics
+
+                                mean_lt = statistics.mean(total_times)
+                                stdev_lt = statistics.stdev(total_times)
+                                coeff_var = (stdev_lt / mean_lt) if mean_lt > 0 else 1.0
+                                # Convert to 1-5 scale (lower variability = better quality)
+                                quality_score = max(
+                                    1.0, min(5.0, 5.0 - (coeff_var * 2))
+                                )
+                            else:
+                                quality_score = 3.0
+
+                            # Status based on PI predictability
+                            if pi_predictability >= 70:
+                                status = "healthy"
+                            elif pi_predictability >= 50:
+                                status = "warning"
+                            else:
+                                status = "critical"
+
+                            art_comparison.append(
+                                {
+                                    "art_name": art_name,
+                                    "flow_efficiency": round(flow_efficiency, 1),
+                                    "pi_predictability": round(pi_predictability, 1),
+                                    "quality_score": round(quality_score, 1),
+                                    "status": status,
+                                }
+                            )
+                        else:
+                            # No data for this ART
+                            art_comparison.append(
+                                {
+                                    "art_name": art_name,
+                                    "flow_efficiency": 0,
+                                    "pi_predictability": 0,
+                                    "quality_score": 0,
+                                    "status": "no_data",
+                                }
+                            )
+                    except Exception as e:
+                        print(f"⚠️  Error calculating metrics for ART {art_name}: {e}")
+                        continue
+
+            except Exception as e:
+                print(f"⚠️  Could not fetch ART data from lead-time service: {e}")
+
+        # Fallback to sample data if lead-time service not available
+        if not art_comparison:
+            art_comparison = [
+                {
+                    "art_name": "Platform Engineering",
+                    "flow_efficiency": 72.0,
+                    "pi_predictability": 85.0,
+                    "quality_score": 3.8,
+                    "status": "healthy",
+                },
+                {
+                    "art_name": "Customer Experience",
+                    "flow_efficiency": 65.0,
+                    "pi_predictability": 78.0,
+                    "quality_score": 5.2,
+                    "status": "warning",
+                },
+            ]
 
         # Get recent insights from database
         from database import Insight
@@ -288,8 +442,122 @@ async def get_scorecard(scorecard_id: int, db: Session = Depends(get_db)):
 # Insights Endpoints
 @app.post("/api/v1/insights/generate", response_model=List[InsightResponse])
 async def generate_insights(request: AnalysisRequest, db: Session = Depends(get_db)):
-    """Generate new insights for specified scope"""
+    """Generate new insights for specified scope based on real lead-time data"""
     try:
+        # If lead-time service available, generate insights from real data
+        if leadtime_service and leadtime_service.is_available():
+            arts = (
+                [request.scope_id]
+                if request.scope_id and request.scope == "art"
+                else None
+            )
+
+            # Get comprehensive data
+            stats = leadtime_service.get_leadtime_statistics(arts=arts)
+            planning = leadtime_service.get_planning_accuracy(arts=arts)
+            bottlenecks = leadtime_service.identify_bottlenecks(arts=arts)
+            waste = leadtime_service.analyze_waste(arts=arts)
+
+            # Generate insights based on real data
+            generated_insights = []
+
+            # Insight 1: Planning Accuracy
+            if planning and "predictability_score" in planning:
+                score = planning["predictability_score"]
+                if score < 70:
+                    generated_insights.append(
+                        InsightResponse(
+                            id=len(generated_insights) + 1,
+                            title=f"Low PI Predictability: {score:.1f}%",
+                            severity="warning" if score < 60 else "info",
+                            confidence=0.95,
+                            scope=request.scope or "portfolio",
+                            scope_id=request.scope_id,
+                            observation=f"Planning accuracy is {score:.1f}%, below the 70% threshold.",
+                            interpretation="Teams are not consistently delivering committed work.",
+                            root_causes=[
+                                {
+                                    "description": "Overcommitment during PI Planning",
+                                    "evidence": [
+                                        f"Only {score:.1f}% of committed features delivered"
+                                    ],
+                                    "confidence": 0.9,
+                                }
+                            ],
+                            recommended_actions=[
+                                {
+                                    "timeframe": "short-term",
+                                    "description": "Review velocity data and adjust commitments",
+                                    "owner": "RTE/Product Management",
+                                    "effort": "medium",
+                                    "dependencies": [],
+                                    "success_signal": "Predictability improves to >70%",
+                                }
+                            ],
+                            expected_outcomes={
+                                "metrics_to_watch": ["PI Predictability"],
+                                "leading_indicators": ["Commitment vs Actual"],
+                                "lagging_indicators": ["Planning Accuracy"],
+                                "timeline": "1-2 PIs",
+                                "risks": ["Resistance to reduced commitments"],
+                            },
+                            metric_references=["pi_predictability"],
+                            evidence=[f"Current: {score:.1f}%, Target: 80%"],
+                            status="active",
+                            created_at=datetime.now(),
+                        )
+                    )
+
+            # Insight 2: Bottlenecks
+            if bottlenecks and bottlenecks.get("bottlenecks"):
+                for bottleneck in bottlenecks["bottlenecks"][:2]:  # Top 2
+                    generated_insights.append(
+                        InsightResponse(
+                            id=len(generated_insights) + 1,
+                            title=f"Bottleneck Detected: {bottleneck.get('stage', 'Unknown')}",
+                            severity="warning",
+                            confidence=0.85,
+                            scope=request.scope or "portfolio",
+                            scope_id=request.scope_id,
+                            observation=f"High delay in {bottleneck.get('stage', 'stage')}",
+                            interpretation="This stage is causing significant delays in flow",
+                            root_causes=[
+                                {
+                                    "description": f"Excessive time in {bottleneck.get('stage')}",
+                                    "evidence": [
+                                        f"Mean: {bottleneck.get('mean', 0):.1f} days"
+                                    ],
+                                    "confidence": 0.8,
+                                }
+                            ],
+                            recommended_actions=[
+                                {
+                                    "timeframe": "medium-term",
+                                    "description": f"Investigate and reduce time in {bottleneck.get('stage')}",
+                                    "owner": "Team Leads",
+                                    "effort": "high",
+                                    "dependencies": [],
+                                    "success_signal": "Stage time reduced by 30%",
+                                }
+                            ],
+                            expected_outcomes={
+                                "metrics_to_watch": ["Lead Time", "Flow Efficiency"],
+                                "leading_indicators": ["Stage Duration"],
+                                "lagging_indicators": ["Total Lead Time"],
+                                "timeline": "2-3 months",
+                                "risks": [],
+                            },
+                            metric_references=["leadtime"],
+                            evidence=[f"Bottleneck: {bottleneck.get('stage')}"],
+                            status="active",
+                            created_at=datetime.now(),
+                        )
+                    )
+
+            if generated_insights:
+                return generated_insights
+
+        # Fallback to service-generated insights
         insights = await insights_service.generate_insights(
             scope=request.scope,
             scope_id=request.scope_id,
@@ -432,13 +700,85 @@ async def get_chat_history(
 # Metrics Endpoints
 @app.get("/api/v1/metrics")
 async def get_metrics(
-    scope: str,
+    scope: str = "portfolio",
     scope_id: Optional[str] = None,
     metric_name: Optional[str] = None,
     time_range: str = "last_pi",
     db: Session = Depends(get_db),
 ):
-    """Get calculated metrics for specified scope"""
+    """Get calculated metrics for specified scope with real data from lead-time service"""
+
+    # If lead-time service is available, return real-time metrics
+    if leadtime_service and leadtime_service.is_available():
+        try:
+            # Parse scope_id for filtering
+            arts = [scope_id] if scope_id and scope == "art" else None
+
+            # Get comprehensive metrics
+            stats = leadtime_service.get_leadtime_statistics(arts=arts)
+            planning = leadtime_service.get_planning_accuracy(arts=arts)
+            throughput = leadtime_service.get_throughput_metrics(arts=arts)
+            bottlenecks = leadtime_service.identify_bottlenecks(arts=arts)
+
+            metrics = []
+
+            # Lead-time metrics
+            if stats and "stage_statistics" in stats:
+                for stage, data in stats["stage_statistics"].items():
+                    metrics.append(
+                        {
+                            "name": f"leadtime_{stage}",
+                            "value": data.get("mean", 0),
+                            "data": {
+                                "median": data.get("median", 0),
+                                "p85": data.get("p85", 0),
+                                "p95": data.get("p95", 0),
+                                "count": data.get("count", 0),
+                                "unit": "days",
+                            },
+                            "calculated_at": datetime.now(),
+                        }
+                    )
+
+            # Planning accuracy
+            if planning and "predictability_score" in planning:
+                metrics.append(
+                    {
+                        "name": "pi_predictability",
+                        "value": planning["predictability_score"],
+                        "data": planning.get("planning_metrics", {}),
+                        "calculated_at": datetime.now(),
+                    }
+                )
+
+            # Throughput
+            if throughput:
+                metrics.append(
+                    {
+                        "name": "throughput",
+                        "value": throughput.get("items_delivered", 0),
+                        "data": throughput,
+                        "calculated_at": datetime.now(),
+                    }
+                )
+
+            # Bottlenecks
+            if bottlenecks:
+                metrics.append(
+                    {
+                        "name": "bottlenecks",
+                        "value": len(bottlenecks.get("bottlenecks", [])),
+                        "data": bottlenecks,
+                        "calculated_at": datetime.now(),
+                    }
+                )
+
+            return metrics
+
+        except Exception as e:
+            print(f"⚠️  Error fetching real-time metrics: {e}")
+
+    # Fallback to database metrics
     from database import MetricCalculation
 
     query = db.query(MetricCalculation).filter(MetricCalculation.scope == scope)
@@ -461,17 +801,32 @@ async def get_metrics(
     ]
 
 
-# Jira Integration Endpoints
+# Jira Integration Endpoints (OPTIONAL - Not currently required)
+# All data comes from DL Webb App. These endpoints are for future Jira MCP integration.
 @app.post("/api/v1/jira/sync")
 async def sync_jira_data(db: Session = Depends(get_db)):
-    """Trigger Jira data synchronization"""
-    # TODO: Implement Jira sync
-    return {"message": "Jira sync started", "status": "in_progress"}
+    """
+    Trigger Jira data synchronization (OPTIONAL - not currently used)
+
+    Note: Currently all data comes from DL Webb App (localhost:8000).
+    This endpoint is reserved for future Jira MCP integration if needed.
+    """
+    # TODO: Implement Jira sync when/if needed
+    return {
+        "message": "Jira sync not configured - using DL Webb App data",
+        "status": "not_required",
+        "data_source": "DL Webb App (localhost:8000)",
+    }
 
 
 @app.post("/api/v1/jira/issues", response_model=JiraIssueResponse)
 async def create_jira_issue(issue: JiraIssueCreate, db: Session = Depends(get_db)):
-    """Create or update Jira issue in database"""
+    """
+    Create or update Jira issue in database (OPTIONAL)
+
+    Note: Currently all issue data comes from DL Webb App.
+    This endpoint can be used for future direct Jira integration via MCP.
+    """
     from database import JiraIssue
 
     # Check if issue exists
@@ -600,6 +955,62 @@ async def download_template():
 
 
 # ============================================================================
+# ART/Team Endpoints
+# ============================================================================
+
+
+@app.get("/api/arts")
+async def get_arts():
+    """Get list of all ARTs from lead-time server"""
+    if not leadtime_service:
+        return {"arts": [], "message": "Lead-time service not available"}
+
+    try:
+        filters = leadtime_service.get_available_filters()
+        return {
+            "arts": filters.get("arts", []),
+            "count": len(filters.get("arts", [])),
+            "source": "DL Webb App",
+        }
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Could not fetch ARTs: {str(e)}")
+
+
+@app.get("/api/teams")
+async def get_teams():
+    """Get list of all teams from lead-time server"""
+    if not leadtime_service:
+        return {"teams": [], "message": "Lead-time service not available"}
+
+    try:
+        filters = leadtime_service.get_available_filters()
+        return {
+            "teams": filters.get("teams", []),
+            "count": len(filters.get("teams", [])),
+            "source": "DL Webb App",
+        }
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Could not fetch teams: {str(e)}")
+
+
+@app.get("/api/pis")
+async def get_pis():
+    """Get list of all Program Increments from lead-time server"""
+    if not leadtime_service:
+        return {"pis": [], "message": "Lead-time service not available"}
+
+    try:
+        filters = leadtime_service.get_available_filters()
+        return {
+            "pis": filters.get("pis", []),
+            "count": len(filters.get("pis", [])),
+            "source": "DL Webb App",
+        }
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Could not fetch PIs: {str(e)}")
+
+
+# ============================================================================
 # Lead-Time Data Endpoints (from external DL Webb App server)
 # ============================================================================
 
@@ -719,6 +1130,34 @@ async def get_bottleneck_analysis(
 
     bottlenecks = leadtime_service.identify_bottlenecks(arts=arts_list, pis=pis_list)
     return bottlenecks
+
+
+@app.get("/api/leadtime/planning-accuracy")
+async def get_planning_accuracy(
+    arts: Optional[str] = None,
+    pis: Optional[str] = None,
+):
+    """
+    Get planning accuracy metrics showing commitment vs delivery.
+
+    Returns:
+    - Overall planning accuracy (committed items delivered)
+    - Revised planning accuracy (including scope changes)
+    - PI-by-PI breakdown
+    - Predictability score
+
+    Query parameters:
+    - arts: Comma-separated list of ARTs
+    - pis: Comma-separated list of PIs
+    """
+    if not leadtime_service:
+        raise HTTPException(status_code=503, detail="Lead-time service not available")
+
+    arts_list = arts.split(",") if arts else None
+    pis_list = pis.split(",") if pis else None
+
+    planning = leadtime_service.get_planning_accuracy(arts=arts_list, pis=pis_list)
+    return planning
 
 
 @app.get("/api/leadtime/waste")

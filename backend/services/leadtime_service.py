@@ -162,6 +162,39 @@ class LeadTimeService:
             logger.error(f"Failed to identify bottlenecks: {e}")
             return {"bottlenecks": [], "error": str(e)}
 
+    def get_planning_accuracy(
+        self,
+        arts: Optional[List[str]] = None,
+        pis: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Get planning accuracy metrics.
+
+        Shows commitment vs delivery, including:
+        - Overall planning accuracy
+        - Revised planning accuracy (with scope changes)
+        - PI-by-PI breakdown
+        - Predictability score
+
+        Args:
+            arts: Filter by ARTs
+            pis: Filter by PIs
+
+        Returns:
+            Planning accuracy analysis
+        """
+        if not self._enabled:
+            return {
+                "planning_accuracy": 0,
+                "message": "Lead-time service is disabled",
+            }
+
+        try:
+            return self.client.get_planning_accuracy_analysis(arts=arts, pis=pis)
+        except Exception as e:
+            logger.error(f"Failed to get planning accuracy: {e}")
+            return {"planning_accuracy": 0, "error": str(e)}
+
     def analyze_waste(
         self,
         arts: Optional[List[str]] = None,

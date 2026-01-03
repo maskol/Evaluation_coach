@@ -2,6 +2,10 @@
 Application settings and configuration.
 
 Loads configuration from environment variables using Pydantic Settings.
+
+Current Data Sources:
+- DL Webb App API (localhost:8000): Primary source for all metrics
+- Jira: Optional, not currently used (can be added via MCP later)
 """
 
 from typing import Dict, Optional
@@ -22,10 +26,11 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
-    # Jira Configuration
-    jira_base_url: str
-    jira_email: str
-    jira_api_token: str
+    # Jira Configuration (OPTIONAL - not currently required)
+    # Can be configured later for direct Jira access via MCP
+    jira_base_url: str = "https://your-jira.atlassian.net"
+    jira_email: str = "your-email@company.com"
+    jira_api_token: str = "optional-token"
     jira_verify_ssl: bool = True
 
     # LLM Configuration

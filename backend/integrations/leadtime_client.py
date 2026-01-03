@@ -86,6 +86,7 @@ class LeadTimeClient:
         pi: Optional[str] = None,
         development_team: Optional[str] = None,
         status: Optional[str] = None,
+        limit: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """
         Get detailed flow lead-time data for individual issues.
@@ -100,6 +101,7 @@ class LeadTimeClient:
             pi: Filter by PI (Program Increment)
             development_team: Filter by development team
             status: Filter by issue status
+            limit: Maximum number of records to return
 
         Returns:
             List of issues with detailed lead-time metrics
@@ -113,8 +115,43 @@ class LeadTimeClient:
             params["development_team"] = development_team
         if status:
             params["status"] = status
+        if limit:
+            params["limit"] = str(limit)
 
         return self._get("/api/flow_leadtime", params=params if params else None)
+
+    def get_pip_data(
+        self,
+        art: Optional[str] = None,
+        pi: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get PI planning data (commitment vs delivery).
+
+        Returns planning data showing:
+        - planned_committed: Features planned and committed
+        - planned_uncommitted: Features planned but not committed
+        - plc_delivery: Planned committed delivered (1=yes, 0=no)
+        - Issue keys and ARTs
+
+        Args:
+            art: Filter by ART
+            pi: Filter by PI
+            limit: Maximum number of records to return
+
+        Returns:
+            List of planning/delivery records
+        """
+        params = {}
+        if art:
+            params["art"] = art
+        if pi:
+            params["pi"] = pi
+        if limit:
+            params["limit"] = str(limit)
+
+        return self._get("/api/pip_data", params=params if params else None)
 
     def get_leadtime_analysis(
         self,
@@ -173,6 +210,37 @@ class LeadTimeClient:
             params["pis"] = ",".join(pis)
 
         return self._get("/api/analysis/bottlenecks", params=params if params else None)
+
+    def get_planning_accuracy_analysis(
+        self,
+        arts: Optional[List[str]] = None,
+        pis: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Get planning accuracy metrics showing commitment vs delivery.
+
+        Returns comprehensive planning accuracy analysis including:
+        - Overall planning accuracy (committed items delivered)
+        - Revised planning accuracy (including scope changes)
+        - PI-by-PI breakdown
+        - Predictability score
+
+        Args:
+            arts: List of ARTs to analyze
+            pis: List of PIs to analyze
+
+        Returns:
+            Planning accuracy analysis data
+        """
+        params = {}
+        if arts:
+            params["arts"] = ",".join(arts)
+        if pis:
+            params["pis"] = ",".join(pis)
+
+        return self._get(
+            "/api/analysis/planning-accuracy", params=params if params else None
+        )
 
     def get_waste_analysis(
         self,
