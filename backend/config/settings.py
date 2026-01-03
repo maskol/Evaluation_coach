@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "sqlite:///./data/evaluation_coach.db"
 
+    # Lead-Time Data Server (DL Webb App)
+    leadtime_server_url: str = "http://localhost:8000"
+    leadtime_server_enabled: bool = True
+    leadtime_server_timeout: int = 30
+
     # Vector Store
     vector_store_path: str = "./data/vector_store"
     embedding_model: str = "text-embedding-3-small"

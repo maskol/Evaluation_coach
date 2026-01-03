@@ -197,7 +197,72 @@ class SystemStatus(BaseModel):
     database_connected: bool
     jira_connected: bool
     llm_available: bool
+    leadtime_server_connected: bool
     last_sync: Optional[datetime]
     total_issues: int
     total_insights: int
-    total_insights: int
+
+
+# Lead-Time Models
+class LeadTimeStageMetrics(BaseModel):
+    """Metrics for a single workflow stage."""
+
+    in_backlog: Optional[float] = None
+    in_planned: Optional[float] = None
+    in_analysis: Optional[float] = None
+    in_progress: Optional[float] = None
+    in_reviewing: Optional[float] = None
+    in_sit: Optional[float] = None
+    in_uat: Optional[float] = None
+    ready_for_deployment: Optional[float] = None
+    deployed: Optional[float] = None
+    total_leadtime: Optional[float] = None
+
+
+class LeadTimeFeature(BaseModel):
+    """Feature with lead-time data."""
+
+    issue_key: str
+    summary: str
+    status: str
+    art: Optional[str] = None
+    pi: Optional[str] = None
+    development_team: Optional[str] = None
+    leadtime: LeadTimeStageMetrics
+
+
+class LeadTimeStatistics(BaseModel):
+    """Statistical analysis of lead-time."""
+
+    mean: float
+    median: float
+    min: float
+    max: float
+    stdev: float
+    p85: float
+    p95: float
+    count: int
+
+
+class LeadTimeAnalysisResponse(BaseModel):
+    """Response for lead-time analysis."""
+
+    stage_statistics: Dict[str, LeadTimeStatistics]
+    scope: Dict[str, Any]
+    data_source: str
+
+
+class LeadTimeFilterOptions(BaseModel):
+    """Available filter options from lead-time server."""
+
+    arts: List[str]
+    pis: List[str]
+    teams: List[str]
+    statuses: List[str]
+
+
+class LeadTimeSummaryRequest(BaseModel):
+    """Request for lead-time summary."""
+
+    art: Optional[str] = None
+    pi: Optional[str] = None

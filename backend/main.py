@@ -6,7 +6,7 @@ Provides REST API endpoints for frontend and LLM integration
 import os
 import shutil
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 import uvicorn
 from api_models import (
@@ -55,6 +55,18 @@ llm_service = LLMService()
 metrics_service = MetricsService()
 insights_service = InsightsService()
 
+# Initialize lead-time service
+leadtime_service = None
+try:
+    from services.leadtime_service import leadtime_service as lt_service
+
+    leadtime_service = lt_service
+    print("✅ Lead-time service initialized")
+except ImportError as e:
+    print(f"⚠️  Lead-time service not available: {e}")
+except Exception as e:
+    print(f"⚠️  Lead-time service initialization failed: {e}")
+
 
 # Startup event
 @app.on_event("startup")
@@ -81,11 +93,20 @@ async def health_check(db: Session = Depends(get_db)):
         total_issues = db.query(JiraIssue).count()
         total_insights = db.query(Insight).count()
 
+        # Check lead-time service
+        leadtime_connected = False
+        if leadtime_service:
+            try:
+                leadtime_connected = leadtime_service.is_available()
+            except Exception:
+                pass
+
         return SystemStatus(
             status="healthy",
             database_connected=db_connected,
             jira_connected=False,  # TODO: Implement Jira connection check
             llm_available=True,  # TODO: Check LLM availability
+            leadtime_server_connected=leadtime_connected,
             last_sync=None,
             total_issues=total_issues,
             total_insights=total_insights,
@@ -95,6 +116,18 @@ async def health_check(db: Session = Depends(get_db)):
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"System unhealthy: {str(e)}",
         )
+
+
+# Root endpoint
+@app.get("/")
+async def root():
+    """Root endpoint - redirect to docs"""
+    return {
+        "message": "Evaluation Coach API",
+        "version": "1.0.0",
+        "docs": "/docs",
+        "health": "/api/health"
+    }
 
 
 # Dashboard Endpoints
@@ -563,6 +596,231 @@ async def download_template():
         "message": "Template generated",
         "download_url": f"/api/v1/admin/import/template/download",
         "template_path": template_path,
+    }
+
+
+# ============================================================================
+# Lead-Time Data Endpoints (from external DL Webb App server)
+# ============================================================================
+
+
+@app.get("/api/leadtime/status")
+async def get_leadtime_server_status():
+    """Check if lead-time server is available"""
+    if not leadtime_service:
+        return {
+            "available": False,
+            "message": "Lead-time service not configured",
+        }
+
+    is_available = leadtime_service.is_available()
+    return {
+        "available": is_available,
+        "server_url": leadtime_service.client.base_url if is_available else None,
+        "message": "Connected" if is_available else "Server not responding",
+    }
+
+
+@app.get("/api/leadtime/filters")
+async def get_leadtime_filters():
+    """Get available filter options from lead-time server"""
+    if not leadtime_service:
+        raise HTTPException(status_code=503, detail="Lead-time service not available")
+
+    filters = leadtime_service.get_available_filters()
+    if not filters:
+        raise HTTPException(
+            status_code=503, detail="Could not fetch filters from lead-time server"
+        )
+
+    return filters
+
+
+@app.get("/api/leadtime/features")
+async def get_leadtime_features(
+    art: Optional[str] = None,
+    pi: Optional[str] = None,
+    team: Optional[str] = None,
+):
+    """
+    Get feature lead-time data with stage-by-stage breakdown.
+
+    Query parameters:
+    - art: Filter by Agile Release Train
+    - pi: Filter by Program Increment
+    - team: Filter by development team
+    """
+    if not leadtime_service:
+        raise HTTPException(status_code=503, detail="Lead-time service not available")
+
+    data = leadtime_service.get_feature_leadtime_data(art=art, pi=pi, team=team)
+    return {
+        "count": len(data),
+        "features": data,
+        "filters_applied": {
+            "art": art,
+            "pi": pi,
+            "team": team,
+        },
+    }
+
+
+@app.get("/api/leadtime/statistics")
+async def get_leadtime_statistics(
+    arts: Optional[str] = None,
+    pis: Optional[str] = None,
+    teams: Optional[str] = None,
+):
+    """
+    Get statistical analysis of lead-time across workflow stages.
+
+    Query parameters:
+    - arts: Comma-separated list of ARTs (e.g., "ACEART,OTHERART")
+    - pis: Comma-separated list of PIs (e.g., "21Q4,22Q1")
+    - teams: Comma-separated list of teams
+    """
+    if not leadtime_service:
+        raise HTTPException(status_code=503, detail="Lead-time service not available")
+
+    # Parse comma-separated values
+    arts_list = arts.split(",") if arts else None
+    pis_list = pis.split(",") if pis else None
+    teams_list = teams.split(",") if teams else None
+
+    stats = leadtime_service.get_leadtime_statistics(
+        arts=arts_list, pis=pis_list, teams=teams_list
+    )
+
+    if not stats:
+        raise HTTPException(
+            status_code=503, detail="Could not fetch statistics from lead-time server"
+        )
+
+    return stats
+
+
+@app.get("/api/leadtime/bottlenecks")
+async def get_bottleneck_analysis(
+    arts: Optional[str] = None,
+    pis: Optional[str] = None,
+):
+    """
+    Identify workflow bottlenecks.
+
+    Query parameters:
+    - arts: Comma-separated list of ARTs
+    - pis: Comma-separated list of PIs
+    """
+    if not leadtime_service:
+        raise HTTPException(status_code=503, detail="Lead-time service not available")
+
+    arts_list = arts.split(",") if arts else None
+    pis_list = pis.split(",") if pis else None
+
+    bottlenecks = leadtime_service.identify_bottlenecks(arts=arts_list, pis=pis_list)
+    return bottlenecks
+
+
+@app.get("/api/leadtime/waste")
+async def get_waste_analysis(
+    arts: Optional[str] = None,
+    pis: Optional[str] = None,
+):
+    """
+    Analyze waste in the development process.
+
+    Query parameters:
+    - arts: Comma-separated list of ARTs
+    - pis: Comma-separated list of PIs
+    """
+    if not leadtime_service:
+        raise HTTPException(status_code=503, detail="Lead-time service not available")
+
+    arts_list = arts.split(",") if arts else None
+    pis_list = pis.split(",") if pis else None
+
+    waste = leadtime_service.analyze_waste(arts=arts_list, pis=pis_list)
+    return waste
+
+
+@app.get("/api/leadtime/throughput")
+async def get_throughput_metrics(
+    arts: Optional[str] = None,
+    pis: Optional[str] = None,
+):
+    """
+    Get throughput metrics showing delivery rate.
+
+    Query parameters:
+    - arts: Comma-separated list of ARTs
+    - pis: Comma-separated list of PIs
+    """
+    if not leadtime_service:
+        raise HTTPException(status_code=503, detail="Lead-time service not available")
+
+    arts_list = arts.split(",") if arts else None
+    pis_list = pis.split(",") if pis else None
+
+    throughput = leadtime_service.get_throughput_metrics(arts=arts_list, pis=pis_list)
+    return throughput
+
+
+@app.get("/api/leadtime/trends")
+async def get_trend_analysis(
+    arts: Optional[str] = None,
+    pis: Optional[str] = None,
+):
+    """
+    Get trend analysis over time.
+
+    Query parameters:
+    - arts: Comma-separated list of ARTs
+    - pis: Comma-separated list of PIs
+    """
+    if not leadtime_service:
+        raise HTTPException(status_code=503, detail="Lead-time service not available")
+
+    arts_list = arts.split(",") if arts else None
+    pis_list = pis.split(",") if pis else None
+
+    trends = leadtime_service.get_trend_analysis(arts=arts_list, pis=pis_list)
+    return trends
+
+
+@app.get("/api/leadtime/summary")
+async def get_leadtime_coaching_summary(
+    art: Optional[str] = None,
+    pi: Optional[str] = None,
+):
+    """
+    Get a comprehensive coaching summary combining multiple analyses.
+
+    Query parameters:
+    - art: Focus on specific ART
+    - pi: Focus on specific PI
+    """
+    if not leadtime_service:
+        raise HTTPException(status_code=503, detail="Lead-time service not available")
+
+    summary = leadtime_service.get_summary_for_coaching(art=art, pi=pi)
+    return summary
+
+
+@app.post("/api/leadtime/enrich-issues")
+async def enrich_issues_with_leadtime(issues: List[Dict[str, Any]]):
+    """
+    Enrich a list of Jira issues with lead-time data.
+
+    Matches issues by key and adds lead-time metrics from external server.
+    """
+    if not leadtime_service:
+        raise HTTPException(status_code=503, detail="Lead-time service not available")
+
+    enriched = leadtime_service.enrich_jira_issues_with_leadtime(issues)
+    return {
+        "count": len(enriched),
+        "enriched_count": len([i for i in enriched if "leadtime" in i]),
+        "issues": enriched,
     }
 
 
