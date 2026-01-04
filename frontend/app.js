@@ -344,7 +344,8 @@ function updateDashboardUI(data) {
                     <tr style="border-bottom: 1px solid #e9ecef;">
                         <td style="padding: 12px; font-weight: 600;">${art.art_name}</td>
                         <td style="padding: 12px;">${art.flow_efficiency?.toFixed(1) || 'N/A'}%</td>
-                        <td style="padding: 12px;">${art.pi_predictability?.toFixed(1) || 'N/A'}%</td>
+                        <td style="padding: 12px;">${art.planning_accuracy?.toFixed(1) || 'N/A'}%</td>
+                        <td style="padding: 12px;">${art.avg_leadtime?.toFixed(1) || 'N/A'} days</td>
                         <td style="padding: 12px;">${art.quality_score?.toFixed(1) || 'N/A'}%</td>
                         <td style="padding: 12px;">
                             <span style="background: ${statusColor}; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">
@@ -616,7 +617,8 @@ function generateScorecardDemo() {
             <strong>Overall Health Score:</strong> 78/100 (Healthy)<br><br>
             <strong>Key Metrics:</strong><br>
             • Flow Efficiency: 67% (Good) ↑<br>
-            • PI Predictability: 82% (Excellent) ↑<br>
+            • Planning Accuracy: 82% (Excellent) ↑<br>
+            • Average Lead-Time: 45 days (Good) →<br>
             • Quality (Defect Rate): 4.2% (Acceptable) ↓<br>
             • Team Stability: 89% (Excellent) →<br><br>
             <strong>Top Recommendation:</strong> Address high WIP in Customer Experience ART to improve flow efficiency further.`,
@@ -670,56 +672,8 @@ function updateContext() {
     console.log('📊 Context updated:', contextText);
 }
 
-async function generateInsights() {
-    updateStatusBar('Analyzing data and generating insights...');
-
-    try {
-        const response = await fetch(`${API_BASE_URL}/v1/insights/generate`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                scope: appState.scope,
-                scope_id: appState.selectedART || appState.selectedTeam || null,
-                time_range: appState.timeRange
-            })
-        });
-
-        if (response.ok) {
-            const insights = await response.json();
-            console.log('✅ Insights generated:', insights);
-
-            const summaryText = insights.map((insight, idx) =>
-                `<strong>${idx + 1}. ${insight.severity.toUpperCase()}: ${insight.title}</strong><br>
-                Confidence: ${insight.confidence.toFixed(0)}% | Scope: ${insight.scope}<br>
-                ${insight.observation.substring(0, 120)}...`
-            ).join('<br><br>');
-
-            const message = {
-                type: 'agent',
-                content: `💡 <strong>${insights.length} Insights Generated</strong><br><br>
-                    ${summaryText}<br><br>
-                    Switch to the <strong>Insights</strong> tab for detailed analysis and recommendations.`,
-                timestamp: new Date()
-            };
-
-            if (appState.activeTab === 'chat') {
-                addMessage(message);
-            } else {
-                appState.messages.push(message);
-            }
-
-            updateStatusBar(`Insights generated - ${insights.length} actionable items found`);
-        }
-    } catch (error) {
-        console.error('Error generating insights:', error);
-        // Fall back to demo response
-        generateInsightsDemo();
-    }
-}
-
-function generateInsightsDemo() {
+// Display generated insights
+function displayGeneratedInsights(insights) {
     const message = {
         type: 'agent',
         content: `💡 <strong>Top 3 Insights Generated</strong><br><br>
@@ -890,6 +844,7 @@ function renderInsightsTab() {
                     <br>This will analyze your data patterns, bottlenecks, and provide actionable recommendations.
                 </p>
                 <button 
+                    id="generateInsightsBtn"
                     onclick="generateInsights()" 
                     style="
                         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -902,11 +857,15 @@ function renderInsightsTab() {
                         cursor: pointer;
                         box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
                         transition: all 0.3s ease;
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 8px;
                     "
-                    onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 16px rgba(102, 126, 234, 0.5)'"
+                    onmouseover="if(!this.disabled) { this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 16px rgba(102, 126, 234, 0.5)'; }"
                     onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(102, 126, 234, 0.4)'"
                 >
-                    🚀 Generate AI Insights
+                    <span id="generateBtnIcon">🚀</span>
+                    <span id="generateBtnText">Generate AI Insights</span>
                 </button>
                 <div style="margin-top: 16px; font-size: 12px; color: #8E8E93;">
                     ⚠️ This may take 10-15 seconds as the AI analyzes your data
@@ -919,6 +878,21 @@ function renderInsightsTab() {
 // Generate insights using AI analysis
 function generateInsights() {
     console.log('🤖 Generating AI insights...');
+
+    // Disable button and show spinner
+    const btn = document.getElementById('generateInsightsBtn');
+    const btnIcon = document.getElementById('generateBtnIcon');
+    const btnText = document.getElementById('generateBtnText');
+
+    if (btn) {
+        btn.disabled = true;
+        btn.style.opacity = '0.7';
+        btn.style.cursor = 'not-allowed';
+        if (btnIcon) {
+            btnIcon.innerHTML = '<div style="width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top: 2px solid white; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>';
+        }
+        if (btnText) btnText.textContent = 'Generating...';
+    }
 
     showLoadingOverlay('🤔 AI Coach analyzing your data...');
 
@@ -950,6 +924,16 @@ function generateInsights() {
         .catch(error => {
             clearTimeout(llmTimer);
             console.error('❌ Error generating insights:', error);
+
+            // Re-enable button on error
+            if (btn) {
+                btn.disabled = false;
+                btn.style.opacity = '1';
+                btn.style.cursor = 'pointer';
+                if (btnIcon) btnIcon.textContent = '🚀';
+                if (btnText) btnText.textContent = 'Generate AI Insights';
+            }
+
             const insightsContent = document.getElementById('insightsContent');
             if (insightsContent) {
                 insightsContent.innerHTML = `
@@ -1004,6 +988,7 @@ function displayGeneratedInsights(insights) {
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                 <h2 style="margin: 0; color: #333;">AI Expert Insights (${insights.length})</h2>
                 <button 
+                    id="generateInsightsBtn"
                     onclick="generateInsights()" 
                     style="
                         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -1015,9 +1000,13 @@ function displayGeneratedInsights(insights) {
                         border-radius: 6px;
                         cursor: pointer;
                         box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 6px;
                     "
                 >
-                    🔄 Regenerate Insights
+                    <span id="generateBtnIcon">🔄</span>
+                    <span id="generateBtnText">Regenerate Insights</span>
                 </button>
             </div>
             
@@ -1028,13 +1017,13 @@ function displayGeneratedInsights(insights) {
                     <div style="font-size: 14px;">Try adjusting your filters or generate new insights</div>
                 </div>
             ` : insights.map((insight, index) => {
-        const config = severityConfig[insight.severity] || severityConfig['info'];
-        const confidence = Math.round((insight.confidence || 0) * 100);
-        const actions = insight.recommended_actions || [];
-        const rootCauses = insight.root_causes || [];
-        const expectedOutcomes = insight.expected_outcomes || {};
+                    const config = severityConfig[insight.severity] || severityConfig['info'];
+                    const confidence = Math.round((insight.confidence || 0) * 100);
+                    const actions = insight.recommended_actions || [];
+                    const rootCauses = insight.root_causes || [];
+                    const expectedOutcomes = insight.expected_outcomes || {};
 
-        return `
+                    return `
                             <div style="background: white; border: 2px solid ${config.color}; border-radius: 8px; padding: 20px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);">
                                 <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px;">
                                     <h3 style="color: ${config.color}; margin: 0;">${insight.title}</h3>
@@ -1119,83 +1108,83 @@ function displayGeneratedInsights(insights) {
                                 </div>
                             </div>
                         `;
-    }).join('')}
+                }).join('')}
         </div>
     `;
 
-    insightsContent.innerHTML = insightsHTML;
+            insightsContent.innerHTML = insightsHTML;
 
-    // Store insights in appState for actions
-    appState.currentInsights = insights;
+            // Store insights in appState for actions
+            appState.currentInsights = insights;
 
-    console.log(`✅ Displayed ${insights.length} AI-generated insights`);
-}
+            console.log(`✅ Displayed ${insights.length} AI-generated insights`);
+        }
 
 // View insight details (placeholder for future modal/detail view)
 function viewInsightDetails(index) {
-    const insight = appState.currentInsights?.[index];
-    if (insight) {
-        console.log('📊 Viewing insight details:', insight);
-        alert(`Insight Details:\n\nTitle: ${insight.title}\n\nThis would open a detailed modal view with full insight information, evidence, and action items.`);
-    }
-}
+                const insight = appState.currentInsights?.[index];
+                if (insight) {
+                    console.log('📊 Viewing insight details:', insight);
+                    alert(`Insight Details:\n\nTitle: ${insight.title}\n\nThis would open a detailed modal view with full insight information, evidence, and action items.`);
+                }
+            }
 
 // Export insight (placeholder for future export functionality)
 function exportInsight(index) {
-    const insight = appState.currentInsights?.[index];
-    if (insight) {
-        console.log('💾 Exporting insight:', insight);
-        const json = JSON.stringify(insight, null, 2);
-        const blob = new Blob([json], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `insight-${insight.title.replace(/\s+/g, '-').toLowerCase()}.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        updateStatusBar('Insight exported successfully');
-    }
-}
+                const insight = appState.currentInsights?.[index];
+                if (insight) {
+                    console.log('💾 Exporting insight:', insight);
+                    const json = JSON.stringify(insight, null, 2);
+                    const blob = new Blob([json], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `insight-${insight.title.replace(/\s+/g, '-').toLowerCase()}.json`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                    updateStatusBar('Insight exported successfully');
+                }
+            }
 
 // Add message to chat
 function addMessage(message) {
-    const messagesContainer = document.getElementById('chatMessages');
+                const messagesContainer = document.getElementById('chatMessages');
 
-    const messageDiv = document.createElement('div');
-    messageDiv.className = `message ${message.type}`;
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message ${message.type}`;
 
-    const contentDiv = document.createElement('div');
-    contentDiv.className = 'message-content';
-    contentDiv.innerHTML = message.content;
+                const contentDiv = document.createElement('div');
+                contentDiv.className = 'message-content';
+                contentDiv.innerHTML = message.content;
 
-    messageDiv.appendChild(contentDiv);
-    messagesContainer.appendChild(messageDiv);
+                messageDiv.appendChild(contentDiv);
+                messagesContainer.appendChild(messageDiv);
 
-    // Scroll to bottom
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                // Scroll to bottom
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
 
-    appState.messages.push(message);
-}
+                appState.messages.push(message);
+            }
 
 // Generate AI response based on user input
 function generateAIResponse(input) {
-    const lowerInput = input.toLowerCase();
+                const lowerInput = input.toLowerCase();
 
-    // Keyword-based responses
-    if (lowerInput.includes('wip') || lowerInput.includes('work in progress')) {
-        return `📊 <strong>Work in Progress Analysis</strong><br><br>
+                // Keyword-based responses
+                if (lowerInput.includes('wip') || lowerInput.includes('work in progress')) {
+                    return `📊 <strong>Work in Progress Analysis</strong><br><br>
             Current WIP across your ${appState.scope}:<br>
             • Average WIP ratio: 1.3x team size<br>
             • Target: ≤1.5x<br>
             • Status: <span style="color: #34C759;">✓ Healthy</span><br><br>
             However, Customer Experience ART shows 2.3x ratio, which requires attention. 
             Would you like me to generate specific recommendations for this ART?`;
-    }
+                }
 
-    if (lowerInput.includes('flow') || lowerInput.includes('efficiency')) {
-        return `📈 <strong>Flow Efficiency Insights</strong><br><br>
+                if (lowerInput.includes('flow') || lowerInput.includes('efficiency')) {
+                    return `📈 <strong>Flow Efficiency Insights</strong><br><br>
             Your current flow efficiency: <strong>67%</strong><br>
             • Industry average: 15%<br>
             • High performer benchmark: 40%<br>
@@ -1205,10 +1194,10 @@ function generateAIResponse(input) {
             • Better dependency management<br>
             • Cross-team collaboration improvements<br><br>
             Platform Engineering ART is leading at 72%. Want to see their best practices?`;
-    }
+                }
 
-    if (lowerInput.includes('quality') || lowerInput.includes('defect')) {
-        return `✅ <strong>Quality Metrics Overview</strong><br><br>
+                if (lowerInput.includes('quality') || lowerInput.includes('defect')) {
+                    return `✅ <strong>Quality Metrics Overview</strong><br><br>
             Defect Escape Rate: <strong>4.2%</strong><br>
             • Target: <5%<br>
             • Status: <span style="color: #34C759;">✓ Acceptable</span><br><br>
@@ -1218,30 +1207,30 @@ function generateAIResponse(input) {
             2. Set 80% test coverage target<br>
             3. Add automated testing pipeline<br><br>
             Would you like detailed analysis for Mobile Apps team?`;
-    }
+                }
 
-    if (lowerInput.includes('team') || lowerInput.includes('stability')) {
-        return `👥 <strong>Team Stability Analysis</strong><br><br>
+                if (lowerInput.includes('team') || lowerInput.includes('stability')) {
+                    return `👥 <strong>Team Stability Analysis</strong><br><br>
             Overall team stability: <strong>89%</strong><br>
             • Industry target: >85%<br>
             • Status: <span style="color: #34C759;">✓ Excellent</span><br><br>
             All ARTs show stable team composition with minimal turnover. 
             This is a key enabler for your strong flow efficiency results.<br><br>
             Want to see team-specific breakdowns?`;
-    }
+                }
 
-    if (lowerInput.includes('scorecard') || lowerInput.includes('health')) {
-        return `📋 <strong>Health Scorecard Request</strong><br><br>
+                if (lowerInput.includes('scorecard') || lowerInput.includes('health')) {
+                    return `📋 <strong>Health Scorecard Request</strong><br><br>
             I can generate a comprehensive scorecard for:<br>
             • Portfolio (all ARTs)<br>
             • Specific ART<br>
             • Individual Team<br><br>
             Your current context: <strong>${capitalizeFirst(appState.scope)}</strong><br><br>
             Use the <strong>"Generate Scorecard"</strong> button in the sidebar, or tell me which scope you'd like to analyze!`;
-    }
+                }
 
-    if (lowerInput.includes('improve') || lowerInput.includes('recommendation')) {
-        return `💡 <strong>Improvement Recommendations</strong><br><br>
+                if (lowerInput.includes('improve') || lowerInput.includes('recommendation')) {
+                    return `💡 <strong>Improvement Recommendations</strong><br><br>
             Based on your current metrics, top 3 priorities:<br><br>
             <strong>1. Address High WIP (Critical)</strong><br>
             Customer Experience ART needs immediate WIP limit enforcement.<br><br>
@@ -1250,190 +1239,190 @@ function generateAIResponse(input) {
             <strong>3. Scale Best Practices (Opportunity)</strong><br>
             Platform Engineering's success patterns can be shared across ARTs.<br><br>
             Click <strong>"Generate Insights"</strong> for detailed action plans!`;
-    }
+                }
 
-    // Default response
-    return `🤔 <strong>I can help you with:</strong><br><br>
+                // Default response
+                return `🤔 <strong>I can help you with:</strong><br><br>
         • <strong>Metrics analysis</strong> - Ask about flow, quality, predictability, or WIP<br>
         • <strong>Scorecards</strong> - Generate health assessments for Portfolio/ART/Team<br>
         • <strong>Insights</strong> - Get evidence-based recommendations<br>
         • <strong>Trends</strong> - Understand changes over time<br>
         • <strong>Best practices</strong> - Learn from high-performing teams<br><br>
         Try asking: "What's our flow efficiency?" or "Show me quality metrics"`;
-}
+            }
 
 // Insight actions
 function acceptInsight(id) {
-    updateStatusBar(`Insight #${id} accepted and added to action tracker`);
-    alert(`✓ Insight #${id} Accepted\n\nThis insight has been added to your action tracker. You'll be notified about progress and outcomes.\n\n(Demo mode - actual tracking requires backend integration)`);
-}
+                updateStatusBar(`Insight #${id} accepted and added to action tracker`);
+                alert(`✓ Insight #${id} Accepted\n\nThis insight has been added to your action tracker. You'll be notified about progress and outcomes.\n\n(Demo mode - actual tracking requires backend integration)`);
+            }
 
 function viewDetails(id) {
-    updateStatusBar(`Opening detailed view for insight #${id}`);
-    alert(`📋 Detailed Analysis - Insight #${id}\n\nThis would open a comprehensive view showing:\n\n• Full metric breakdown\n• Historical trend analysis\n• Evidence sources (Jira issues, sprint data)\n• Similar patterns in knowledge base\n• Success stories from other teams\n• Step-by-step implementation guide\n\n(Demo mode - full details require backend integration)`);
-}
+                updateStatusBar(`Opening detailed view for insight #${id}`);
+                alert(`📋 Detailed Analysis - Insight #${id}\n\nThis would open a comprehensive view showing:\n\n• Full metric breakdown\n• Historical trend analysis\n• Evidence sources (Jira issues, sprint data)\n• Similar patterns in knowledge base\n• Success stories from other teams\n• Step-by-step implementation guide\n\n(Demo mode - full details require backend integration)`);
+            }
 
 function dismissInsight(id) {
-    if (confirm(`Are you sure you want to dismiss Insight #${id}?\n\nYou can provide optional feedback about why this insight isn't relevant.`)) {
-        updateStatusBar(`Insight #${id} dismissed`);
-    }
-}
+                if (confirm(`Are you sure you want to dismiss Insight #${id}?\n\nYou can provide optional feedback about why this insight isn't relevant.`)) {
+                    updateStatusBar(`Insight #${id} dismissed`);
+                }
+            }
 
 function shareSuccess(id) {
-    updateStatusBar(`Preparing success story #${id} for sharing`);
-    alert(`📤 Share Success Story\n\nThis would allow you to:\n\n• Export as presentation slides\n• Share with other ARTs via email\n• Add to organization knowledge base\n• Include in PI retrospectives\n• Post to internal communication channels\n\n(Demo mode - sharing requires backend integration)`);
-}
+                updateStatusBar(`Preparing success story #${id} for sharing`);
+                alert(`📤 Share Success Story\n\nThis would allow you to:\n\n• Export as presentation slides\n• Share with other ARTs via email\n• Add to organization knowledge base\n• Include in PI retrospectives\n• Post to internal communication channels\n\n(Demo mode - sharing requires backend integration)`);
+            }
 
 // Metric category switching
 function showMetricCategory(category) {
-    // Update tab button states
-    document.querySelectorAll('.action-tab').forEach(tab => {
-        tab.classList.remove('active');
-    });
-    event.target.classList.add('active');
+                // Update tab button states
+                document.querySelectorAll('.action-tab').forEach(tab => {
+                    tab.classList.remove('active');
+                });
+                event.target.classList.add('active');
 
-    updateStatusBar(`Viewing ${category} metrics`);
+                updateStatusBar(`Viewing ${category} metrics`);
 
-    // In a full implementation, this would show/hide different metric categories
-    // For now, we just show the flow metrics as a demo
-}
+                // In a full implementation, this would show/hide different metric categories
+                // For now, we just show the flow metrics as a demo
+            }
 
 // Update status bar
 function updateStatusBar(message) {
-    const statusText = document.getElementById('statusText');
-    const now = new Date().toLocaleTimeString();
-    statusText.textContent = `${message} | Last updated: ${now} | Data source: Jira Cloud`;
-}
+                const statusText = document.getElementById('statusText');
+                const now = new Date().toLocaleTimeString();
+                statusText.textContent = `${message} | Last updated: ${now} | Data source: Jira Cloud`;
+            }
 
 // Utility function
 function capitalizeFirst(str) {
-    return str.charAt(0).toUpperCase() + str.slice(1);
-}
+                return str.charAt(0).toUpperCase() + str.slice(1);
+            }
 
 // Handle ART selection change
 document.addEventListener('DOMContentLoaded', () => {
-    const artSelector = document.getElementById('artSelector');
-    if (artSelector) {
-        artSelector.addEventListener('change', (e) => {
-            appState.selectedART = e.target.value;
-            updateContext();
-            // Reload dashboard when ART is selected in ART view
-            if (appState.scope === 'art') {
-                loadDashboardData();
+                const artSelector = document.getElementById('artSelector');
+                if (artSelector) {
+                    artSelector.addEventListener('change', (e) => {
+                        appState.selectedART = e.target.value;
+                        updateContext();
+                        // Reload dashboard when ART is selected in ART view
+                        if (appState.scope === 'art') {
+                            loadDashboardData();
+                        }
+                    });
+                }
+
+                const teamSelector = document.getElementById('teamSelector');
+                if (teamSelector) {
+                    teamSelector.addEventListener('change', (e) => {
+                        appState.selectedTeam = e.target.value;
+                        updateContext();
+                    });
+                }
+
+                const timeRange = document.getElementById('timeRange');
+                if (timeRange) {
+                    timeRange.addEventListener('change', (e) => {
+                        appState.timeRange = e.target.value;
+                        updateContext();
+                    });
+                }
+            });
+
+    // Auto-update status every 30 seconds
+    setInterval(() => {
+        updateStatusBar('Ready');
+    }, 30000);
+
+    // ===========================
+    // Admin / Import Functions
+    // ===========================
+
+    let stagedData = [];
+    let currentEditingRow = null;
+
+    async function uploadExcelFile() {
+        const fileInput = document.getElementById('excelFileInput');
+        const file = fileInput.files[0];
+
+        if (!file) {
+            showImportStatus('Please select a file first', 'error');
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            updateStatusBar('Uploading file...');
+            showImportStatus('Uploading and parsing Excel file...', 'info');
+
+            const response = await fetch(`${API_BASE_URL}/v1/admin/import/upload`, {
+                method: 'POST',
+                body: formData
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                showImportStatus(`✅ Successfully imported ${result.total_issues} issues! ${result.issues_with_errors} errors, ${result.issues_with_warnings} warnings.`, 'success');
+                updateStatusBar(`Imported ${result.total_issues} issues for review`);
+
+                // Load staged data
+                await loadStagedData();
+            } else {
+                showImportStatus(`❌ Import failed: ${result.message}`, 'error');
             }
-        });
-    }
-
-    const teamSelector = document.getElementById('teamSelector');
-    if (teamSelector) {
-        teamSelector.addEventListener('change', (e) => {
-            appState.selectedTeam = e.target.value;
-            updateContext();
-        });
-    }
-
-    const timeRange = document.getElementById('timeRange');
-    if (timeRange) {
-        timeRange.addEventListener('change', (e) => {
-            appState.timeRange = e.target.value;
-            updateContext();
-        });
-    }
-});
-
-// Auto-update status every 30 seconds
-setInterval(() => {
-    updateStatusBar('Ready');
-}, 30000);
-
-// ===========================
-// Admin / Import Functions
-// ===========================
-
-let stagedData = [];
-let currentEditingRow = null;
-
-async function uploadExcelFile() {
-    const fileInput = document.getElementById('excelFileInput');
-    const file = fileInput.files[0];
-
-    if (!file) {
-        showImportStatus('Please select a file first', 'error');
-        return;
-    }
-
-    const formData = new FormData();
-    formData.append('file', file);
-
-    try {
-        updateStatusBar('Uploading file...');
-        showImportStatus('Uploading and parsing Excel file...', 'info');
-
-        const response = await fetch(`${API_BASE_URL}/v1/admin/import/upload`, {
-            method: 'POST',
-            body: formData
-        });
-
-        const result = await response.json();
-
-        if (result.success) {
-            showImportStatus(`✅ Successfully imported ${result.total_issues} issues! ${result.issues_with_errors} errors, ${result.issues_with_warnings} warnings.`, 'success');
-            updateStatusBar(`Imported ${result.total_issues} issues for review`);
-
-            // Load staged data
-            await loadStagedData();
-        } else {
-            showImportStatus(`❌ Import failed: ${result.message}`, 'error');
+        } catch (error) {
+            console.error('Upload error:', error);
+            showImportStatus(`❌ Upload failed: ${error.message}`, 'error');
         }
-    } catch (error) {
-        console.error('Upload error:', error);
-        showImportStatus(`❌ Upload failed: ${error.message}`, 'error');
     }
-}
 
-function showImportStatus(message, type) {
-    const statusDiv = document.getElementById('importStatus');
-    statusDiv.style.display = 'block';
-    statusDiv.innerHTML = message;
+    function showImportStatus(message, type) {
+        const statusDiv = document.getElementById('importStatus');
+        statusDiv.style.display = 'block';
+        statusDiv.innerHTML = message;
 
-    const colors = {
-        success: '#d4edda',
-        error: '#f8d7da',
-        info: '#d1ecf1',
-        warning: '#fff3cd'
-    };
+        const colors = {
+            success: '#d4edda',
+            error: '#f8d7da',
+            info: '#d1ecf1',
+            warning: '#fff3cd'
+        };
 
-    statusDiv.style.background = colors[type] || colors.info;
-    statusDiv.style.border = `1px solid ${type === 'success' ? '#c3e6cb' : type === 'error' ? '#f5c6cb' : '#bee5eb'}`;
-}
+        statusDiv.style.background = colors[type] || colors.info;
+        statusDiv.style.border = `1px solid ${type === 'success' ? '#c3e6cb' : type === 'error' ? '#f5c6cb' : '#bee5eb'}`;
+    }
 
-async function loadStagedData() {
-    try {
-        const response = await fetch(`${API_BASE_URL}/v1/admin/import/staged?limit=1000`);
-        const result = await response.json();
+    async function loadStagedData() {
+        try {
+            const response = await fetch(`${API_BASE_URL}/v1/admin/import/staged?limit=1000`);
+            const result = await response.json();
 
-        stagedData = result.issues;
+            stagedData = result.issues;
 
-        if (stagedData.length > 0) {
-            document.getElementById('stagedDataSection').style.display = 'block';
-            renderStagedIssues();
-            renderStagedStats(result);
-        } else {
-            document.getElementById('stagedDataSection').style.display = 'none';
+            if (stagedData.length > 0) {
+                document.getElementById('stagedDataSection').style.display = 'block';
+                renderStagedIssues();
+                renderStagedStats(result);
+            } else {
+                document.getElementById('stagedDataSection').style.display = 'none';
+            }
+        } catch (error) {
+            console.error('Error loading staged data:', error);
         }
-    } catch (error) {
-        console.error('Error loading staged data:', error);
     }
-}
 
-function renderStagedStats(result) {
-    const statsDiv = document.getElementById('stagedDataStats');
+    function renderStagedStats(result) {
+        const statsDiv = document.getElementById('stagedDataStats');
 
-    const validCount = stagedData.filter(issue => issue.validation_errors.length === 0).length;
-    const errorCount = stagedData.filter(issue => issue.validation_errors.length > 0).length;
-    const warningCount = stagedData.filter(issue => issue.validation_warnings.length > 0).length;
+        const validCount = stagedData.filter(issue => issue.validation_errors.length === 0).length;
+        const errorCount = stagedData.filter(issue => issue.validation_errors.length > 0).length;
+        const warningCount = stagedData.filter(issue => issue.validation_warnings.length > 0).length;
 
-    statsDiv.innerHTML = `
+        statsDiv.innerHTML = `
         <div style="display: flex; gap: 24px; align-items: center;">
             <div>
                 <strong>Total:</strong> ${result.total} issues
@@ -1449,20 +1438,20 @@ function renderStagedStats(result) {
             </div>
         </div>
     `;
-}
+    }
 
-function renderStagedIssues() {
-    const tbody = document.getElementById('stagedIssuesTable');
-    tbody.innerHTML = '';
+    function renderStagedIssues() {
+        const tbody = document.getElementById('stagedIssuesTable');
+        tbody.innerHTML = '';
 
-    stagedData.forEach(issue => {
-        const row = document.createElement('tr');
-        row.style.borderBottom = '1px solid #e9ecef';
+        stagedData.forEach(issue => {
+            const row = document.createElement('tr');
+            row.style.borderBottom = '1px solid #e9ecef';
 
-        const hasErrors = issue.validation_errors.length > 0;
-        const hasWarnings = issue.validation_warnings.length > 0;
+            const hasErrors = issue.validation_errors.length > 0;
+            const hasWarnings = issue.validation_warnings.length > 0;
 
-        row.innerHTML = `
+            row.innerHTML = `
             <td style="padding: 12px;">${issue.row_number}</td>
             <td style="padding: 12px;"><code>${issue.issue_key || 'N/A'}</code></td>
             <td style="padding: 12px;">${issue.issue_type}</td>
@@ -1483,19 +1472,19 @@ function renderStagedIssues() {
             </td>
         `;
 
-        tbody.appendChild(row);
-    });
-}
+            tbody.appendChild(row);
+        });
+    }
 
-function editStagedIssue(rowNumber) {
-    const issue = stagedData.find(i => i.row_number === rowNumber);
-    if (!issue) return;
+    function editStagedIssue(rowNumber) {
+        const issue = stagedData.find(i => i.row_number === rowNumber);
+        if (!issue) return;
 
-    currentEditingRow = rowNumber;
-    const modal = document.getElementById('issueEditorModal');
-    const content = document.getElementById('issueEditorContent');
+        currentEditingRow = rowNumber;
+        const modal = document.getElementById('issueEditorModal');
+        const content = document.getElementById('issueEditorContent');
 
-    content.innerHTML = `
+        content.innerHTML = `
         <form id="issueEditForm" style="display: grid; gap: 16px;">
             <div>
                 <label style="display: block; font-weight: 600; margin-bottom: 4px;">Issue Key *</label>
@@ -1597,170 +1586,170 @@ function editStagedIssue(rowNumber) {
         </form>
     `;
 
-    // Add form submit handler
-    document.getElementById('issueEditForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        await saveIssueEdits(rowNumber, new FormData(e.target));
-    });
-
-    modal.style.display = 'block';
-}
-
-async function saveIssueEdits(rowNumber, formData) {
-    const updates = {};
-    const custom_fields = {};
-
-    for (const [key, value] of formData.entries()) {
-        // Handle custom fields separately
-        if (key.startsWith('custom_field_')) {
-            const fieldName = key.replace('custom_field_', '');
-            custom_fields[fieldName] = value;
-        } else {
-            updates[key] = value;
-        }
-    }
-
-    // Add custom fields to updates if any exist
-    if (Object.keys(custom_fields).length > 0) {
-        updates.custom_fields = custom_fields;
-    }
-
-    try {
-        const response = await fetch(`${API_BASE_URL}/v1/admin/import/staged/${rowNumber}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(updates)
+        // Add form submit handler
+        document.getElementById('issueEditForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            await saveIssueEdits(rowNumber, new FormData(e.target));
         });
 
-        const result = await response.json();
-
-        if (result.success) {
-            showImportStatus('✅ Issue updated successfully', 'success');
-            await loadStagedData();
-            closeIssueEditor();
-        } else {
-            showImportStatus(`❌ Update failed: ${result.error}`, 'error');
-        }
-    } catch (error) {
-        console.error('Error updating issue:', error);
-        showImportStatus(`❌ Update failed: ${error.message}`, 'error');
-    }
-}
-
-function closeIssueEditor() {
-    document.getElementById('issueEditorModal').style.display = 'none';
-    currentEditingRow = null;
-}
-
-async function deleteStagedIssue(rowNumber) {
-    if (!confirm('Are you sure you want to remove this issue from staging?')) {
-        return;
+        modal.style.display = 'block';
     }
 
-    try {
-        const response = await fetch(`${API_BASE_URL}/v1/admin/import/staged/${rowNumber}`, {
-            method: 'DELETE'
-        });
+    async function saveIssueEdits(rowNumber, formData) {
+        const updates = {};
+        const custom_fields = {};
 
-        const result = await response.json();
-
-        if (result.success) {
-            showImportStatus('✅ Issue removed from staging', 'success');
-            await loadStagedData();
-        }
-    } catch (error) {
-        console.error('Error deleting issue:', error);
-        showImportStatus(`❌ Delete failed: ${error.message}`, 'error');
-    }
-}
-
-async function commitAllIssues() {
-    if (!confirm(`Commit all valid issues to the database? This action cannot be undone.`)) {
-        return;
-    }
-
-    try {
-        updateStatusBar('Committing issues to database...');
-        showImportStatus('Committing issues to database...', 'info');
-
-        const response = await fetch(`${API_BASE_URL}/v1/admin/import/commit`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
-        });
-
-        const result = await response.json();
-
-        if (result.success) {
-            showImportStatus(`✅ Successfully committed ${result.committed} issues! ${result.skipped} skipped. ${result.remaining_staged} issues remain in staging.`, 'success');
-            updateStatusBar(`Committed ${result.committed} issues to database`);
-
-            if (result.remaining_staged === 0) {
-                document.getElementById('stagedDataSection').style.display = 'none';
-                document.getElementById('excelFileInput').value = '';
+        for (const [key, value] of formData.entries()) {
+            // Handle custom fields separately
+            if (key.startsWith('custom_field_')) {
+                const fieldName = key.replace('custom_field_', '');
+                custom_fields[fieldName] = value;
             } else {
+                updates[key] = value;
+            }
+        }
+
+        // Add custom fields to updates if any exist
+        if (Object.keys(custom_fields).length > 0) {
+            updates.custom_fields = custom_fields;
+        }
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/v1/admin/import/staged/${rowNumber}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updates)
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                showImportStatus('✅ Issue updated successfully', 'success');
+                await loadStagedData();
+                closeIssueEditor();
+            } else {
+                showImportStatus(`❌ Update failed: ${result.error}`, 'error');
+            }
+        } catch (error) {
+            console.error('Error updating issue:', error);
+            showImportStatus(`❌ Update failed: ${error.message}`, 'error');
+        }
+    }
+
+    function closeIssueEditor() {
+        document.getElementById('issueEditorModal').style.display = 'none';
+        currentEditingRow = null;
+    }
+
+    async function deleteStagedIssue(rowNumber) {
+        if (!confirm('Are you sure you want to remove this issue from staging?')) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/v1/admin/import/staged/${rowNumber}`, {
+                method: 'DELETE'
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                showImportStatus('✅ Issue removed from staging', 'success');
                 await loadStagedData();
             }
-        } else {
-            showImportStatus(`❌ Commit failed: ${result.message}`, 'error');
+        } catch (error) {
+            console.error('Error deleting issue:', error);
+            showImportStatus(`❌ Delete failed: ${error.message}`, 'error');
         }
-    } catch (error) {
-        console.error('Commit error:', error);
-        showImportStatus(`❌ Commit failed: ${error.message}`, 'error');
-    }
-}
-
-function clearStaging() {
-    if (!confirm('Clear all staged data? This will discard all uploaded issues that haven\'t been committed.')) {
-        return;
     }
 
-    stagedData = [];
-    document.getElementById('stagedDataSection').style.display = 'none';
-    document.getElementById('excelFileInput').value = '';
-    showImportStatus('✅ Staging cleared', 'success');
-}
+    async function commitAllIssues() {
+        if (!confirm(`Commit all valid issues to the database? This action cannot be undone.`)) {
+            return;
+        }
 
-async function downloadTemplate() {
-    try {
-        const response = await fetch(`${API_BASE_URL}/v1/admin/import/template`);
-        const result = await response.json();
+        try {
+            updateStatusBar('Committing issues to database...');
+            showImportStatus('Committing issues to database...', 'info');
 
-        showImportStatus('✅ Template ready for download! Check the backend/data/templates folder.', 'success');
-    } catch (error) {
-        console.error('Template error:', error);
-        showImportStatus(`❌ Template generation failed: ${error.message}`, 'error');
+            const response = await fetch(`${API_BASE_URL}/v1/admin/import/commit`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                showImportStatus(`✅ Successfully committed ${result.committed} issues! ${result.skipped} skipped. ${result.remaining_staged} issues remain in staging.`, 'success');
+                updateStatusBar(`Committed ${result.committed} issues to database`);
+
+                if (result.remaining_staged === 0) {
+                    document.getElementById('stagedDataSection').style.display = 'none';
+                    document.getElementById('excelFileInput').value = '';
+                } else {
+                    await loadStagedData();
+                }
+            } else {
+                showImportStatus(`❌ Commit failed: ${result.message}`, 'error');
+            }
+        } catch (error) {
+            console.error('Commit error:', error);
+            showImportStatus(`❌ Commit failed: ${error.message}`, 'error');
+        }
     }
-}
 
-function showTemplates() {
-    showImportStatus(`📋 Template files available in backend/data/knowledge_base/:<br>
+    function clearStaging() {
+        if (!confirm('Clear all staged data? This will discard all uploaded issues that haven\'t been committed.')) {
+            return;
+        }
+
+        stagedData = [];
+        document.getElementById('stagedDataSection').style.display = 'none';
+        document.getElementById('excelFileInput').value = '';
+        showImportStatus('✅ Staging cleared', 'success');
+    }
+
+    async function downloadTemplate() {
+        try {
+            const response = await fetch(`${API_BASE_URL}/v1/admin/import/template`);
+            const result = await response.json();
+
+            showImportStatus('✅ Template ready for download! Check the backend/data/templates folder.', 'success');
+        } catch (error) {
+            console.error('Template error:', error);
+            showImportStatus(`❌ Template generation failed: ${error.message}`, 'error');
+        }
+    }
+
+    function showTemplates() {
+        showImportStatus(`📋 Template files available in backend/data/knowledge_base/:<br>
         - epic_template.txt<br>
         - feature_template.txt<br>
         - user_story_template.txt`, 'info');
-}
+    }
 
-// Expose all functions needed by onclick handlers to global scope
-window.switchMainTab = switchMainTab;
-window.selectScope = selectScope;
-window.setMetricFocus = setMetricFocus;
-window.generateScorecard = generateScorecard;
-window.generateInsights = generateInsights;
-window.exportReport = exportReport;
-window.acceptInsight = acceptInsight;
-window.viewDetails = viewDetails;
-window.dismissInsight = dismissInsight;
-window.shareSuccess = shareSuccess;
-window.showMetricCategory = showMetricCategory;
-window.viewInsightDetails = viewInsightDetails;
-window.exportInsight = exportInsight;
-window.uploadExcelFile = uploadExcelFile;
-window.loadStagedData = loadStagedData;
-window.editStagedIssue = editStagedIssue;
-window.deleteStagedIssue = deleteStagedIssue;
-window.commitAllIssues = commitAllIssues;
-window.clearStaging = clearStaging;
-window.downloadTemplate = downloadTemplate;
-window.showTemplates = showTemplates;
-window.closeIssueEditor = closeIssueEditor;
+    // Expose all functions needed by onclick handlers to global scope
+    window.switchMainTab = switchMainTab;
+    window.selectScope = selectScope;
+    window.setMetricFocus = setMetricFocus;
+    window.generateScorecard = generateScorecard;
+    window.generateInsights = generateInsights;
+    window.exportReport = exportReport;
+    window.acceptInsight = acceptInsight;
+    window.viewDetails = viewDetails;
+    window.dismissInsight = dismissInsight;
+    window.shareSuccess = shareSuccess;
+    window.showMetricCategory = showMetricCategory;
+    window.viewInsightDetails = viewInsightDetails;
+    window.exportInsight = exportInsight;
+    window.uploadExcelFile = uploadExcelFile;
+    window.loadStagedData = loadStagedData;
+    window.editStagedIssue = editStagedIssue;
+    window.deleteStagedIssue = deleteStagedIssue;
+    window.commitAllIssues = commitAllIssues;
+    window.clearStaging = clearStaging;
+    window.downloadTemplate = downloadTemplate;
+    window.showTemplates = showTemplates;
+    window.closeIssueEditor = closeIssueEditor;
 
-console.log('📊 Evaluation Coach app.js loaded successfully');
+    console.log('📊 Evaluation Coach app.js loaded successfully');

@@ -181,7 +181,7 @@ async def generate_insights_endpoint(
                             "flow_efficiency": float(
                                 art.get("flow_efficiency_percent", 0)
                             ),
-                            "pi_predictability": float(art.get("pi_predictability", 0)),
+                            "planning_accuracy": float(art.get("pi_predictability", 0)),
                             "quality_score": float(art.get("quality_score", 0)),
                             "status": (
                                 "healthy"
@@ -258,8 +258,9 @@ async def get_dashboard(
 
         # Initialize default values
         flow_efficiency = 67.0
-        pi_predictability = 82.0
+        planning_accuracy = 82.0
         throughput_count = 0
+        avg_leadtime = 0.0
 
         if leadtime_service and leadtime_service.is_available():
             try:
@@ -267,7 +268,8 @@ async def get_dashboard(
                 pi_filter = selected_pis if selected_pis else None
                 print(f"🔍 Calculating portfolio metrics with PI filter: {pi_filter}")
 
-                # Get planning accuracy for PI Predictability
+                # Get planning accuracy from pip_data
+                # Planning Accuracy: (features with planned_committed=1 AND plc_delivery=1) / (features with planned_committed=1) * 100
                 # Fetch pip_data - if ARTs are specified, fetch per-ART to ensure completeness
                 if selected_arts:
                     # Fetch per ART to ensure we get all pip data
@@ -288,7 +290,8 @@ async def get_dashboard(
                         f for f in filtered_pip_features if f.get("pi") in selected_pis
                     ]
 
-                # Calculate PI Predictability from filtered data
+                # Calculate Planning Accuracy from filtered data
+                # Planning Accuracy = (committed features that were delivered) / (all committed features) * 100
                 # Match DL Webb App logic: delivered means plc_delivery is not null/empty/"0"
                 if filtered_pip_features:
                     planned_committed = sum(
@@ -313,7 +316,7 @@ async def get_dashboard(
                     )
 
                     if planned_committed > 0:
-                        pi_predictability = round(
+                        planning_accuracy = round(
                             (delivered / planned_committed) * 100, 1
                         )
                         filter_desc = []
@@ -322,7 +325,7 @@ async def get_dashboard(
                         if selected_arts:
                             filter_desc.append(f"{len(selected_arts)} ARTs")
                         print(
-                            f"✅ PI Predictability: {pi_predictability}% (filtered by {', '.join(filter_desc) if filter_desc else 'all'})"
+                            f"✅ Planning Accuracy: {planning_accuracy}% (filtered by {', '.join(filter_desc) if filter_desc else 'all'})"
                         )
 
                 # Get lead-time statistics for Flow Efficiency
@@ -402,6 +405,13 @@ async def get_dashboard(
                 print(
                     f"✅ Features Delivered: {throughput_count} (from leadtime_thr_data - may have sync delays)"
                 )
+                
+                # Calculate average lead-time from throughput data (completed features only)
+                if filtered_throughput:
+                    leadtimes = [f.get("total_leadtime", 0) for f in filtered_throughput if f.get("total_leadtime", 0) > 0]
+                    if leadtimes:
+                        avg_leadtime = round(sum(leadtimes) / len(leadtimes), 1)
+                        print(f"✅ Average Lead-Time: {avg_leadtime} days from {len(leadtimes)} completed features")
 
             except Exception as e:
                 print(f"⚠️  Could not fetch metrics from lead-time service: {e}")
@@ -416,12 +426,20 @@ async def get_dashboard(
                 benchmark={"industry": 15.0, "high_performer": 40.0},
             ),
             MetricValue(
-                name="PI Predictability",
-                value=pi_predictability,
+                name="Planning Accuracy",
+                value=planning_accuracy,
                 unit="%",
-                status="healthy" if pi_predictability >= 70 else "warning",
+                status="healthy" if planning_accuracy >= 70 else "warning",
                 trend="stable",
                 benchmark={"target": 80.0},
+            ),
+            MetricValue(
+                name="Average Lead-Time",
+                value=avg_leadtime,
+                unit="days",
+                status="healthy" if avg_leadtime <= 30 else ("warning" if avg_leadtime <= 60 else "critical"),
+                trend="stable",
+                benchmark={"target": 30.0, "max_acceptable": 60.0},
             ),
             MetricValue(
                 name="Features Delivered",
@@ -503,6 +521,22 @@ async def get_dashboard(
                                 )
                             else:
                                 flow_efficiency = 0
+                            
+                            # Get average lead-time from throughput data (completed features only)
+                            throughput_features = leadtime_service.client.get_throughput_data(
+                                art=art_name, limit=10000
+                            )
+                            # Filter by selected PIs if specified
+                            if selected_pis:
+                                throughput_features = [
+                                    f for f in throughput_features if f.get("pi") in selected_pis
+                                ]
+                            
+                            if throughput_features:
+                                thr_leadtimes = [f.get("total_leadtime", 0) for f in throughput_features if f.get("total_leadtime", 0) > 0]
+                                avg_leadtime_art = sum(thr_leadtimes) / len(thr_leadtimes) if thr_leadtimes else 0
+                            else:
+                                avg_leadtime_art = 0
 
                             # Get planning accuracy for this ART from pip_data
                             pip_features = leadtime_service.client.get_pip_data(
@@ -527,13 +561,13 @@ async def get_dashboard(
                                     for f in pip_features
                                     if f.get("plc_delivery", "0") == "1"
                                 )
-                                pi_predictability = (
+                                planning_accuracy = (
                                     (delivered / planned_committed * 100)
                                     if planned_committed > 0
                                     else 0
                                 )
                             else:
-                                pi_predictability = 0
+                                planning_accuracy = 0
 
                             # Quality score: Estimate based on consistency (lower variability = better)
                             # Using coefficient of variation of total lead time
@@ -550,10 +584,10 @@ async def get_dashboard(
                             else:
                                 quality_score = 50.0
 
-                            # Status based on PI predictability
-                            if pi_predictability >= 70:
+                            # Status based on Planning Accuracy
+                            if planning_accuracy >= 70:
                                 status_val = "healthy"
-                            elif pi_predictability >= 50:
+                            elif planning_accuracy >= 50:
                                 status_val = "warning"
                             else:
                                 status_val = "critical"
@@ -562,7 +596,8 @@ async def get_dashboard(
                                 {
                                     "art_name": art_name,
                                     "flow_efficiency": round(flow_efficiency, 1),
-                                    "pi_predictability": round(pi_predictability, 1),
+                                    "planning_accuracy": round(planning_accuracy, 1),
+                                    "avg_leadtime": round(avg_leadtime_art, 1),
                                     "quality_score": round(quality_score, 1),
                                     "status": status_val,
                                 }
@@ -573,7 +608,8 @@ async def get_dashboard(
                                 {
                                     "art_name": art_name,
                                     "flow_efficiency": 0.0,
-                                    "pi_predictability": 0.0,
+                                    "planning_accuracy": 0.0,
+                                    "avg_leadtime": 0.0,
                                     "quality_score": 0.0,
                                     "status": "no_data",
                                 }
@@ -606,14 +642,14 @@ async def get_dashboard(
                 {
                     "art_name": "Platform Engineering",
                     "flow_efficiency": 72.0,
-                    "pi_predictability": 85.0,
+                    "planning_accuracy": 85.0,
                     "quality_score": 3.8,
                     "status": "healthy",
                 },
                 {
                     "art_name": "Customer Experience",
                     "flow_efficiency": 65.0,
-                    "pi_predictability": 78.0,
+                    "planning_accuracy": 78.0,
                     "quality_score": 5.2,
                     "status": "warning",
                 },
@@ -767,20 +803,20 @@ async def get_dashboard(
                     )
                 )
 
-            # PI Predictability insights
-            low_predictability_arts = [
-                art for art in art_comparison if art.get("pi_predictability", 0) < 70
+            # Planning Accuracy insights
+            low_accuracy_arts = [
+                art for art in art_comparison if art.get("planning_accuracy", 0) < 70
             ]
-            if low_predictability_arts:
+            if low_accuracy_arts:
                 recent_insights.append(
                     InsightResponse(
                         id=0,
-                        title=f"Planning Accuracy Below Target in {len(low_predictability_arts)} ART(s)",
+                        title=f"Planning Accuracy Below Target in {len(low_accuracy_arts)} ART(s)",
                         severity="warning",
                         confidence=0.9,
                         scope="portfolio",
                         scope_id=None,
-                        observation=f"{len(low_predictability_arts)} ARTs are below 70% PI Predictability target",
+                        observation=f"{len(low_accuracy_arts)} ARTs are below 70% Planning Accuracy target",
                         interpretation="Teams are not consistently delivering what they commit to during PI Planning.",
                         root_causes=[
                             RootCause(
@@ -815,7 +851,7 @@ async def get_dashboard(
                             ),
                         ],
                         expected_outcomes=ExpectedOutcome(
-                            metrics_to_watch=["pi_predictability"],
+                            metrics_to_watch=["planning_accuracy"],
                             leading_indicators=[
                                 "More conservative planning",
                                 "Buffer utilization",
@@ -825,8 +861,8 @@ async def get_dashboard(
                             risks=["Perceived as under-committing"],
                         ),
                         metric_references=[
-                            f"{art['art_name']}: {art['pi_predictability']}%"
-                            for art in low_predictability_arts[:3]
+                            f"{art['art_name']}: {art['planning_accuracy']}%"
+                            for art in low_accuracy_arts[:3]
                         ],
                         evidence=["PI planning data", "Delivery metrics"],
                         status="active",
@@ -839,7 +875,7 @@ async def get_dashboard(
                 art
                 for art in art_comparison
                 if art.get("flow_efficiency", 0) > 50
-                and art.get("pi_predictability", 0) > 80
+                and art.get("planning_accuracy", 0) > 80
             ]
             if high_performers:
                 recent_insights.append(
@@ -1012,7 +1048,7 @@ async def generate_insights(request: AnalysisRequest, db: Session = Depends(get_
                     generated_insights.append(
                         InsightResponse(
                             id=len(generated_insights) + 1,
-                            title=f"Low PI Predictability: {score:.1f}%",
+                            title=f"Low Planning Accuracy: {score:.1f}%",
                             severity="warning" if score < 60 else "info",
                             confidence=0.95,
                             scope=request.scope or "portfolio",
@@ -1039,13 +1075,13 @@ async def generate_insights(request: AnalysisRequest, db: Session = Depends(get_
                                 }
                             ],
                             expected_outcomes={
-                                "metrics_to_watch": ["PI Predictability"],
+                                "metrics_to_watch": ["Planning Accuracy"],
                                 "leading_indicators": ["Commitment vs Actual"],
                                 "lagging_indicators": ["Planning Accuracy"],
                                 "timeline": "1-2 PIs",
                                 "risks": ["Resistance to reduced commitments"],
                             },
-                            metric_references=["pi_predictability"],
+                            metric_references=["planning_accuracy"],
                             evidence=[f"Current: {score:.1f}%, Target: 80%"],
                             status="active",
                             created_at=datetime.now(),
