@@ -27,6 +27,19 @@ if USE_OPENAI:
 else:
     openai_client = None
 
+# Check for Ollama
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+ollama_client = None
+try:
+    from openai import OpenAI
+
+    # Ollama has OpenAI-compatible API
+    ollama_client = OpenAI(
+        base_url=f"{OLLAMA_BASE_URL}/v1", api_key="ollama"
+    )  # Ollama doesn't need real API key
+except Exception:
+    pass
+
 
 class LLMService:
     """Service for LLM-based coaching and analysis"""
@@ -36,6 +49,29 @@ class LLMService:
         self.temperature = float(os.getenv("LLM_TEMPERATURE", "0.7"))
         self.use_openai = USE_OPENAI
         self.client = openai_client
+        self.ollama_client = ollama_client
+        self.ollama_base_url = OLLAMA_BASE_URL
+
+    def _is_ollama_model(self, model: str) -> bool:
+        """Check if the model is an Ollama model"""
+        ollama_prefixes = [
+            "llama",
+            "mistral",
+            "ministral",
+            "codellama",
+            "phi",
+            "gemma",
+            "qwen",
+            "deepseek",
+        ]
+        return any(model.lower().startswith(prefix) for prefix in ollama_prefixes)
+
+    def _get_client(self, model: str = None):
+        """Get the appropriate client based on model"""
+        model_to_use = model or self.model
+        if self._is_ollama_model(model_to_use):
+            return self.ollama_client
+        return self.client
 
     async def generate_response(
         self, message: str, context: Optional[Dict[str, Any]], db: Session
@@ -199,7 +235,8 @@ As an experienced agile coach, provide a brief (2-3 sentences) expert commentary
 
 Keep it conversational, actionable, and grounded in real-world experience. Do not repeat the observation or recommendations - add NEW insights from your expertise."""
 
-            response = self.client.chat.completions.create(
+            client = self._get_client(self.model)
+            response = client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {

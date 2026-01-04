@@ -133,21 +133,68 @@ async def root():
     }
 
 
+# LLM Configuration Endpoints
+@app.post("/api/v1/config/llm")
+async def save_llm_config(config: Dict[str, Any]):
+    """Save LLM configuration (model and temperature)"""
+    try:
+        model = config.get("model", "gpt-4o-mini")
+        temperature = float(config.get("temperature", 0.7))
+
+        # Update the LLM service
+        llm_service.model = model
+        llm_service.temperature = temperature
+
+        print(f"✅ LLM config updated: model={model}, temperature={temperature}")
+
+        return {
+            "status": "success",
+            "config": {"model": model, "temperature": temperature},
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/v1/config/llm")
+async def get_llm_config():
+    """Get current LLM configuration"""
+    return {"model": llm_service.model, "temperature": llm_service.temperature}
+
+
 # Insights Generation Endpoint
 @app.post("/api/v1/insights/generate")
 async def generate_insights_endpoint(
     scope: str = "portfolio",
     pis: Optional[str] = None,
     arts: Optional[str] = None,
+    model: Optional[str] = None,
+    temperature: Optional[float] = None,
     db: Session = Depends(get_db),
 ):
     """Generate AI-powered insights using expert analysis (LLM)
 
     This is a separate endpoint to allow on-demand insight generation
     without slowing down the initial dashboard load.
+
+    Args:
+        scope: Scope of analysis (portfolio, art, team)
+        pis: Comma-separated list of PIs
+        arts: Comma-separated list of ARTs
+        model: LLM model to use (e.g., gpt-4o, gpt-4o-mini)
+        temperature: LLM temperature (0.0-2.0)
     """
     try:
         from agents.nodes.advanced_insights import generate_advanced_insights
+
+        # Update LLM service with custom parameters if provided
+        if model:
+            llm_service.model = model
+        if temperature is not None:
+            llm_service.temperature = temperature
+
+        print(
+            f"🤖 Using LLM: model={llm_service.model}, temperature={llm_service.temperature}"
+        )
 
         # Parse filter parameters
         selected_pis = (
@@ -163,17 +210,23 @@ async def generate_insights_endpoint(
             try:
                 params = {}
                 if selected_arts:
-                    params["arts"] = selected_arts[:1]  # Use first ART
+                    params["arts"] = selected_arts  # Pass all selected ARTs
                 if selected_pis:
-                    params["pis"] = selected_pis[:1]  # Use first PI
+                    params["pis"] = selected_pis  # Pass all selected PIs
 
                 # Get analysis summary
                 analysis_summary = leadtime_service.client.get_analysis_summary(
                     **params
                 )
 
-                # Also get ART comparison for context
-                pip_data = leadtime_service.client.get_pip_data()
+                # Also get ART comparison for context, filtered by selected ARTs
+                pip_params = {}
+                if selected_arts:
+                    pip_params["art"] = selected_arts[
+                        0
+                    ]  # Get pip_data for first selected ART
+                pip_data = leadtime_service.client.get_pip_data(**pip_params)
+
                 if pip_data:
                     art_comparison = [
                         {
@@ -190,7 +243,6 @@ async def generate_insights_endpoint(
                             ),
                         }
                         for art in pip_data
-                        if (not selected_arts or art.get("art_name") in selected_arts)
                     ]
 
                 # Generate insights with LLM
@@ -405,13 +457,19 @@ async def get_dashboard(
                 print(
                     f"✅ Features Delivered: {throughput_count} (from leadtime_thr_data - may have sync delays)"
                 )
-                
+
                 # Calculate average lead-time from throughput data (completed features only)
                 if filtered_throughput:
-                    leadtimes = [f.get("total_leadtime", 0) for f in filtered_throughput if f.get("total_leadtime", 0) > 0]
+                    leadtimes = [
+                        f.get("lead_time_days", 0)
+                        for f in filtered_throughput
+                        if f.get("lead_time_days", 0) > 0
+                    ]
                     if leadtimes:
                         avg_leadtime = round(sum(leadtimes) / len(leadtimes), 1)
-                        print(f"✅ Average Lead-Time: {avg_leadtime} days from {len(leadtimes)} completed features")
+                        print(
+                            f"✅ Average Lead-Time: {avg_leadtime} days from {len(leadtimes)} completed features"
+                        )
 
             except Exception as e:
                 print(f"⚠️  Could not fetch metrics from lead-time service: {e}")
@@ -437,7 +495,11 @@ async def get_dashboard(
                 name="Average Lead-Time",
                 value=avg_leadtime,
                 unit="days",
-                status="healthy" if avg_leadtime <= 30 else ("warning" if avg_leadtime <= 60 else "critical"),
+                status=(
+                    "healthy"
+                    if avg_leadtime <= 30
+                    else ("warning" if avg_leadtime <= 60 else "critical")
+                ),
                 trend="stable",
                 benchmark={"target": 30.0, "max_acceptable": 60.0},
             ),
@@ -521,20 +583,32 @@ async def get_dashboard(
                                 )
                             else:
                                 flow_efficiency = 0
-                            
+
                             # Get average lead-time from throughput data (completed features only)
-                            throughput_features = leadtime_service.client.get_throughput_data(
-                                art=art_name, limit=10000
+                            throughput_features = (
+                                leadtime_service.client.get_throughput_data(
+                                    art=art_name, limit=10000
+                                )
                             )
                             # Filter by selected PIs if specified
                             if selected_pis:
                                 throughput_features = [
-                                    f for f in throughput_features if f.get("pi") in selected_pis
+                                    f
+                                    for f in throughput_features
+                                    if f.get("pi") in selected_pis
                                 ]
-                            
+
                             if throughput_features:
-                                thr_leadtimes = [f.get("total_leadtime", 0) for f in throughput_features if f.get("total_leadtime", 0) > 0]
-                                avg_leadtime_art = sum(thr_leadtimes) / len(thr_leadtimes) if thr_leadtimes else 0
+                                thr_leadtimes = [
+                                    f.get("lead_time_days", 0)
+                                    for f in throughput_features
+                                    if f.get("lead_time_days", 0) > 0
+                                ]
+                                avg_leadtime_art = (
+                                    sum(thr_leadtimes) / len(thr_leadtimes)
+                                    if thr_leadtimes
+                                    else 0
+                                )
                             else:
                                 avg_leadtime_art = 0
 
@@ -599,6 +673,7 @@ async def get_dashboard(
                                     "planning_accuracy": round(planning_accuracy, 1),
                                     "avg_leadtime": round(avg_leadtime_art, 1),
                                     "quality_score": round(quality_score, 1),
+                                    "features_delivered": len(throughput_features),
                                     "status": status_val,
                                 }
                             )
@@ -611,6 +686,7 @@ async def get_dashboard(
                                     "planning_accuracy": 0.0,
                                     "avg_leadtime": 0.0,
                                     "quality_score": 0.0,
+                                    "features_delivered": 0,
                                     "status": "no_data",
                                 }
                             )

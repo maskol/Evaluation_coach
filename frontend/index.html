@@ -171,6 +171,9 @@
                                             title="Average lead-time for delivered features from start to completion. Lower is better. Target: ≤30 days, Max acceptable: 60 days">
                                             Avg Lead-Time</th>
                                         <th style="padding: 12px; cursor: help;"
+                                            title="Number of features completed and delivered in the selected time period">
+                                            Features Delivered</th>
+                                        <th style="padding: 12px; cursor: help;"
                                             title="Quality score based on lead time consistency. Lower variability indicates better quality and process stability. Range: 0-100%">
                                             Quality</th>
                                         <th style="padding: 12px; cursor: help;"
@@ -181,7 +184,7 @@
                                 <tbody id="artComparisonBody">
                                     <!-- ART data will be loaded dynamically from API -->
                                     <tr>
-                                        <td colspan="5" style="padding: 20px; text-align: center; color: #666;">
+                                        <td colspan="7" style="padding: 20px; text-align: center; color: #666;">
                                             Loading ART data from API...
                                         </td>
                                     </tr>
@@ -492,77 +495,159 @@
                 <!-- Admin Tab Content -->
                 <div class="main-tab-content" id="adminContent" style="display: none;">
                     <div class="messages">
-                        <h2 style="margin-bottom: 20px; color: #333;">📁 Data Import & Administration</h2>
+                        <h2 style="margin-bottom: 20px; color: #333;">⚙️ Administration & Configuration</h2>
 
                         <!-- Import Status -->
                         <div id="importStatus"
                             style="display: none; padding: 16px; margin-bottom: 20px; border-radius: 8px;"></div>
 
-                        <!-- Default Filters Section -->
-                        <div style="background: #f8f9fa; padding: 24px; border-radius: 12px; margin-bottom: 24px;">
-                            <h3 style="margin-bottom: 16px;">⚙️ Default Dashboard Filters</h3>
-                            <p style="color: #666; margin-bottom: 16px;">Set default Program Increments and ARTs to
-                                display when the dashboard loads.</p>
+                        <!-- Two-column layout -->
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px;">
 
-                            <!-- Default PIs -->
-                            <div style="margin-bottom: 20px;">
-                                <label style="display: block; font-weight: 600; margin-bottom: 8px;">Default Program
-                                    Increments:</label>
-                                <div id="defaultPISelector"
-                                    style="background: white; padding: 12px; border-radius: 8px; border: 1px solid #ddd; max-height: 200px; overflow-y: auto;">
-                                    <!-- PI checkboxes will be loaded dynamically -->
-                                    <div style="padding: 8px; color: #666; text-align: center;">Loading PIs...</div>
+                            <!-- Left Column: LLM Configuration -->
+                            <div>
+                                <!-- LLM Configuration Section -->
+                                <div
+                                    style="background: #f0f4ff; padding: 24px; border-radius: 12px; margin-bottom: 24px; border: 2px solid #667eea;">
+                                    <h3 style="margin-bottom: 16px; color: #667eea;">🤖 AI Model Configuration</h3>
+                                    <p style="color: #666; margin-bottom: 16px; font-size: 14px;">Configure the LLM used
+                                        for generating insights and coaching responses.</p>
+
+                                    <!-- Model Selection -->
+                                    <div style="margin-bottom: 20px;">
+                                        <label
+                                            style="display: block; font-weight: 600; margin-bottom: 8px;">Model:</label>
+                                        <select id="llmModelSelect"
+                                            style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; background: white; cursor: pointer;">
+                                            <optgroup label="OpenAI Models">
+                                                <option value="gpt-4o">GPT-4o (Latest, Most Capable)</option>
+                                                <option value="gpt-4o-mini" selected>GPT-4o Mini (Fast & Cost-effective)
+                                                </option>
+                                                <option value="gpt-4-turbo-preview">GPT-4 Turbo (Preview)</option>
+                                                <option value="gpt-4">GPT-4 (Legacy)</option>
+                                                <option value="gpt-3.5-turbo">GPT-3.5 Turbo (Budget)</option>
+                                            </optgroup>
+                                            <optgroup label="Ollama Models (Local)">
+                                                <option value="llama3.1:latest">Llama 3.1 (Latest)</option>
+                                                <option value="llama3.1:8b">Llama 3.1 8B</option>
+                                                <option value="ministral-3:8b">Ministral 3 8B</option>
+                                                <option value="ministral-3:14b">Ministral 3 14B</option>
+                                                <option value="mistral:latest">Mistral (Latest)</option>
+                                            </optgroup>
+                                        </select>
+                                        <small style="color: #666; display: block; margin-top: 4px;">OpenAI models
+                                            require API key, Ollama models run locally</small>
+                                    </div>
+
+                                    <!-- Temperature Slider -->
+                                    <div style="margin-bottom: 20px;">
+                                        <label
+                                            style="display: block; font-weight: 600; margin-bottom: 8px;">Temperature:
+                                            <span id="tempValue" style="color: #667eea;">0.7</span></label>
+                                        <input type="range" id="llmTemperature" min="0" max="2" step="0.1" value="0.7"
+                                            style="width: 100%; cursor: pointer;"
+                                            oninput="document.getElementById('tempValue').textContent = this.value">
+                                        <div
+                                            style="display: flex; justify-content: space-between; font-size: 12px; color: #666; margin-top: 4px;">
+                                            <span>0.0 (Focused)</span>
+                                            <span>1.0 (Balanced)</span>
+                                            <span>2.0 (Creative)</span>
+                                        </div>
+                                        <small style="color: #666; display: block; margin-top: 8px;">Lower = more
+                                            deterministic, Higher = more creative</small>
+                                    </div>
+
+                                    <!-- Current Status -->
+                                    <div
+                                        style="background: white; padding: 12px; border-radius: 8px; margin-bottom: 16px;">
+                                        <div style="font-size: 13px; color: #666; margin-bottom: 8px;">Current
+                                            Configuration:</div>
+                                        <div id="llmStatus" style="font-size: 14px; font-family: monospace;">
+                                            Model: gpt-4o-mini | Temp: 0.7
+                                        </div>
+                                    </div>
+
+                                    <button onclick="saveLLMConfig()"
+                                        style="width: 100%; padding: 12px 24px; background: #667eea; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                                        💾 Save LLM Configuration
+                                    </button>
+                                </div>
+
+                                <div style="background: #f8f9fa; padding: 24px; border-radius: 12px;">
+                                    <h3 style="margin-bottom: 16px;">📊 Default Dashboard Filters</h3>
+                                    <p style="color: #666; margin-bottom: 16px; font-size: 14px;">Set default Program
+                                        Increments and ARTs to
+                                        display when the dashboard loads.</p>
+
+                                    <!-- Default PIs -->
+                                    <div style="margin-bottom: 20px;">
+                                        <label style="display: block; font-weight: 600; margin-bottom: 8px;">Program
+                                            Increments:</label>
+                                        <div id="defaultPISelector"
+                                            style="background: white; padding: 12px; border-radius: 8px; border: 1px solid #ddd; max-height: 150px; overflow-y: auto;">
+                                            <!-- PI checkboxes will be loaded dynamically -->
+                                            <div style="padding: 8px; color: #666; text-align: center;">Loading PIs...
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Default ARTs -->
+                                    <div style="margin-bottom: 20px;">
+                                        <label
+                                            style="display: block; font-weight: 600; margin-bottom: 8px;">ARTs:</label>
+                                        <div id="defaultARTSelector"
+                                            style="background: white; padding: 12px; border-radius: 8px; border: 1px solid #ddd; max-height: 180px; overflow-y: auto;">
+                                            <!-- ART checkboxes will be loaded dynamically -->
+                                            <div style="padding: 8px; color: #666; text-align: center;">Loading ARTs...
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div style="display: flex; gap: 12px;">
+                                        <button onclick="saveDefaultFilters()"
+                                            style="flex: 1; padding: 12px; background: #34C759; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                                            💾 Save
+                                        </button>
+                                        <button onclick="clearDefaultFilters()"
+                                            style="flex: 1; padding: 12px; background: #FF9500; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                                            🔄 Reset
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
 
-                            <!-- Default ARTs -->
-                            <div style="margin-bottom: 20px;">
-                                <label style="display: block; font-weight: 600; margin-bottom: 8px;">Default
-                                    ARTs:</label>
-                                <div id="defaultARTSelector"
-                                    style="background: white; padding: 12px; border-radius: 8px; border: 1px solid #ddd; max-height: 300px; overflow-y: auto;">
-                                    <!-- ART checkboxes will be loaded dynamically -->
-                                    <div style="padding: 8px; color: #666; text-align: center;">Loading ARTs...</div>
+                            <!-- Right Column: Data Import -->
+                            <div>
+
+                                <!-- Upload Section -->
+                                <div
+                                    style="background: #fff5f5; padding: 24px; border-radius: 12px; margin-bottom: 24px; border: 2px solid #FF9500;">
+                                    <h3 style="margin-bottom: 16px; color: #FF9500;">📁 Import Excel Data</h3>
+                                    <p style="color: #666; margin-bottom: 16px; font-size: 14px;">Upload an Excel file
+                                        containing Epics,
+                                        Features, or User Stories. Data will be staged for review before saving.</p>
+
+                                    <div style="margin-bottom: 16px;">
+                                        <input type="file" id="excelFileInput" accept=".xlsx,.xls"
+                                            style="width: 100%; padding: 10px; border: 2px dashed #FF9500; border-radius: 8px; background: white;">
+                                    </div>
+
+                                    <button onclick="uploadExcelFile()"
+                                        style="width: 100%; padding: 12px 24px; background: #FF9500; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; margin-bottom: 12px;">
+                                        📤 Upload & Preview
+                                    </button>
+
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                                        <button onclick="downloadTemplate()"
+                                            style="padding: 10px 20px; background: white; border: 2px solid #FF9500; color: #FF9500; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                                            📥 Template
+                                        </button>
+                                        <button onclick="showTemplates()"
+                                            style="padding: 10px 20px; background: white; border: 2px solid #34C759; color: #34C759; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                                            📋 View
+                                        </button>
+                                    </div>
                                 </div>
-                            </div>
-
-                            <div style="display: flex; gap: 12px;">
-                                <button onclick="saveDefaultFilters()"
-                                    style="padding: 12px 24px; background: #34C759; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
-                                    💾 Save Defaults
-                                </button>
-                                <button onclick="clearDefaultFilters()"
-                                    style="padding: 12px 24px; background: #FF9500; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
-                                    🔄 Reset to All
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- Upload Section -->
-                        <div style="background: #f8f9fa; padding: 24px; border-radius: 12px; margin-bottom: 24px;">
-                            <h3 style="margin-bottom: 16px;">Import Excel Data</h3>
-                            <p style="color: #666; margin-bottom: 16px;">Upload an Excel file containing Epics,
-                                Features, or User Stories. The data will be staged for review before being saved to
-                                the database.</p>
-
-                            <div style="display: flex; gap: 12px; margin-bottom: 16px;">
-                                <input type="file" id="excelFileInput" accept=".xlsx,.xls"
-                                    style="flex: 1; padding: 10px; border: 2px dashed #990AE3; border-radius: 8px; background: white;">
-                                <button onclick="uploadExcelFile()"
-                                    style="padding: 12px 24px; background: #990AE3; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
-                                    📤 Upload & Preview
-                                </button>
-                            </div>
-
-                            <div style="display: flex; gap: 12px;">
-                                <button onclick="downloadTemplate()"
-                                    style="padding: 10px 20px; background: white; border: 2px solid #990AE3; color: #990AE3; border-radius: 8px; cursor: pointer; font-weight: 600;">
-                                    📥 Download Template
-                                </button>
-                                <button onclick="showTemplates()"
-                                    style="padding: 10px 20px; background: white; border: 2px solid #34C759; color: #34C759; border-radius: 8px; cursor: pointer; font-weight: 600;">
-                                    📋 View Templates
-                                </button>
                             </div>
                         </div>
 
