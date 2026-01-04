@@ -169,6 +169,13 @@ def _analyze_bottlenecks(
 
         # Get stuck items for this stage
         stuck_items = bottleneck_data.get("stuck_items", [])
+
+        # Filter by ART if specified
+        if selected_arts:
+            stuck_items = [
+                item for item in stuck_items if item.get("art") in selected_arts
+            ]
+
         stage_stuck_items = [
             item for item in stuck_items if item.get("stage") == stage_name
         ]
@@ -361,6 +368,12 @@ def _analyze_stuck_item_patterns(
     stuck_items = bottleneck_data.get("stuck_items", [])
     if not stuck_items:
         return insights
+
+    # Filter by ART if specified
+    if selected_arts:
+        stuck_items = [item for item in stuck_items if item.get("art") in selected_arts]
+        if not stuck_items:
+            return insights
 
     # Group stuck items by issue_key to find items stuck in multiple stages
     items_by_key = {}
