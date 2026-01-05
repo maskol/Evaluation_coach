@@ -394,99 +394,37 @@
                         <!-- Flow Metrics -->
                         <div id="flowMetrics" class="metric-category">
                             <div
-                                style="background: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; margin-bottom: 16px;">
-                                <h3 style="color: #667eea; margin-bottom: 12px;">Lead Time</h3>
-                                <p style="margin-bottom: 12px; color: #555;">Time from story creation to completion
-                                    (In Progress → Done)</p>
-                                <div
-                                    style="background: #f8f9fa; padding: 12px; border-radius: 6px; margin-bottom: 12px; font-family: monospace; font-size: 13px;">
-                                    Formula: median(completed_date - created_date)
-                                </div>
-                                <div
-                                    style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px;">
-                                    <div>
-                                        <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Industry
-                                            Average</div>
-                                        <div style="font-size: 20px; font-weight: 600; color: #FF9500;">12 days
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <div style="font-size: 12px; color: #666; margin-bottom: 4px;">High
-                                            Performer</div>
-                                        <div style="font-size: 20px; font-weight: 600; color: #34C759;">6 days</div>
-                                    </div>
-                                    <div>
-                                        <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Your Current
-                                        </div>
-                                        <div style="font-size: 20px; font-weight: 600; color: #667eea;">8 days</div>
-                                    </div>
-                                </div>
-                                <div style="font-size: 13px; color: #666;">
-                                    <strong>Jira Field:</strong> <code>created</code>, <code>resolutiondate</code>
-                                </div>
+                                style="background: #f8f9fa; border-radius: 8px; padding: 40px; text-align: center; color: #666;">
+                                <div style="font-size: 32px; margin-bottom: 12px;">📊</div>
+                                <div style="font-size: 16px;">Loading real metrics data...</div>
+                                <div style="font-size: 14px; margin-top: 8px;">Switch to Metrics tab to load</div>
                             </div>
+                        </div>
 
+                        <!-- Predictability Metrics -->
+                        <div id="predictabilityMetrics" class="metric-category" style="display: none;">
                             <div
-                                style="background: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; margin-bottom: 16px;">
-                                <h3 style="color: #667eea; margin-bottom: 12px;">Flow Efficiency</h3>
-                                <p style="margin-bottom: 12px; color: #555;">Percentage of time spent in active work
-                                    vs waiting</p>
-                                <div
-                                    style="background: #f8f9fa; padding: 12px; border-radius: 6px; margin-bottom: 12px; font-family: monospace; font-size: 13px;">
-                                    Formula: (active_time / total_lead_time) * 100
-                                </div>
-                                <div
-                                    style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px;">
-                                    <div>
-                                        <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Industry
-                                            Average</div>
-                                        <div style="font-size: 20px; font-weight: 600; color: #FF9500;">15%</div>
-                                    </div>
-                                    <div>
-                                        <div style="font-size: 12px; color: #666; margin-bottom: 4px;">High
-                                            Performer</div>
-                                        <div style="font-size: 20px; font-weight: 600; color: #34C759;">40%</div>
-                                    </div>
-                                    <div>
-                                        <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Your Current
-                                        </div>
-                                        <div style="font-size: 20px; font-weight: 600; color: #667eea;">67%</div>
-                                    </div>
-                                </div>
-                                <div style="font-size: 13px; color: #666;">
-                                    <strong>Jira Field:</strong> <code>status</code> transitions,
-                                    <code>changelog</code>
-                                </div>
+                                style="background: #f8f9fa; border-radius: 8px; padding: 40px; text-align: center; color: #666;">
+                                <div style="font-size: 32px; margin-bottom: 12px;">🎯</div>
+                                <div style="font-size: 16px;">Loading predictability metrics...</div>
                             </div>
+                        </div>
 
+                        <!-- Quality Metrics -->
+                        <div id="qualityMetrics" class="metric-category" style="display: none;">
                             <div
-                                style="background: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; margin-bottom: 16px;">
-                                <h3 style="color: #667eea; margin-bottom: 12px;">Work in Progress (WIP)</h3>
-                                <p style="margin-bottom: 12px; color: #555;">Number of active stories relative to
-                                    team size</p>
-                                <div
-                                    style="background: #f8f9fa; padding: 12px; border-radius: 6px; margin-bottom: 12px; font-family: monospace; font-size: 13px;">
-                                    Formula: count(status = 'In Progress') / team_size
-                                </div>
-                                <div
-                                    style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px;">
-                                    <div>
-                                        <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Target</div>
-                                        <div style="font-size: 20px; font-weight: 600; color: #34C759;">≤ 1.5x</div>
-                                    </div>
-                                    <div>
-                                        <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Warning</div>
-                                        <div style="font-size: 20px; font-weight: 600; color: #FF9500;">1.5-2x</div>
-                                    </div>
-                                    <div>
-                                        <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Your Current
-                                        </div>
-                                        <div style="font-size: 20px; font-weight: 600; color: #667eea;">1.3x</div>
-                                    </div>
-                                </div>
-                                <div style="font-size: 13px; color: #666;">
-                                    <strong>Jira Field:</strong> <code>status</code>, <code>assignee</code>
-                                </div>
+                                style="background: #f8f9fa; border-radius: 8px; padding: 40px; text-align: center; color: #666;">
+                                <div style="font-size: 32px; margin-bottom: 12px;">✅</div>
+                                <div style="font-size: 16px;">Loading quality metrics...</div>
+                            </div>
+                        </div>
+
+                        <!-- Structure Metrics -->
+                        <div id="structureMetrics" class="metric-category" style="display: none;">
+                            <div
+                                style="background: #f8f9fa; border-radius: 8px; padding: 40px; text-align: center; color: #666;">
+                                <div style="font-size: 32px; margin-bottom: 12px;">🏗️</div>
+                                <div style="font-size: 16px;">Structure metrics coming soon...</div>
                             </div>
                         </div>
                     </div>

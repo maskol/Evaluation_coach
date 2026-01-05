@@ -367,8 +367,7 @@ function updateDashboardUI(data) {
                 'Flow Efficiency': 'Percentage of time spent on value-adding work vs. waiting. Measures how much time features spend actively being worked on versus sitting idle. Value-add stages: in_progress + in_reviewing. Industry average: 15%, High performers: 40%+',
                 'Planning Accuracy': 'Percentage of committed features (planned_committed=1) that were actually delivered (plc_delivery=1). Measures predictability and planning effectiveness. Target: 80%+, Acceptable: 70%+',
                 'Average Lead-Time': 'Average time from feature start to completion for delivered features. Measures end-to-end delivery speed. Target: ≤30 days, Max acceptable: 60 days, Lower is better',
-                'Features Delivered': 'Total number of features completed and delivered in the selected time period. Sourced from leadtime_thr_data (features with throughput=1)',
-                'Team Stability': 'Percentage of team members who remained on the same team. Higher stability correlates with better velocity and quality. Target: 85%+'
+                'Features Delivered': 'Total number of features completed and delivered in the selected time period. Sourced from leadtime_thr_data (features with throughput=1)'
             };
 
             metricsContainer.innerHTML = data.portfolio_metrics.map(metric => {
@@ -724,6 +723,27 @@ function setMetricFocus(focus) {
 
 // Update context function
 function updateContext() {
+    // Update selected ART
+    const artSelector = document.getElementById('artSelector');
+    if (artSelector) {
+        appState.selectedART = artSelector.value;
+
+        // If an ART is selected, update selectedARTs array for filtering
+        if (artSelector.value) {
+            appState.selectedARTs = [artSelector.value];
+        } else {
+            // If no ART selected, use default filters or all ARTs
+            const savedDefaults = JSON.parse(localStorage.getItem('defaultFilters') || '{"arts":[]}');
+            appState.selectedARTs = savedDefaults.arts || [];
+        }
+    }
+
+    // Update selected team
+    const teamSelector = document.getElementById('teamSelector');
+    if (teamSelector) {
+        appState.selectedTeam = teamSelector.value;
+    }
+
     // Build simplified context without filter details (shown in Active Filters banner)
     let contextText = `Context: ${capitalizeFirst(appState.scope)}`;
     if (appState.selectedART) contextText += ` | ART: ${appState.selectedART}`;
@@ -741,7 +761,13 @@ function updateContext() {
         inlineContext.textContent = contextText.replace(/Context: /, '');
     }
 
-    console.log('📊 Context updated:', contextText);
+    // If on metrics tab, reload metrics with new filter
+    if (appState.activeTab === 'metrics') {
+        console.log('📊 Reloading metrics with updated filter:', appState.selectedARTs);
+        loadMetricsCatalog();
+    }
+
+    console.log('📊 Context updated:', contextText, '| ARTs:', appState.selectedARTs);
 }
 
 // Display generated insights
@@ -877,9 +903,11 @@ function switchMainTab(tabName) {
         }
     });
 
-    // Load insights data when switching to insights tab
+    // Load data when switching to specific tabs
     if (tabName === 'insights') {
         renderInsightsTab();
+    } else if (tabName === 'metrics') {
+        loadMetricsCatalog();
     }
 
     updateStatusBar(`Switched to ${tabName} view`);
@@ -1392,11 +1420,274 @@ function showMetricCategory(category) {
     });
     event.target.classList.add('active');
 
-    updateStatusBar(`Viewing ${category} metrics`);
+    // Hide all metric categories
+    const categories = ['flow', 'predictability', 'quality', 'structure'];
+    categories.forEach(cat => {
+        const element = document.getElementById(`${cat}Metrics`);
+        if (element) {
+            element.style.display = 'none';
+        }
+    });
 
-    // In a full implementation, this would show/hide different metric categories
-    // For now, we just show the flow metrics as a demo
+    // Show selected category
+    const selectedElement = document.getElementById(`${category}Metrics`);
+    if (selectedElement) {
+        selectedElement.style.display = 'block';
+    }
+
+    updateStatusBar(`Viewing ${category} metrics`);
 }
+
+// Load real metrics catalog
+async function loadMetricsCatalog() {
+    console.log('📊 Loading Metrics Catalog...');
+
+    // Build query parameters
+    const params = new URLSearchParams();
+    if (appState.selectedARTs.length > 0) {
+        params.append('arts', appState.selectedARTs.join(','));
+    }
+    if (appState.selectedPIs.length > 0) {
+        params.append('pis', appState.selectedPIs.join(','));
+    }
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/metrics/catalog?${params.toString()}`);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const metrics = await response.json();
+        renderMetricsCatalog(metrics);
+
+    } catch (error) {
+        console.error('❌ Error loading metrics:', error);
+        const flowMetricsDiv = document.getElementById('flowMetrics');
+        if (flowMetricsDiv) {
+            flowMetricsDiv.innerHTML = `
+                <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 20px; text-align: center;">
+                    <div style="font-size: 32px; margin-bottom: 12px;">⚠️</div>
+                    <div style="font-size: 16px; font-weight: 600; margin-bottom: 8px;">Unable to Load Metrics</div>
+                    <div style="font-size: 14px; color: #666;">${error.message}</div>
+                </div>
+            `;
+        }
+    }
+}
+
+// Render metrics catalog with real data
+function renderMetricsCatalog(data) {
+    const flowMetrics = data.flow_metrics;
+    const predictabilityMetrics = data.predictability_metrics;
+    const qualityMetrics = data.quality_metrics;
+    const scope = data.scope;
+
+    // Helper function to get status color
+    const getStatusColor = (status) => {
+        switch (status) {
+            case 'good': return '#34C759';
+            case 'warning': return '#FF9500';
+            case 'critical': return '#FF3B30';
+            default: return '#667eea';
+        }
+    };
+
+    // Helper function to create metric card
+    const createMetricCard = (metric) => `
+        <div style="background: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; margin-bottom: 16px;">
+            <h3 style="color: #667eea; margin-bottom: 12px;">${metric.name}</h3>
+            <p style="margin-bottom: 12px; color: #555;">${metric.description}</p>
+            <div style="background: #f8f9fa; padding: 12px; border-radius: 6px; margin-bottom: 12px; font-family: monospace; font-size: 13px;">
+                Formula: ${metric.formula}
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px;">
+                ${metric.industry_average !== undefined ? `
+                <div>
+                    <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Industry Average</div>
+                    <div style="font-size: 20px; font-weight: 600; color: #FF9500;">${metric.industry_average} ${metric.unit}</div>
+                </div>
+                ` : ''}
+                ${metric.high_performer !== undefined ? `
+                <div>
+                    <div style="font-size: 12px; color: #666; margin-bottom: 4px;">High Performer</div>
+                    <div style="font-size: 20px; font-weight: 600; color: #34C759;">${metric.high_performer} ${metric.unit}</div>
+                </div>
+                ` : ''}
+                ${metric.target !== undefined && metric.industry_average === undefined ? `
+                <div>
+                    <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Target</div>
+                    <div style="font-size: 20px; font-weight: 600; color: #34C759;">${metric.target}</div>
+                </div>
+                ` : ''}
+                <div>
+                    <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Your Current</div>
+                    <div style="font-size: 20px; font-weight: 600; color: ${getStatusColor(metric.status)};">
+                        ${metric.current_value} ${metric.unit}
+                    </div>
+                </div>
+            </div>
+            <div style="font-size: 13px; color: #666;">
+                <strong>Jira Fields:</strong> ${metric.jira_fields.map(f => `<code>${f}</code>`).join(', ')}
+            </div>
+            ${metric.stage_breakdown ? `
+                <details style="margin-top: 12px;">
+                    <summary style="cursor: pointer; color: #667eea; font-weight: 600;">View Stage Breakdown</summary>
+                    <div style="margin-top: 8px; padding: 12px; background: #f8f9fa; border-radius: 6px;">
+                        ${Object.entries(metric.stage_breakdown).map(([stage, stats]) => `
+                            <div style="display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #e0e0e0;">
+                                <span style="font-weight: 600;">${stage.replace('_', ' ')}</span>
+                                <span>${stats.mean} days (${stats.count} items)</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </details>
+            ` : ''}
+            ${metric.distribution ? `
+                <details style="margin-top: 12px;">
+                    <summary style="cursor: pointer; color: #667eea; font-weight: 600;">📊 View Flow Distribution</summary>
+                    <div style="margin-top: 8px; padding: 12px; background: #f8f9fa; border-radius: 6px;">
+                        ${Object.entries(metric.distribution).map(([type, percentage]) => `
+                            <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e0e0e0;">
+                                <span style="font-weight: 600;">${type}</span>
+                                <div>
+                                    <span style="font-size: 20px; font-weight: 700; color: #667eea;">${percentage}%</span>
+                                    <div style="width: 200px; height: 8px; background: #e0e0e0; border-radius: 4px; margin-top: 4px; overflow: hidden;">
+                                        <div style="width: ${percentage}%; height: 100%; background: #667eea;"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </details>
+            ` : ''}
+            ${metric.median !== undefined && metric.p85 !== undefined ? `
+                <div style="margin-top: 12px; padding: 12px; background: #e7f3ff; border-radius: 6px;">
+                    <div style="font-weight: 600; color: #667eea; margin-bottom: 8px;">📈 Statistical Distribution</div>
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
+                        <div>
+                            <div style="font-size: 11px; color: #666; margin-bottom: 4px;">Median (P50)</div>
+                            <div style="font-size: 18px; font-weight: 600;">${metric.median} ${metric.unit}</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 11px; color: #666; margin-bottom: 4px;">85th Percentile</div>
+                            <div style="font-size: 18px; font-weight: 600;">${metric.p85} ${metric.unit}</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 11px; color: #666; margin-bottom: 4px;">Mean (Average)</div>
+                            <div style="font-size: 18px; font-weight: 600;">${metric.mean} ${metric.unit}</div>
+                        </div>
+                    </div>
+                </div>
+            ` : ''}
+            ${metric.active_time !== undefined && metric.wait_time !== undefined ? `
+                <div style="margin-top: 12px; padding: 12px; background: #fff3cd; border-radius: 6px;">
+                    <div style="font-weight: 600; color: #856404; margin-bottom: 8px;">⏱️ Time Breakdown</div>
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
+                        <div>
+                            <div style="font-size: 11px; color: #666; margin-bottom: 4px;">🟢 Active Work Time</div>
+                            <div style="font-size: 18px; font-weight: 600;">${metric.active_time} days</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 11px; color: #666; margin-bottom: 4px;">🔴 Wait/Queue Time</div>
+                            <div style="font-size: 18px; font-weight: 600;">${metric.wait_time} days</div>
+                        </div>
+                    </div>
+                </div>
+            ` : ''}
+            ${metric.breakdown_by_stage ? `
+                <details style="margin-top: 12px;">
+                    <summary style="cursor: pointer; color: #667eea; font-weight: 600;">View WIP by Stage</summary>
+                    <div style="margin-top: 8px; padding: 12px; background: #f8f9fa; border-radius: 6px;">
+                        ${Object.entries(metric.breakdown_by_stage).map(([stage, count]) => `
+                            <div style="display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #e0e0e0;">
+                                <span style="font-weight: 600;">${stage.replace('_', ' ')}</span>
+                                <span>${count} items</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </details>
+            ` : ''}
+            ${metric.breakdown ? `
+                <details style="margin-top: 12px;">
+                    <summary style="cursor: pointer; color: #667eea; font-weight: 600;">View Waste Breakdown</summary>
+                    <div style="margin-top: 8px; padding: 12px; background: #f8f9fa; border-radius: 6px;">
+                        ${metric.breakdown.waiting_time ? `
+                            <div style="margin-bottom: 12px;">
+                                <div style="font-weight: 600; color: #667eea; margin-bottom: 8px;">⏱️ Waiting Time Waste</div>
+                                ${Object.entries(metric.breakdown.waiting_time).map(([stage, days]) => `
+                                    <div style="display: flex; justify-content: space-between; padding: 4px 0; padding-left: 16px; border-bottom: 1px solid #e0e0e0;">
+                                        <span>${stage.replace('_', ' ')}</span>
+                                        <span style="font-weight: 600; color: #FF9500;">${days.toFixed(1)} days</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        ` : ''}
+                        ${metric.breakdown.removed_work ? `
+                            <div>
+                                <div style="font-weight: 600; color: #667eea; margin-bottom: 8px;">🗑️ Removed Work</div>
+                                ${Object.entries(metric.breakdown.removed_work).map(([type, count]) => `
+                                    <div style="display: flex; justify-content: space-between; padding: 4px 0; padding-left: 16px; border-bottom: 1px solid #e0e0e0;">
+                                        <span>${type.charAt(0).toUpperCase() + type.slice(1)}</span>
+                                        <span style="font-weight: 600; color: #FF3B30;">${count} items</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        ` : ''}
+                    </div>
+                </details>
+            ` : ''}
+            ${metric.trend_by_pi ? `
+                <details style="margin-top: 12px;">
+                    <summary style="cursor: pointer; color: #667eea; font-weight: 600;">View Throughput by PI</summary>
+                    <div style="margin-top: 8px; padding: 12px; background: #f8f9fa; border-radius: 6px;">
+                        ${Object.entries(metric.trend_by_pi).map(([pi, stats]) => `
+                            <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e0e0e0;">
+                                <span style="font-weight: 600;">${pi}</span>
+                                <span>${stats.throughput} features (${stats.avg_leadtime.toFixed(1)} days avg)</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </details>
+            ` : ''}
+        </div>
+    `;
+
+    // Update Flow Metrics
+    const flowMetricsDiv = document.getElementById('flowMetrics');
+    if (flowMetricsDiv && flowMetrics) {
+        flowMetricsDiv.innerHTML = `
+            <div style="background: #e7f3ff; border-left: 4px solid #667eea; padding: 12px; margin-bottom: 20px; border-radius: 4px;">
+                <strong>📊 SAFe Flow Metrics for:</strong> ${scope.arts.join(', ')} | ${scope.pis.join(', ')}
+            </div>
+            ${flowMetrics.flow_time ? createMetricCard(flowMetrics.flow_time) : ''}
+            ${flowMetrics.flow_efficiency ? createMetricCard(flowMetrics.flow_efficiency) : ''}
+            ${flowMetrics.flow_distribution ? createMetricCard(flowMetrics.flow_distribution) : ''}
+            ${flowMetrics.flow_load ? createMetricCard(flowMetrics.flow_load) : ''}
+            ${flowMetrics.flow_velocity ? createMetricCard(flowMetrics.flow_velocity) : ''}
+            ${flowMetrics.waste ? createMetricCard(flowMetrics.waste) : ''}
+        `;
+    }
+
+    // Update Predictability Metrics
+    const predictabilityMetricsDiv = document.getElementById('predictabilityMetrics');
+    if (predictabilityMetricsDiv && predictabilityMetrics) {
+        predictabilityMetricsDiv.innerHTML = `
+            ${createMetricCard(predictabilityMetrics.planning_accuracy)}
+            ${createMetricCard(predictabilityMetrics.velocity_stability)}
+        `;
+    }
+
+    // Update Quality Metrics
+    const qualityMetricsDiv = document.getElementById('qualityMetrics');
+    if (qualityMetricsDiv && qualityMetrics) {
+        qualityMetricsDiv.innerHTML = `
+            ${createMetricCard(qualityMetrics.defect_rate)}
+        `;
+    }
+
+    updateStatusBar(`Metrics updated for ${scope.arts.join(', ')} | ${scope.pis.join(', ')}`);
+}
+
 
 // Update status bar
 function updateStatusBar(message) {

@@ -521,14 +521,6 @@ async def get_dashboard(
                 trend="up",
                 benchmark={"target": 150.0},
             ),
-            MetricValue(
-                name="Team Stability",
-                value=89.0,
-                unit="%",
-                status="healthy",
-                trend="stable",
-                benchmark={"target": 85.0},
-            ),
         ]
 
         # Get ART comparison from lead-time service
@@ -1927,6 +1919,348 @@ async def enrich_issues_with_leadtime(issues: List[Dict[str, Any]]):
         "enriched_count": len([i for i in enriched if "leadtime" in i]),
         "issues": enriched,
     }
+
+
+# ============================================================================
+# Metrics Catalog Endpoint
+# ============================================================================
+
+
+@app.get("/api/metrics/catalog")
+async def get_metrics_catalog(
+    arts: Optional[str] = None,
+    pis: Optional[str] = None,
+):
+    """
+    Get comprehensive metrics catalog with real data.
+
+    Args:
+        arts: Comma-separated list of ARTs (e.g., "SAART,ACEART")
+        pis: Comma-separated list of PIs (e.g., "26Q1,25Q4")
+
+    Returns:
+        Metrics catalog with current values and benchmarks
+    """
+    if not leadtime_service or not leadtime_service.is_available():
+        raise HTTPException(status_code=503, detail="Lead-time service not available")
+
+    try:
+        # Parse filters
+        selected_arts = (
+            [art.strip() for art in arts.split(",") if art.strip()] if arts else []
+        )
+        selected_pis = (
+            [pi.strip() for pi in pis.split(",") if pi.strip()] if pis else []
+        )
+
+        # Get analysis summary
+        params = {}
+        if selected_arts:
+            params["arts"] = selected_arts
+        if selected_pis:
+            params["pis"] = selected_pis
+        params["threshold_days"] = settings.bottleneck_threshold_days
+
+        analysis = leadtime_service.client.get_analysis_summary(**params)
+
+        # Extract metrics
+        leadtime_data = analysis.get("leadtime_analysis", {})
+        stage_stats = leadtime_data.get("stage_statistics", {})
+        bottleneck_data = analysis.get("bottleneck_analysis", {})
+
+        # Get Feature-only WIP statistics (not all work items)
+        feature_wip_stats = leadtime_service.client.get_feature_wip_statistics(
+            arts=selected_arts, pis=selected_pis
+        )
+
+        planning_data = analysis.get("planning_accuracy", {})
+        throughput_data = analysis.get("throughput_analysis", {})
+
+        # Get waste and throughput analysis
+        waste_data = leadtime_service.client.get_waste_analysis(
+            arts=selected_arts, pis=selected_pis
+        )
+        throughput_full = leadtime_service.client.get_throughput_analysis(
+            arts=selected_arts, pis=selected_pis
+        )
+
+        # Calculate waste metrics
+        waiting_waste = waste_data.get("waiting_time_waste", {})
+        removed_work = waste_data.get("removed_work", {})
+        total_waste = waste_data.get("total_waste_days", 0)
+        waste_categories = waste_data.get("waste_categories", {})
+
+        # Extract throughput trends
+        throughput_by_pi = throughput_full.get("by_pi", {})
+        overall_throughput = throughput_full.get("overall_statistics", {})
+
+        # Get raw flow data for proper calculations
+        flow_data = leadtime_service.client.get_flow_leadtime(
+            arts=selected_arts, pis=selected_pis
+        )
+
+        # Calculate proper lead time statistics (not sum of stage means!)
+        completed_items = [f for f in flow_data if f.get("total_leadtime", 0) > 0]
+        if completed_items:
+            leadtimes = [f["total_leadtime"] for f in completed_items]
+            leadtimes_sorted = sorted(leadtimes)
+            median_leadtime = (
+                leadtimes_sorted[len(leadtimes_sorted) // 2] if leadtimes_sorted else 0
+            )
+            p85_index = int(len(leadtimes_sorted) * 0.85)
+            p85_leadtime = (
+                leadtimes_sorted[p85_index]
+                if p85_index < len(leadtimes_sorted)
+                else leadtimes_sorted[-1] if leadtimes_sorted else 0
+            )
+            mean_leadtime = sum(leadtimes) / len(leadtimes)
+        else:
+            median_leadtime = 0
+            p85_leadtime = 0
+            mean_leadtime = 0
+
+        # Calculate Flow Efficiency (active time / total time)
+        active_stages = ["in_progress", "in_reviewing", "in_sit", "in_uat"]
+        wait_stages = [
+            "in_backlog",
+            "in_analysis",
+            "in_planned",
+            "ready_for_sit",
+            "ready_for_uat",
+            "ready_for_deployment",
+        ]
+
+        total_active_time = sum(
+            stage_stats.get(s, {}).get("mean", 0) for s in active_stages
+        )
+        total_wait_time = sum(
+            stage_stats.get(s, {}).get("mean", 0) for s in wait_stages
+        )
+        total_flow_time = total_active_time + total_wait_time
+        flow_efficiency = (
+            (total_active_time / total_flow_time * 100) if total_flow_time > 0 else 0
+        )
+
+        # Calculate Flow Distribution (work type breakdown)
+        # Get feature data to determine types
+        feature_data = leadtime_service.client.get_feature_data()
+        if selected_arts:
+            feature_data = [f for f in feature_data if f.get("art") in selected_arts]
+        if selected_pis:
+            feature_data = [
+                f for f in feature_data if f.get("program_increment") in selected_pis
+            ]
+
+        feature_types = {}
+        for f in feature_data:
+            ftype = f.get("feature_type", "Unknown")
+            feature_types[ftype] = feature_types.get(ftype, 0) + 1
+
+        total_features = sum(feature_types.values())
+        flow_distribution = (
+            {
+                ftype: round(count / total_features * 100, 1)
+                for ftype, count in feature_types.items()
+            }
+            if total_features > 0
+            else {}
+        )
+
+        # Calculate WIP (Features only - not stories/tasks)
+        # Active stages = stages where work is actively being done
+        # Excludes: in_backlog, in_analysis, in_planned (these are queued/waiting to start)
+        wip_total = sum(
+            stats.get("total_items", 0) for stats in feature_wip_stats.values()
+        )
+
+        # Get planning accuracy - try multiple sources as API structure varies
+        planning_accuracy = planning_data.get("overall_accuracy")
+        if planning_accuracy is None:
+            # Try predictability_score as fallback
+            planning_accuracy = planning_data.get("predictability_score", 0)
+
+        # Note: API returns planning_accuracy as a percentage already (e.g., 0.5714 = 0.57%)
+        # Do NOT multiply by 100
+        if planning_accuracy is None:
+            planning_accuracy = 0
+
+        # Build metrics catalog (SAFe Flow Metrics)
+        metrics = {
+            "flow_metrics": {
+                "flow_time": {
+                    "name": "Flow Time (Lead Time)",
+                    "description": "SAFe: Total time from work start to completion. Median represents typical feature, P85 shows 85% complete within this time.",
+                    "formula": "median(end_date - start_date) per feature",
+                    "current_value": round(median_leadtime, 1),
+                    "median": round(median_leadtime, 1),
+                    "p85": round(p85_leadtime, 1),
+                    "mean": round(mean_leadtime, 1),
+                    "unit": "days",
+                    "status": (
+                        "critical"
+                        if median_leadtime > 90
+                        else "warning" if median_leadtime > 30 else "good"
+                    ),
+                    "target": "<30 days (SAFe High Performer)",
+                    "jira_fields": ["created", "resolutiondate", "status transitions"],
+                    "stage_breakdown": {
+                        stage: {
+                            "mean": round(stats.get("mean", 0), 1),
+                            "median": round(stats.get("median", 0), 1),
+                            "p85": round(stats.get("p85", 0), 1),
+                            "count": stats.get("count", 0),
+                        }
+                        for stage, stats in stage_stats.items()
+                    },
+                },
+                "flow_efficiency": {
+                    "name": "Flow Efficiency",
+                    "description": "SAFe: Ratio of active work time to total flow time. Measures waste from waiting/queues.",
+                    "formula": "(active_time / total_time) × 100%",
+                    "current_value": round(flow_efficiency, 1),
+                    "active_time": round(total_active_time, 1),
+                    "wait_time": round(total_wait_time, 1),
+                    "unit": "%",
+                    "status": (
+                        "good"
+                        if flow_efficiency >= 40
+                        else "warning" if flow_efficiency >= 15 else "critical"
+                    ),
+                    "target": "≥40% (SAFe Best Practice)",
+                    "jira_fields": ["status", "status transitions"],
+                },
+                "flow_distribution": {
+                    "name": "Flow Distribution",
+                    "description": "SAFe: Percentage of work by type (Features, Enablers, Defects, Debt). Ensures balanced value delivery.",
+                    "formula": "(count_by_type / total_count) × 100%",
+                    "distribution": flow_distribution,
+                    "unit": "%",
+                    "status": "good",
+                    "target": "Features: 50-70%, Defects: <20%, Debt: 10-20%",
+                    "jira_fields": ["issuetype", "labels"],
+                },
+                "flow_load": {
+                    "name": "Flow Load (WIP)",
+                    "description": "SAFe: Features currently in the system. High WIP increases lead time (Little's Law). ART-level = Features only.",
+                    "formula": "count(Features WHERE status IN active_stages)",
+                    "current_value": wip_total,
+                    "unit": "features",
+                    "status": (
+                        "critical"
+                        if wip_total > 150
+                        else "warning" if wip_total > 100 else "good"
+                    ),
+                    "target": "<100 features (implement WIP limits)",
+                    "jira_fields": ["status", "assignee", "issuetype"],
+                    "breakdown_by_stage": {
+                        stage: stats.get("total_items", 0)
+                        for stage, stats in feature_wip_stats.items()
+                    },
+                },
+                "flow_velocity": {
+                    "name": "Flow Velocity (Throughput)",
+                    "description": "SAFe: Features completed per PI. Tracked per PI to measure predictability and capacity.",
+                    "formula": "count(status = 'Done' AND resolved IN pi_timeframe)",
+                    "current_value": overall_throughput.get("total_throughput", 0),
+                    "unit": "features",
+                    "average_per_pi": round(
+                        overall_throughput.get("total_throughput", 0)
+                        / max(len(throughput_by_pi), 1),
+                        1,
+                    ),
+                    "status": "good",
+                    "target": "Stable throughput per PI (use for capacity planning)",
+                    "jira_fields": ["status", "resolutiondate", "fixVersion"],
+                    "trend_by_pi": {
+                        pi: {
+                            "throughput": data.get("throughput", 0),
+                            "avg_leadtime": round(data.get("average_leadtime", 0), 1),
+                        }
+                        for pi, data in sorted(throughput_by_pi.items())[
+                            -6:
+                        ]  # Last 6 PIs
+                    },
+                },
+                "waste": {
+                    "name": "Process Waste",
+                    "description": "Days wasted in waiting states and removed work",
+                    "formula": "sum(waiting_time) + removed_work_count",
+                    "current_value": round(total_waste, 1),
+                    "unit": "days",
+                    "status": (
+                        waste_categories.get("waiting_waste", "unknown").lower()
+                        if isinstance(waste_categories.get("waiting_waste"), str)
+                        else "unknown"
+                    ),
+                    "jira_fields": ["status", "status transitions"],
+                    "breakdown": {
+                        "waiting_time": {
+                            stage: round(stats.get("total_days_wasted", 0), 1)
+                            for stage, stats in waiting_waste.items()
+                        },
+                        "removed_work": {
+                            "duplicates": removed_work.get("duplicates", 0),
+                            "planned_removed": removed_work.get(
+                                "planned_committed_removed", 0
+                            )
+                            + removed_work.get("planned_uncommitted_removed", 0),
+                            "added_removed": removed_work.get(
+                                "added_committed_removed", 0
+                            )
+                            + removed_work.get("added_uncommitted_removed", 0),
+                        },
+                    },
+                },
+            },
+            "predictability_metrics": {
+                "planning_accuracy": {
+                    "name": "Planning Accuracy",
+                    "description": "Percentage of committed work completed",
+                    "formula": "(completed_count / committed_count) * 100",
+                    "current_value": round(planning_accuracy, 1),
+                    "unit": "%",
+                    "threshold": settings.planning_accuracy_threshold_pct,
+                    "status": (
+                        "critical"
+                        if planning_accuracy < settings.planning_accuracy_threshold_pct
+                        else "good"
+                    ),
+                    "jira_fields": ["labels", "fixVersion", "status"],
+                },
+                "velocity_stability": {
+                    "name": "Velocity Stability",
+                    "description": "Standard deviation of velocity over last 6 sprints",
+                    "formula": "stdev(story_points_completed)",
+                    "current_value": 0,  # Not available yet
+                    "unit": "story points",
+                    "status": "unknown",
+                    "jira_fields": ["customfield_10016 (story points)", "sprint"],
+                },
+            },
+            "quality_metrics": {
+                "defect_rate": {
+                    "name": "Defect Rate",
+                    "description": "Bugs found per feature delivered",
+                    "formula": "count(type='Bug') / count(type='Story')",
+                    "current_value": 0,  # Not available yet
+                    "unit": "bugs/story",
+                    "status": "unknown",
+                    "jira_fields": ["issuetype", "parent"],
+                }
+            },
+            "scope": {
+                "arts": selected_arts if selected_arts else ["All ARTs"],
+                "pis": selected_pis if selected_pis else ["All PIs"],
+                "threshold_days": settings.bottleneck_threshold_days,
+            },
+        }
+
+        return metrics
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to fetch metrics: {str(e)}"
+        )
 
 
 # ============================================================================

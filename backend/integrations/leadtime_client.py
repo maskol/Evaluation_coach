@@ -84,6 +84,8 @@ class LeadTimeClient:
         self,
         art: Optional[str] = None,
         pi: Optional[str] = None,
+        arts: Optional[List[str]] = None,
+        pis: Optional[List[str]] = None,
         development_team: Optional[str] = None,
         status: Optional[str] = None,
         limit: Optional[int] = None,
@@ -97,8 +99,10 @@ class LeadTimeClient:
         - deployed, total_leadtime
 
         Args:
-            art: Filter by ART (Agile Release Train)
-            pi: Filter by PI (Program Increment)
+            art: Filter by ART (Agile Release Train) - single value
+            pi: Filter by PI (Program Increment) - single value
+            arts: Filter by multiple ARTs - list
+            pis: Filter by multiple PIs - list
             development_team: Filter by development team
             status: Filter by issue status
             limit: Maximum number of records to return
@@ -107,9 +111,13 @@ class LeadTimeClient:
             List of issues with detailed lead-time metrics
         """
         params = {}
-        if art:
+        if arts:
+            params["art"] = arts
+        elif art:
             params["art"] = art
-        if pi:
+        if pis:
+            params["pi"] = pis
+        elif pi:
             params["pi"] = pi
         if development_team:
             params["development_team"] = development_team
@@ -238,9 +246,9 @@ class LeadTimeClient:
         """
         params = {}
         if arts:
-            params["art"] = ",".join(arts)
+            params["art"] = arts  # Pass as list for repeated params
         if pis:
-            params["pi"] = ",".join(pis)
+            params["pi"] = pis  # Pass as list for repeated params
 
         return self._get(
             "/api/analysis/planning-accuracy", params=params if params else None
@@ -265,9 +273,9 @@ class LeadTimeClient:
         """
         params = {}
         if arts:
-            params["art"] = ",".join(arts)
+            params["art"] = arts  # Pass as list for repeated params
         if pis:
-            params["pi"] = ",".join(pis)
+            params["pi"] = pis  # Pass as list for repeated params
 
         return self._get("/api/analysis/waste", params=params if params else None)
 
@@ -288,9 +296,9 @@ class LeadTimeClient:
         """
         params = {}
         if arts:
-            params["art"] = ",".join(arts)
+            params["art"] = arts  # Pass as list for repeated params
         if pis:
-            params["pi"] = ",".join(pis)
+            params["pi"] = pis  # Pass as list for repeated params
 
         return self._get("/api/analysis/throughput", params=params if params else None)
 
@@ -313,9 +321,9 @@ class LeadTimeClient:
         """
         params = {}
         if arts:
-            params["art"] = ",".join(arts)
+            params["art"] = arts  # Pass as list for repeated params
         if pis:
-            params["pi"] = ",".join(pis)
+            params["pi"] = pis  # Pass as list for repeated params
 
         return self._get("/api/analysis/trends", params=params if params else None)
 
@@ -340,9 +348,9 @@ class LeadTimeClient:
         """
         params = {}
         if arts:
-            params["art"] = ",".join(arts)  # DL Webb App expects singular "art"
+            params["art"] = arts  # Pass as list for repeated params
         if pis:
-            params["pi"] = ",".join(pis)  # DL Webb App expects singular "pi"
+            params["pi"] = pis  # Pass as list for repeated params
         if threshold_days is not None:
             params["threshold_days"] = str(threshold_days)
 
@@ -415,6 +423,51 @@ class LeadTimeClient:
         """
         return self._get("/api/feature_data")
 
+    def get_feature_wip_statistics(
+        self,
+        arts: Optional[List[str]] = None,
+        pis: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Calculate WIP statistics for Features only (excludes Stories/Tasks).
+
+        Uses the flow_leadtime table which contains only Feature-level items.
+
+        Args:
+            arts: List of ARTs to analyze
+            pis: List of PIs to analyze
+
+        Returns:
+            WIP statistics by stage for Features only
+        """
+        params = {}
+        if arts:
+            params["art"] = arts
+        if pis:
+            params["pi"] = pis
+
+        features = self._get("/api/flow_leadtime", params=params if params else None)
+
+        # Define active stages (exclude backlog, analysis, planned)
+        active_stages = {
+            "In Progress": "in_progress",
+            "Reviewing": "in_reviewing",
+            "Ready for SIT": "ready_for_sit",
+            "In SIT": "in_sit",
+            "Ready for UAT": "ready_for_uat",
+            "In UAT": "in_uat",
+            "Ready for Deployment": "ready_for_deployment",
+        }
+
+        # Count features by status
+        wip_by_stage = {}
+        for stage_name, stage_key in active_stages.items():
+            count = sum(1 for f in features if f.get("status") == stage_name)
+            if count > 0:
+                wip_by_stage[stage_key] = {"total_items": count}
+
+        return wip_by_stage
+
     # === Health Check ===
 
     def health_check(self) -> bool:
@@ -425,9 +478,8 @@ class LeadTimeClient:
             True if server responds, False otherwise
         """
         try:
-            # Try to get filters as a health check
-            self._get("/api/analysis/filters")
-            return True
-        except Exception as e:
-            logger.warning(f"Lead-time server health check failed: {e}")
+            # Use a known endpoint to check connectivity
+            response = self._client.get(f"{self.base_url}/api/arts/", timeout=5.0)
+            return response.status_code == 200
+        except Exception:
             return False
