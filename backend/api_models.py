@@ -269,3 +269,44 @@ class LeadTimeSummaryRequest(BaseModel):
 
     art: Optional[str] = None
     pi: Optional[str] = None
+
+
+# Admin Configuration Models
+class ThresholdConfig(BaseModel):
+    """Threshold configuration for bottleneck analysis."""
+
+    # Global threshold (applies to all stages unless overridden)
+    bottleneck_threshold_days: float = Field(
+        default=7.0,
+        ge=1.0,
+        le=90.0,
+        description="Default threshold in days for all stages",
+    )
+
+    # Planning accuracy threshold
+    planning_accuracy_threshold_pct: float = Field(
+        default=70.0,
+        ge=0.0,
+        le=100.0,
+        description="Minimum acceptable planning accuracy percentage",
+    )
+
+    # Stage-specific overrides (optional)
+    threshold_in_backlog: Optional[float] = Field(None, ge=1.0, le=90.0)
+    threshold_in_analysis: Optional[float] = Field(None, ge=1.0, le=90.0)
+    threshold_in_planned: Optional[float] = Field(None, ge=1.0, le=90.0)
+    threshold_in_progress: Optional[float] = Field(None, ge=1.0, le=90.0)
+    threshold_in_reviewing: Optional[float] = Field(None, ge=1.0, le=90.0)
+    threshold_ready_for_sit: Optional[float] = Field(None, ge=1.0, le=90.0)
+    threshold_in_sit: Optional[float] = Field(None, ge=1.0, le=90.0)
+    threshold_ready_for_uat: Optional[float] = Field(None, ge=1.0, le=90.0)
+    threshold_in_uat: Optional[float] = Field(None, ge=1.0, le=90.0)
+    threshold_ready_for_deployment: Optional[float] = Field(None, ge=1.0, le=90.0)
+
+
+class AdminConfigResponse(BaseModel):
+    """Response containing current admin configuration."""
+
+    thresholds: ThresholdConfig
+    leadtime_server_url: str
+    leadtime_server_enabled: bool

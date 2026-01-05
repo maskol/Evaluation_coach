@@ -954,7 +954,7 @@ function renderInsightsTab() {
                     <span id="generateBtnText">Generate AI Insights</span>
                 </button>
                 <div style="margin-top: 16px; font-size: 12px; color: #8E8E93;">
-                    ⚠️ This may take 10-15 seconds as the AI analyzes your data
+                    ⚠️ This may take a while as the AI analyzes your data
                 </div>
             </div>
         </div>

@@ -177,11 +177,11 @@ class LeadTimeClient:
         """
         params = {}
         if arts:
-            params["arts"] = ",".join(arts)
+            params["art"] = ",".join(arts)
         if pis:
-            params["pis"] = ",".join(pis)
+            params["pi"] = ",".join(pis)
         if teams:
-            params["teams"] = ",".join(teams)
+            params["team"] = ",".join(teams)
 
         return self._get("/api/analysis/leadtime", params=params if params else None)
 
@@ -189,6 +189,7 @@ class LeadTimeClient:
         self,
         arts: Optional[List[str]] = None,
         pis: Optional[List[str]] = None,
+        threshold_days: Optional[float] = None,
     ) -> Dict[str, Any]:
         """
         Identify bottlenecks in the flow.
@@ -199,15 +200,18 @@ class LeadTimeClient:
         Args:
             arts: List of ARTs to analyze
             pis: List of PIs to analyze
+            threshold_days: Threshold in days for identifying items exceeding limit
 
         Returns:
             Bottleneck analysis data
         """
         params = {}
         if arts:
-            params["arts"] = ",".join(arts)
+            params["art"] = ",".join(arts)
         if pis:
-            params["pis"] = ",".join(pis)
+            params["pi"] = ",".join(pis)
+        if threshold_days is not None:
+            params["threshold_days"] = str(threshold_days)
 
         return self._get("/api/analysis/bottlenecks", params=params if params else None)
 
@@ -234,9 +238,9 @@ class LeadTimeClient:
         """
         params = {}
         if arts:
-            params["arts"] = ",".join(arts)
+            params["art"] = ",".join(arts)
         if pis:
-            params["pis"] = ",".join(pis)
+            params["pi"] = ",".join(pis)
 
         return self._get(
             "/api/analysis/planning-accuracy", params=params if params else None
@@ -261,9 +265,9 @@ class LeadTimeClient:
         """
         params = {}
         if arts:
-            params["arts"] = ",".join(arts)
+            params["art"] = ",".join(arts)
         if pis:
-            params["pis"] = ",".join(pis)
+            params["pi"] = ",".join(pis)
 
         return self._get("/api/analysis/waste", params=params if params else None)
 
@@ -284,9 +288,9 @@ class LeadTimeClient:
         """
         params = {}
         if arts:
-            params["arts"] = ",".join(arts)
+            params["art"] = ",".join(arts)
         if pis:
-            params["pis"] = ",".join(pis)
+            params["pi"] = ",".join(pis)
 
         return self._get("/api/analysis/throughput", params=params if params else None)
 
@@ -309,9 +313,9 @@ class LeadTimeClient:
         """
         params = {}
         if arts:
-            params["arts"] = ",".join(arts)
+            params["art"] = ",".join(arts)
         if pis:
-            params["pis"] = ",".join(pis)
+            params["pi"] = ",".join(pis)
 
         return self._get("/api/analysis/trends", params=params if params else None)
 
@@ -319,6 +323,7 @@ class LeadTimeClient:
         self,
         arts: Optional[List[str]] = None,
         pis: Optional[List[str]] = None,
+        threshold_days: Optional[float] = None,
     ) -> Dict[str, Any]:
         """
         Get comprehensive summary of all analyses.
@@ -328,15 +333,18 @@ class LeadTimeClient:
         Args:
             arts: List of ARTs to analyze
             pis: List of PIs to analyze
+            threshold_days: Threshold in days for identifying items exceeding limit
 
         Returns:
             Comprehensive analysis summary
         """
         params = {}
         if arts:
-            params["arts"] = ",".join(arts)
+            params["art"] = ",".join(arts)  # DL Webb App expects singular "art"
         if pis:
-            params["pis"] = ",".join(pis)
+            params["pi"] = ",".join(pis)  # DL Webb App expects singular "pi"
+        if threshold_days is not None:
+            params["threshold_days"] = str(threshold_days)
 
         return self._get("/api/analysis/summary", params=params if params else None)
 

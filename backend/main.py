@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 import uvicorn
 from api_models import (
     Action,
+    AdminConfigResponse,
     AnalysisRequest,
     ARTPerformance,
     ChatRequest,
@@ -27,7 +28,9 @@ from api_models import (
     ReportResponse,
     RootCause,
     SystemStatus,
+    ThresholdConfig,
 )
+from config.settings import settings
 from database import Base, engine, get_db, init_db
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -210,9 +213,16 @@ async def generate_insights_endpoint(
             try:
                 params = {}
                 if selected_arts:
-                    params["arts"] = selected_arts  # Pass all selected ARTs
+                    params["arts"] = (
+                        selected_arts  # LeadTimeClient.get_analysis_summary() handles conversion to singular
+                    )
                 if selected_pis:
-                    params["pis"] = selected_pis  # Pass all selected PIs
+                    params["pis"] = (
+                        selected_pis  # LeadTimeClient.get_analysis_summary() handles conversion to singular
+                    )
+
+                # Add threshold from settings
+                params["threshold_days"] = settings.bottleneck_threshold_days
 
                 # Get analysis summary
                 analysis_summary = leadtime_service.client.get_analysis_summary(
@@ -1916,6 +1926,78 @@ async def enrich_issues_with_leadtime(issues: List[Dict[str, Any]]):
         "count": len(enriched),
         "enriched_count": len([i for i in enriched if "leadtime" in i]),
         "issues": enriched,
+    }
+
+
+# ============================================================================
+# Admin Configuration Endpoints
+# ============================================================================
+
+
+@app.get("/api/admin/config", response_model=AdminConfigResponse)
+async def get_admin_config():
+    """
+    Get current admin configuration including thresholds and settings.
+
+    Returns:
+        Current configuration settings
+    """
+    thresholds = ThresholdConfig(
+        bottleneck_threshold_days=settings.bottleneck_threshold_days,
+        planning_accuracy_threshold_pct=settings.planning_accuracy_threshold_pct,
+        threshold_in_backlog=settings.threshold_in_backlog,
+        threshold_in_analysis=settings.threshold_in_analysis,
+        threshold_in_planned=settings.threshold_in_planned,
+        threshold_in_progress=settings.threshold_in_progress,
+        threshold_in_reviewing=settings.threshold_in_reviewing,
+        threshold_ready_for_sit=settings.threshold_ready_for_sit,
+        threshold_in_sit=settings.threshold_in_sit,
+        threshold_ready_for_uat=settings.threshold_ready_for_uat,
+        threshold_in_uat=settings.threshold_in_uat,
+        threshold_ready_for_deployment=settings.threshold_ready_for_deployment,
+    )
+
+    return AdminConfigResponse(
+        thresholds=thresholds,
+        leadtime_server_url=settings.leadtime_server_url,
+        leadtime_server_enabled=settings.leadtime_server_enabled,
+    )
+
+
+@app.post("/api/admin/config/thresholds")
+async def update_thresholds(thresholds: ThresholdConfig):
+    """
+    Update threshold configuration.
+
+    NOTE: This updates runtime configuration. For persistent changes,
+    update the .env file or environment variables.
+
+    Args:
+        thresholds: New threshold configuration
+
+    Returns:
+        Updated configuration
+    """
+    # Update settings (runtime only)
+    settings.bottleneck_threshold_days = thresholds.bottleneck_threshold_days
+    settings.planning_accuracy_threshold_pct = (
+        thresholds.planning_accuracy_threshold_pct
+    )
+    settings.threshold_in_backlog = thresholds.threshold_in_backlog
+    settings.threshold_in_analysis = thresholds.threshold_in_analysis
+    settings.threshold_in_planned = thresholds.threshold_in_planned
+    settings.threshold_in_progress = thresholds.threshold_in_progress
+    settings.threshold_in_reviewing = thresholds.threshold_in_reviewing
+    settings.threshold_ready_for_sit = thresholds.threshold_ready_for_sit
+    settings.threshold_in_sit = thresholds.threshold_in_sit
+    settings.threshold_ready_for_uat = thresholds.threshold_ready_for_uat
+    settings.threshold_in_uat = thresholds.threshold_in_uat
+    settings.threshold_ready_for_deployment = thresholds.threshold_ready_for_deployment
+
+    return {
+        "status": "success",
+        "message": "Thresholds updated successfully (runtime only)",
+        "thresholds": thresholds,
     }
 
 

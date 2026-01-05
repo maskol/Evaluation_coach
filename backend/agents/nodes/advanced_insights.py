@@ -204,8 +204,8 @@ def _analyze_bottlenecks(
                     confidence=0.9,
                     scope=scope_desc,
                     scope_id=None,
-                    observation=f"The {stage_name.replace('_', ' ')} stage has a bottleneck score of {score:.1f}%. Average time: {mean_time:.1f} days, with {items_exceeding:,} items exceeding threshold (max: {max_time:.0f} days).",
-                    interpretation=f"Features are spending excessive time in {stage_name.replace('_', ' ')}. This stage is a critical constraint in your delivery flow. The high number of items exceeding threshold ({items_exceeding:,}) and extreme outliers (max {max_time:.0f} days) indicate systemic issues requiring immediate attention.",
+                    observation=f"The {stage_name.replace('_', ' ')} stage has a bottleneck score of {score:.1f}%. Average time: {mean_time:.1f} days, with {items_exceeding:,} stage occurrences exceeding threshold (max: {max_time:.0f} days).",
+                    interpretation=f"Features are spending excessive time in {stage_name.replace('_', ' ')}. This stage is a critical constraint in your delivery flow. The high number of stage occurrences exceeding threshold ({items_exceeding:,}) and extreme outliers (max {max_time:.0f} days) indicate systemic issues requiring immediate attention. Note: A single feature may be counted multiple times if it exceeded threshold in multiple stages.",
                     root_causes=[
                         RootCause(
                             description="Severe flow blockage with items stuck in stage",
@@ -215,7 +215,7 @@ def _analyze_bottlenecks(
                                 else [
                                     f"Mean duration: {mean_time:.1f} days",
                                     f"Maximum observed: {max_time:.0f} days",
-                                    f"{items_exceeding:,} items exceeding threshold",
+                                    f"{items_exceeding:,} stage occurrences exceeding threshold",
                                 ]
                             ),
                             confidence=0.95,
@@ -289,7 +289,7 @@ def _analyze_bottlenecks(
                         f"Bottleneck score: {score:.1f}%",
                         f"Mean duration: {mean_time:.1f} days",
                         f"Maximum duration: {max_time:.0f} days",
-                        f"Items exceeding threshold: {items_exceeding:,}",
+                        f"Stage occurrences exceeding threshold: {items_exceeding:,}",
                     ]
                     + (stuck_evidence[:3] if stuck_evidence else []),
                     status="active",
@@ -303,7 +303,12 @@ def _analyze_bottlenecks(
         if all(b.get("bottleneck_score", 0) > 40 for b in top_3):
             stage_names = [b.get("stage", "").replace("_", " ").title() for b in top_3]
             total_mean = sum(b.get("mean_time", 0) for b in top_3)
-            total_items = sum(b.get("items_exceeding_threshold", 0) for b in top_3)
+
+            # Note: Don't sum items_exceeding_threshold as same feature can appear in multiple stages
+            stage_details = [
+                f"{b.get('stage', '').replace('_', ' ').title()} ({b.get('items_exceeding_threshold', 0):,} occurrences)"
+                for b in top_3
+            ]
 
             insights.append(
                 InsightResponse(
@@ -313,8 +318,8 @@ def _analyze_bottlenecks(
                     confidence=0.85,
                     scope=_format_scope(selected_arts, selected_pis),
                     scope_id=None,
-                    observation=f"Three stages showing bottleneck behavior: {', '.join(stage_names)}. Combined average time: {total_mean:.1f} days, with {total_items:,} items total exceeding thresholds.",
-                    interpretation="Multiple bottlenecks indicate systemic workflow issues rather than isolated problems. The entire delivery pipeline needs optimization. This suggests issues with overall process design, resource allocation, or dependencies between stages.",
+                    observation=f"Three stages showing bottleneck behavior: {', '.join(stage_details)}. Combined average time: {total_mean:.1f} days.",
+                    interpretation="Multiple bottlenecks indicate systemic workflow issues rather than isolated problems. The entire delivery pipeline needs optimization. This suggests issues with overall process design, resource allocation, or dependencies between stages. Note: Same features may appear in multiple stages if they exceeded thresholds throughout their journey.",
                     root_causes=[
                         RootCause(
                             description="Workflow design issues - sequential dependencies",
@@ -544,9 +549,12 @@ def _analyze_wip_statistics(
 
         scope_desc = _format_scope(selected_arts, selected_pis)
 
-        stage_names = [s["stage"].replace("_", " ").title() for s in top_3]
+        # Note: Don't sum exceeding counts as they represent stage occurrences, not unique items
         total_wip = sum(s["total_items"] for s in top_3)
-        total_exceeding = sum(s["exceeding"] for s in top_3)
+        stage_details = [
+            f"{s['stage'].replace('_', ' ').title()} ({s['exceeding']:,}/{s['total_items']:,})"
+            for s in top_3
+        ]
 
         insights.append(
             InsightResponse(
@@ -556,15 +564,15 @@ def _analyze_wip_statistics(
                 confidence=0.85,
                 scope=scope_desc,
                 scope_id=None,
-                observation=f"Found {len(problematic_stages)} stages with excessive work in progress. Top stages: {', '.join(stage_names)}. Total WIP in these stages: {total_wip:,} items, with {total_exceeding:,} exceeding thresholds.",
+                observation=f"Found {len(problematic_stages)} stages with excessive work in progress. Stage occurrences exceeding threshold: {', '.join(stage_details)}. Total WIP across these stages: {total_wip:,} stage occurrences.",
                 interpretation="High WIP creates hidden costs: context switching, delayed feedback, increased coordination overhead, and reduced flow efficiency. When many items exceed time thresholds, it indicates work is starting before capacity is available. This is a classic symptom of push-based rather than pull-based workflow.",
                 root_causes=[
                     RootCause(
                         description="Starting work before capacity available (push vs pull)",
                         evidence=[
-                            f"{top_3[0]['stage']}: {top_3[0]['total_items']:,} items with {top_3[0]['exceeding_pct']:.1f}% exceeding threshold",
+                            f"{top_3[0]['stage']}: {top_3[0]['total_items']:,} stage occurrences with {top_3[0]['exceeding_pct']:.1f}% exceeding threshold",
                             (
-                                f"{top_3[1]['stage']}: {top_3[1]['total_items']:,} items with {top_3[1]['exceeding_pct']:.1f}% exceeding threshold"
+                                f"{top_3[1]['stage']}: {top_3[1]['total_items']:,} stage occurrences with {top_3[1]['exceeding_pct']:.1f}% exceeding threshold"
                                 if len(top_3) > 1
                                 else ""
                             ),
@@ -575,8 +583,8 @@ def _analyze_wip_statistics(
                     RootCause(
                         description="Lack of WIP limits or limits not being enforced",
                         evidence=[
-                            f"Total {total_wip:,} items in progress across {len(top_3)} stages",
-                            f"{total_exceeding:,} items exceeding time thresholds",
+                            f"Total {total_wip:,} stage occurrences across {len(top_3)} stages",
+                            f"High percentage of stage occurrences exceeding time thresholds",
                         ],
                         confidence=0.85,
                         reference="Workflow stage metrics",
@@ -634,7 +642,7 @@ def _analyze_wip_statistics(
                     "items_exceeding_threshold",
                 ],
                 evidence=[
-                    f"{s['stage']}: {s['total_items']:,} items ({s['exceeding']:,} exceeding, {s['exceeding_pct']:.1f}%)"
+                    f"{s['stage']}: {s['total_items']:,} stage occurrences ({s['exceeding']:,} exceeding threshold, {s['exceeding_pct']:.1f}%)"
                     for s in top_3
                 ],
                 status="active",

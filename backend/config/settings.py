@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     jira_verify_ssl: bool = True
 
     # LLM Configuration
-    openai_api_key: str
+    openai_api_key: str = ""  # Can be empty, set via .env file
     openai_model: str = "gpt-4-turbo-preview"
     ollama_base_url: Optional[str] = None
     ollama_model: Optional[str] = None
@@ -75,6 +75,24 @@ class Settings(BaseSettings):
     cache_ttl_seconds: int = 3600
     enable_cache: bool = True
 
+    # Analysis Thresholds (configurable per organization)
+    # These thresholds determine what counts as "exceeding threshold" in bottleneck analysis
+    bottleneck_threshold_days: float = 7.0  # Default: 7 days for all stages
+    planning_accuracy_threshold_pct: float = 70.0  # Default: 70% planning accuracy
+
+    # Stage-specific thresholds (optional overrides)
+    # If not set, uses bottleneck_threshold_days for all stages
+    threshold_in_backlog: Optional[float] = None
+    threshold_in_analysis: Optional[float] = None
+    threshold_in_planned: Optional[float] = None
+    threshold_in_progress: Optional[float] = None
+    threshold_in_reviewing: Optional[float] = None
+    threshold_ready_for_sit: Optional[float] = None
+    threshold_in_sit: Optional[float] = None
+    threshold_ready_for_uat: Optional[float] = None
+    threshold_in_uat: Optional[float] = None
+    threshold_ready_for_deployment: Optional[float] = None
+
     @property
     def custom_field_mapping(self) -> Dict[str, str]:
         """Get custom field mapping dictionary."""
@@ -102,6 +120,26 @@ class Settings(BaseSettings):
     def is_development(self) -> bool:
         """Check if running in development."""
         return self.environment.lower() == "development"
+
+    def get_stage_threshold(self, stage: str) -> float:
+        """
+        Get threshold for a specific stage.
+
+        Returns stage-specific threshold if configured, otherwise returns default.
+
+        Args:
+            stage: Stage name (e.g., 'in_progress', 'in_backlog')
+
+        Returns:
+            Threshold in days for the specified stage
+        """
+        threshold_attr = f"threshold_{stage}"
+        stage_threshold = getattr(self, threshold_attr, None)
+        return (
+            stage_threshold
+            if stage_threshold is not None
+            else self.bottleneck_threshold_days
+        )
 
 
 # Global settings instance
