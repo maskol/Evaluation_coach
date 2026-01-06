@@ -87,3 +87,6 @@ wheels/
 # OS
 .DS_Store
 Thumbs.db
+
+# Chroma data
+*.bin

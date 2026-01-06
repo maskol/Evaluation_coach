@@ -436,6 +436,24 @@
                     <div class="messages">
                         <h2 style="margin-bottom: 20px; color: #333;">⚙️ Administration & Configuration</h2>
 
+                        <!-- RAG Knowledge Base Link -->
+                        <div
+                            style="background: linear-gradient(135deg, #FF6B6B 0%, #FF8E53 100%); padding: 24px; border-radius: 12px; margin-bottom: 24px; color: white; box-shadow: 0 4px 12px rgba(255, 107, 107, 0.3);">
+                            <div style="display: flex; align-items: center; justify-content: space-between;">
+                                <div>
+                                    <h3 style="margin: 0 0 8px 0; color: white;">📚 RAG Knowledge Base Management</h3>
+                                    <p style="margin: 0; opacity: 0.9; font-size: 14px;">Configure and manage the AI
+                                        Coach's knowledge base, view indexed documents, and re-index content</p>
+                                </div>
+                                <a href="rag_admin.html"
+                                    style="padding: 12px 24px; background: white; color: #FF6B6B; border: none; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); transition: transform 0.2s;"
+                                    onmouseover="this.style.transform='translateY(-2px)'"
+                                    onmouseout="this.style.transform='translateY(0)'">
+                                    📚 Manage RAG
+                                </a>
+                            </div>
+                        </div>
+
                         <!-- Threshold Configuration Link -->
                         <div
                             style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 24px; border-radius: 12px; margin-bottom: 24px; color: white; box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);">
@@ -772,6 +790,16 @@
     </div>
 
     <script src="app.js"></script>
+    <script>
+        // Handle URL parameters to open specific tabs
+        window.addEventListener('load', function () {
+            const urlParams = new URLSearchParams(window.location.search);
+            const tab = urlParams.get('tab');
+            if (tab && typeof switchMainTab === 'function') {
+                switchMainTab(tab);
+            }
+        });
+    </script>
 </body>
 
 </html>

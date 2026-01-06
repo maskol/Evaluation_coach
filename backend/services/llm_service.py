@@ -3,8 +3,9 @@ LLM Service for AI coaching responses
 Integrates with LangChain and OpenAI
 """
 
+import json
 import os
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional, List, Tuple
 
 from dotenv import load_dotenv
 from sqlalchemy.orm import Session
@@ -51,6 +52,24 @@ class LLMService:
         self.client = openai_client
         self.ollama_client = ollama_client
         self.ollama_base_url = OLLAMA_BASE_URL
+        self._knowledge_cache: Optional[str] = None
+
+    def _format_retrieved_docs(self, retrieved_docs: List[Dict[str, Any]]) -> str:
+        """Format retrieved RAG documents for LLM context."""
+        if not retrieved_docs:
+            return "(No relevant knowledge base documents retrieved)"
+
+        formatted = []
+        for i, doc in enumerate(retrieved_docs[:5], 1):  # Limit to top 5
+            source = doc.get("metadata", {}).get("source", "unknown")
+            content = doc.get("content", "")
+            score = doc.get("similarity_score", 0)
+            # Truncate long content
+            if len(content) > 400:
+                content = content[:400] + "..."
+            formatted.append(f"[{i}] {source} (relevance: {score:.2f}):\n{content}")
+
+        return "\n\n".join(formatted)
 
     def _is_ollama_model(self, model: str) -> bool:
         """Check if the model is an Ollama model"""
@@ -73,8 +92,155 @@ class LLMService:
             return self.ollama_client
         return self.client
 
+    def _has_llm_client(self, model: Optional[str] = None) -> Tuple[bool, str]:
+        model_to_use = model or self.model
+        client = self._get_client(model_to_use)
+        if client is None:
+            return (
+                False,
+                "No LLM client available. Configure OPENAI_API_KEY for OpenAI models, or select an Ollama model and ensure Ollama is running.",
+            )
+        if self._is_ollama_model(model_to_use) and self.ollama_client is None:
+            return (
+                False,
+                "Ollama client is not available. Ensure the 'openai' Python package is installed and OLLAMA_BASE_URL is reachable.",
+            )
+        if (not self._is_ollama_model(model_to_use)) and (not self.use_openai):
+            return (
+                False,
+                "OpenAI API key is not configured (OPENAI_API_KEY missing).",
+            )
+        return True, ""
+
+    def _compact_metrics_facts(self, facts: Dict[str, Any]) -> Dict[str, Any]:
+        """Reduce large metric payloads into a small, LLM-friendly snapshot."""
+        compact: Dict[str, Any] = {}
+
+        # Strategic targets
+        targets = facts.get("strategic_targets") if isinstance(facts, dict) else None
+        if isinstance(targets, dict):
+            compact["strategic_targets"] = {
+                k: targets.get(k)
+                for k in [
+                    "leadtime_target_2026",
+                    "leadtime_target_2027",
+                    "leadtime_target_true_north",
+                    "planning_accuracy_target_2026",
+                    "planning_accuracy_target_2027",
+                    "planning_accuracy_target_true_north",
+                ]
+            }
+
+        # Lead time snapshot
+        leadtime = facts.get("leadtime") if isinstance(facts, dict) else None
+        if isinstance(leadtime, dict):
+            stage_stats = leadtime.get("stage_statistics") or {}
+            total = stage_stats.get("total_leadtime") or {}
+            if isinstance(total, dict):
+                compact["leadtime_total"] = {
+                    "mean_days": total.get("mean"),
+                    "median_days": total.get("median"),
+                    "p85_days": total.get("p85"),
+                    "p95_days": total.get("p95"),
+                    "count": total.get("count"),
+                }
+
+        # Planning snapshot
+        planning = facts.get("planning") if isinstance(facts, dict) else None
+        if isinstance(planning, dict):
+            compact["planning"] = {
+                "overall_accuracy": planning.get("overall_accuracy")
+                or planning.get("accuracy_percentage")
+                or planning.get("planning_accuracy"),
+                "predictability_score": planning.get("predictability_score"),
+            }
+
+        # Throughput snapshot
+        throughput = facts.get("throughput") if isinstance(facts, dict) else None
+        if isinstance(throughput, dict):
+            compact["throughput"] = {
+                "features_delivered": throughput.get("features_delivered")
+                or throughput.get("delivered_features")
+                or throughput.get("throughput"),
+                "trend": throughput.get("trend"),
+            }
+
+        # Bottlenecks (top 3)
+        bottlenecks = facts.get("bottlenecks") if isinstance(facts, dict) else None
+        if isinstance(bottlenecks, dict):
+            items = bottlenecks.get("bottlenecks")
+            if isinstance(items, list):
+                compact["bottlenecks_top"] = [
+                    {
+                        "stage": b.get("stage") or b.get("name"),
+                        "mean_days": b.get("mean") or b.get("avg") or b.get("avg_days"),
+                        "median_days": b.get("median"),
+                        "p85_days": b.get("p85"),
+                        "count": b.get("count"),
+                    }
+                    for b in items[:3]
+                    if isinstance(b, dict)
+                ]
+
+        # Recent insights (titles only + severity)
+        recent = facts.get("recent_insights") if isinstance(facts, dict) else None
+        if isinstance(recent, list):
+            compact["recent_insights"] = [
+                {
+                    "title": i.get("title"),
+                    "severity": i.get("severity"),
+                    "confidence": i.get("confidence"),
+                }
+                for i in recent
+                if isinstance(i, dict)
+            ]
+
+        return compact
+
+    def _build_system_prompt(
+        self, retrieved_docs: Optional[List[Dict[str, Any]]] = None
+    ) -> str:
+        """Build system prompt with query-relevant RAG knowledge."""
+        knowledge = self._format_retrieved_docs(retrieved_docs or [])
+        maturity_model = """
+SAFe BUSINESS AGILITY MATURITY (use as benchmark):
+Level 1 - Initial: Ad-hoc processes, reactive, siloed teams
+Level 2 - Managed: Basic Scrum/Kanban, some flow metrics tracked
+Level 3 - Defined: SAFe adopted, ARTs coordinated, PI Planning regular
+Level 4 - Quantitatively Managed: Data-driven decisions, predictable delivery, flow optimization
+Level 5 - Optimizing: Continuous improvement culture, strategic agility, world-class metrics
+"""
+        return (
+            "You are an elite Agile strategy expert and SAFe transformation coach with 15+ years of experience coaching Fortune 500 companies. "
+            "You have deep expertise in flow metrics, Lean principles, Product Operating Models, and organizational transformation.\n\n"
+            "YOUR COACHING PERSONAS:\n"
+            "- Strategic Advisor: Guide long-term vision, portfolio strategy, and organizational design.\n"
+            "- Tactical Coach: Help teams improve daily flow, reduce bottlenecks, and run experiments.\n"
+            "- Challenger: Ask tough questions that expose assumptions, tradeoffs, and root causes.\n\n"
+            "YOUR MISSION:\n"
+            "1. Interpret provided metrics/insights without inventing data.\n"
+            "2. Propose 2-4 concrete, testable experiments/actions.\n"
+            "3. Ask 1-3 challenging questions that provoke reflection.\n"
+            "4. Suggest the next best step in this app (e.g., switch scope, generate insights, check metrics).\n"
+            "5. Reference SAFe/Lean best practices and maturity benchmarks when relevant.\n\n"
+            "OUTPUT FORMAT (HTML only, no Markdown):\n"
+            "- Start with a 2-3 sentence assessment\n"
+            "- <strong>Proposed Actions:</strong> <ul><li>...</li></ul>\n"
+            "- <strong>Challenging Questions:</strong> <ul><li>...</li></ul>\n"
+            "- <strong>Evidence Used:</strong> (cite key numbers you relied on)\n"
+            "- <strong>Next Step:</strong> (what to do in this app)\n\n"
+            + maturity_model
+            + "\n\nRELEVANT KNOWLEDGE BASE DOCUMENTS (retrieved via semantic search):\n"
+            + knowledge
+        )
+
     async def generate_response(
-        self, message: str, context: Optional[Dict[str, Any]], db: Session
+        self,
+        message: str,
+        context: Optional[Dict[str, Any]],
+        facts: Optional[Dict[str, Any]],
+        session_id: Optional[str],
+        db: Session,
     ) -> str:
         """
         Generate AI coach response based on user message and context
@@ -88,25 +254,110 @@ class LLMService:
             AI-generated response
         """
 
-        # For now, return intelligent responses based on keywords
-        # TODO: Integrate actual LangChain + OpenAI API
+        # LLM-first coaching. Fall back to rule-based responses when no LLM is configured.
+        ok, reason = self._has_llm_client(self.model)
+        if not ok:
+            # Keep the old keyword behavior, but make it explicit how to enable the real coach.
+            message_lower = message.lower()
+            if "wip" in message_lower or "work in progress" in message_lower:
+                base = self._generate_wip_response(context)
+            elif "flow" in message_lower or "efficiency" in message_lower:
+                base = self._generate_flow_response(context)
+            elif "quality" in message_lower or "defect" in message_lower:
+                base = self._generate_quality_response(context)
+            elif "team" in message_lower or "stability" in message_lower:
+                base = self._generate_team_response(context)
+            elif "scorecard" in message_lower or "health" in message_lower:
+                base = self._generate_scorecard_response(context)
+            elif "improve" in message_lower or "recommendation" in message_lower:
+                base = self._generate_improvement_response(context)
+            else:
+                base = self._generate_default_response()
 
-        message_lower = message.lower()
+            return (
+                base
+                + "<br><br><strong>Note:</strong> The full AI Coach requires an LLM connection. "
+                + f"Current model: <strong>{self.model}</strong> | Temp: <strong>{self.temperature}</strong><br>"
+                + f"Why it’s not using the LLM: {reason}<br>"
+                + "To enable: set <strong>OPENAI_API_KEY</strong> for OpenAI models, or choose an Ollama model (e.g., llama*, mistral*, qwen*) and run Ollama."
+            )
 
-        if "wip" in message_lower or "work in progress" in message_lower:
-            return self._generate_wip_response(context)
-        elif "flow" in message_lower or "efficiency" in message_lower:
-            return self._generate_flow_response(context)
-        elif "quality" in message_lower or "defect" in message_lower:
-            return self._generate_quality_response(context)
-        elif "team" in message_lower or "stability" in message_lower:
-            return self._generate_team_response(context)
-        elif "scorecard" in message_lower or "health" in message_lower:
-            return self._generate_scorecard_response(context)
-        elif "improve" in message_lower or "recommendation" in message_lower:
-            return self._generate_improvement_response(context)
-        else:
-            return self._generate_default_response()
+        # Pull recent chat history for continuity
+        history_msgs: List[Dict[str, str]] = []
+        if session_id:
+            try:
+                from database import ChatMessage
+
+                rows = (
+                    db.query(ChatMessage)
+                    .filter(ChatMessage.session_id == session_id)
+                    .order_by(ChatMessage.created_at.desc())
+                    .limit(12)
+                    .all()
+                )
+                for row in reversed(rows):
+                    role = "assistant" if row.role == "assistant" else "user"
+                    history_msgs.append({"role": role, "content": row.content})
+            except Exception:
+                history_msgs = []
+
+        compact_facts = self._compact_metrics_facts(facts or {})
+
+        # Retrieve relevant knowledge using RAG based on user query
+        retrieved_docs: List[Dict[str, Any]] = []
+        try:
+            from backend.services.rag_service import get_rag_service
+
+            rag = get_rag_service()
+            retrieved_docs = rag.retrieve(message, top_k=5)
+        except Exception as e:
+            print(f"⚠️ RAG retrieval failed: {e}")
+            # Continue without RAG knowledge
+
+        context_obj = context or {}
+        user_prompt = (
+            "User message:\n"
+            + message.strip()
+            + "\n\nContext (scope/time range/focus):\n"
+            + json.dumps(context_obj, ensure_ascii=False)
+            + "\n\nGrounding facts (do not invent beyond these):\n"
+            + json.dumps(compact_facts, ensure_ascii=False)
+            + "\n\nRespond as an Agile strategy coach."
+        )
+
+        try:
+            client = self._get_client(self.model)
+            messages: List[Dict[str, str]] = [
+                {
+                    "role": "system",
+                    "content": self._build_system_prompt(retrieved_docs),
+                },
+            ]
+            # Add prior conversation (already stored as HTML; that's ok)
+            messages.extend(history_msgs)
+            messages.append({"role": "user", "content": user_prompt})
+
+            response = client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=self.temperature,
+                max_tokens=650,  # Increased for structured expert responses
+            )
+            content = response.choices[0].message.content
+            result = (content or "").strip()
+            if not result:
+                return self._generate_default_response()
+            # Ensure response has structure; if LLM omitted sections, add a note
+            if "Evidence Used:" not in result:
+                result += "<br><br><strong>Evidence Used:</strong> (Response based on provided metrics)"
+            return result
+        except Exception as e:
+            # If LLM call fails at runtime, fall back gracefully.
+            return (
+                self._generate_default_response()
+                + "<br><br><strong>Note:</strong> LLM call failed at runtime. "
+                + f"Error: {str(e)}"
+            )
 
     def _generate_wip_response(self, context: Optional[Dict]) -> str:
         return """📊 <strong>Work in Progress Analysis</strong><br><br>

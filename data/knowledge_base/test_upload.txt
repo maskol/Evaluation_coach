@@ -1,0 +1,18 @@
+Test Knowledge Document
+
+This is a test document for the RAG knowledge base upload feature.
+
+## Section 1: Testing
+This section contains test content to verify that file uploads work correctly.
+
+## Section 2: Verification
+After uploading this file, it should be chunked, embedded, and indexed into the ChromaDB vector database.
+
+## Section 3: Retrieval
+Once indexed, the AI Coach should be able to retrieve relevant information from this document when answering user queries.
+
+Best practices for knowledge documents:
+- Use clear headings and structure
+- Include relevant keywords
+- Keep content focused and organized
+- Use UTF-8 encoding

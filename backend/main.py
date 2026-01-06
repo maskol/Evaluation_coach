@@ -6,6 +6,7 @@ Provides REST API endpoints for frontend and LLM integration
 import os
 import shutil
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import uvicorn
@@ -34,6 +35,7 @@ from config.settings import settings
 from database import Base, RuntimeConfiguration, engine, get_db, init_db
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from services.excel_import_service import excel_import_service
 from services.insights_service import InsightsService
 from services.llm_service import LLMService
@@ -1437,9 +1439,74 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
         db.add(user_msg)
         db.commit()
 
+        # Build coaching facts to ground the LLM response (avoid hallucinations)
+        facts: Dict[str, Any] = {}
+        try:
+            facts["strategic_targets"] = {
+                "leadtime_target_2026": settings.leadtime_target_2026,
+                "leadtime_target_2027": settings.leadtime_target_2027,
+                "leadtime_target_true_north": settings.leadtime_target_true_north,
+                "planning_accuracy_target_2026": settings.planning_accuracy_target_2026,
+                "planning_accuracy_target_2027": settings.planning_accuracy_target_2027,
+                "planning_accuracy_target_true_north": settings.planning_accuracy_target_true_north,
+            }
+        except Exception:
+            facts["strategic_targets"] = {}
+
+        try:
+            from database import Insight
+
+            scope = (request.context or {}).get("scope") or "portfolio"
+            scope_id = (request.context or {}).get("scope_id")
+            q = db.query(Insight).filter(Insight.scope == scope)
+            if scope_id:
+                q = q.filter(Insight.scope_id == scope_id)
+            recent = q.order_by(Insight.created_at.desc()).limit(5).all()
+            facts["recent_insights"] = [
+                {
+                    "title": i.title,
+                    "severity": i.severity,
+                    "confidence": i.confidence,
+                    "observation": i.observation,
+                    "interpretation": i.interpretation,
+                }
+                for i in reversed(recent)
+            ]
+        except Exception:
+            facts["recent_insights"] = []
+
+        # Live metrics from LeadTime service (if available)
+        try:
+            if leadtime_service and leadtime_service.is_available():
+                ctx = request.context or {}
+                scope = ctx.get("scope") or "portfolio"
+                scope_id = ctx.get("scope_id")
+
+                selected_arts = [scope_id] if (scope == "art" and scope_id) else None
+
+                facts["leadtime"] = leadtime_service.get_leadtime_statistics(
+                    arts=selected_arts
+                )
+                facts["planning"] = leadtime_service.get_planning_accuracy(
+                    arts=selected_arts
+                )
+                facts["throughput"] = leadtime_service.get_throughput_metrics(
+                    arts=selected_arts
+                )
+                facts["bottlenecks"] = leadtime_service.identify_bottlenecks(
+                    arts=selected_arts
+                )
+        except Exception:
+            # If live metrics fail, we still continue with recent insights and targets
+            pass
+
         # Generate AI response
         response = await llm_service.generate_response(
-            message=request.message, context=request.context, db=db
+            message=request.message,
+            context=request.context,
+            facts=facts,
+            session_id=request.session_id,
+            db=db,
         )
 
         # Store assistant message
@@ -2764,6 +2831,150 @@ async def update_thresholds(thresholds: ThresholdConfig, db: Session = Depends(g
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to save configuration: {str(e)}",
         )
+
+
+# ============================================================================
+# RAG Knowledge Base Management API
+# ============================================================================
+
+
+@app.get("/api/admin/rag/stats")
+async def get_rag_stats():
+    """
+    Get RAG knowledge base statistics.
+
+    Returns:
+        Statistics about indexed documents and chunks
+    """
+    try:
+        from services.rag_service import get_rag_service
+
+        rag = get_rag_service()
+        stats = rag.get_stats()
+
+        return {
+            "status": "success",
+            "total_chunks": stats["total_chunks"],
+            "total_documents": stats["total_documents"],
+            "sources": stats["sources"],
+            "chunk_size": stats["chunk_size"],
+            "chunk_overlap": stats["chunk_overlap"],
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get RAG stats: {str(e)}",
+        )
+
+
+@app.post("/api/admin/rag/reindex")
+async def reindex_rag():
+    """
+    Re-index the RAG knowledge base.
+
+    This will:
+    1. Clear the existing ChromaDB collection
+    2. Re-scan backend/data/knowledge_base/ directory
+    3. Chunk all .txt files
+    4. Generate embeddings and store in ChromaDB
+
+    Returns:
+        Number of chunks indexed
+    """
+    try:
+        from services.rag_service import get_rag_service
+
+        rag = get_rag_service()
+
+        # Reset collection (clear all existing chunks)
+        rag.reset_collection()
+
+        # Re-index all documents
+        chunks_indexed = rag.index_knowledge_base()
+
+        return {
+            "status": "success",
+            "message": "Knowledge base re-indexed successfully",
+            "chunks_indexed": chunks_indexed,
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to re-index RAG: {str(e)}",
+        )
+
+
+@app.post("/api/admin/rag/upload")
+async def upload_rag_document(file: UploadFile = File(...)):
+    """
+    Upload a document to the RAG knowledge base.
+
+    This will:
+    1. Validate the file (must be .txt)
+    2. Save to backend/data/knowledge_base/
+    3. Automatically trigger re-indexing
+
+    Returns:
+        Upload status and re-indexing results
+    """
+    try:
+        # Validate file type
+        if not file.filename.endswith(".txt"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only .txt files are supported",
+            )
+
+        # Get knowledge base directory (same path as RAG service uses)
+        base_dir = Path(__file__).parent
+        kb_dir = base_dir / "data" / "knowledge_base"
+        kb_dir.mkdir(parents=True, exist_ok=True)
+
+        # Save file
+        file_path = kb_dir / file.filename
+
+        # Read and save file content
+        content = await file.read()
+
+        # Validate UTF-8 encoding
+        try:
+            content.decode("utf-8")
+        except UnicodeDecodeError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File must be UTF-8 encoded",
+            )
+
+        # Write file
+        with open(file_path, "wb") as f:
+            f.write(content)
+
+        # Automatically re-index after upload
+        from services.rag_service import get_rag_service
+
+        rag = get_rag_service()
+        rag.reset_collection()
+        chunks_indexed = rag.index_knowledge_base()
+
+        return {
+            "status": "success",
+            "message": f"Document '{file.filename}' uploaded and indexed successfully",
+            "filename": file.filename,
+            "file_size": len(content),
+            "chunks_indexed": chunks_indexed,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload document: {str(e)}",
+        )
+
+
+# Mount static frontend files - MUST be after all API routes
+frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend")
+app.mount("/", StaticFiles(directory=frontend_path, html=True), name="frontend")
 
 
 # Run server

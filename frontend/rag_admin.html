@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG Knowledge Base - Evaluation Coach</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        .admin-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .config-section {
+            background: var(--surface-color);
+            border-radius: var(--border-radius);
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: var(--shadow-md);
+        }
+
+        .config-section h2 {
+            margin-top: 0;
+            color: var(--text-primary);
+            border-bottom: 2px solid var(--primary-color);
+            padding-bottom: 12px;
+            margin-bottom: 20px;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 12px;
+            margin-top: 24px;
+        }
+
+        .btn-save {
+            background-color: #28a745;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-save:hover {
+            background-color: #218838;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+        }
+
+        .btn-reset {
+            background-color: #6c757d;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-reset:hover {
+            background-color: #5a6268;
+        }
+
+        .info-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 24px;
+        }
+
+        .info-box h3 {
+            margin-top: 0;
+            font-size: 18px;
+        }
+
+        .info-box p {
+            margin: 8px 0 0 0;
+            line-height: 1.6;
+        }
+
+        .alert {
+            padding: 12px 20px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            display: none;
+            font-weight: 500;
+        }
+
+        .alert.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            display: block;
+        }
+
+        .alert.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            display: block;
+        }
+
+        .back-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: var(--primary-color);
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .back-link:hover {
+            text-decoration: underline;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .stat-card h3 {
+            margin: 0 0 8px 0;
+            font-size: 14px;
+            opacity: 0.9;
+            font-weight: 500;
+        }
+
+        .stat-card .value {
+            font-size: 32px;
+            font-weight: 700;
+            margin: 0;
+        }
+
+        .warning-box {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+
+        .warning-box h3 {
+            margin-top: 0;
+            color: #664d03;
+        }
+
+        .warning-box p {
+            color: #664d03;
+            font-size: 14px;
+            margin: 8px 0 0 0;
+        }
+
+        .info-panel {
+            background: #e8f4f8;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 20px;
+        }
+
+        .info-panel h3 {
+            margin-top: 0;
+            color: #2c3e50;
+        }
+
+        .info-panel ol {
+            font-size: 14px;
+            line-height: 1.8;
+            padding-left: 20px;
+        }
+
+        .info-panel code {
+            background: white;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: monospace;
+            font-size: 13px;
+        }
+
+        #ragDocsContainer {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+
+        #ragDocsList {
+            list-style: none;
+            padding: 0;
+        }
+
+        #ragDocsList li {
+            padding: 8px 12px;
+            margin: 4px 0;
+            background: white;
+            border-radius: 4px;
+            border-left: 4px solid var(--primary-color);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="admin-container">
+        <a href="javascript:void(0)" class="back-link" onclick="window.location.href='index.html?tab=admin'">← Back to
+            Admin</a>
+
+        <h1>📚 RAG Knowledge Base Management</h1>
+
+        <div id="alertBox" class="alert"></div>
+
+        <!-- RAG Overview -->
+        <div class="config-section">
+            <h2>📊 Knowledge Base Status</h2>
+
+            <div class="info-box">
+                <h3>About RAG (Retrieval-Augmented Generation)</h3>
+                <p>The AI Coach uses RAG to provide expert guidance based on your organization's knowledge base.
+                    Documents are chunked, embedded using machine learning, and semantically searched to retrieve the
+                    most relevant context for each user query.</p>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>📄 Total Chunks</h3>
+                    <p class="value" id="ragChunks">-</p>
+                </div>
+                <div class="stat-card">
+                    <h3>📁 Total Documents</h3>
+                    <p class="value" id="ragDocs">-</p>
+                </div>
+                <div class="stat-card">
+                    <h3>🔍 Status</h3>
+                    <p class="value" id="ragStatus" style="font-size: 24px;">Loading...</p>
+                </div>
+            </div>
+
+            <div style="margin-top: 20px;">
+                <p><strong>📝 Indexed Documents:</strong></p>
+                <div id="ragSources"
+                    style="background: #f8f9fa; padding: 12px; border-radius: 4px; font-family: monospace; font-size: 13px;">
+                    -</div>
+            </div>
+        </div>
+
+        <!-- Configuration Details -->
+        <div class="config-section">
+            <h2>⚙️ Configuration</h2>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px;">
+                <div>
+                    <strong>Chunk Size:</strong>
+                    <p style="color: var(--text-secondary); margin: 4px 0 0 0;">800 characters</p>
+                </div>
+                <div>
+                    <strong>Chunk Overlap:</strong>
+                    <p style="color: var(--text-secondary); margin: 4px 0 0 0;">200 characters</p>
+                </div>
+                <div>
+                    <strong>Embedding Model:</strong>
+                    <p style="color: var(--text-secondary); margin: 4px 0 0 0;">Ollama nomic-embed-text</p>
+                </div>
+                <div>
+                    <strong>Vector Dimensions:</strong>
+                    <p style="color: var(--text-secondary); margin: 4px 0 0 0;">768</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="config-section">
+            <h2>🔧 Management Actions</h2>
+
+            <div class="button-group">
+                <button type="button" class="btn-save" onclick="reindexRAG()">
+                    🔄 Re-index Knowledge Base
+                </button>
+                <button type="button" class="btn-reset" onclick="viewRAGDocs()">
+                    📋 View All Chunks
+                </button>
+            </div>
+
+            <div id="ragDocsContainer" style="display: none;">
+                <h3>Current Chunks</h3>
+                <ul id="ragDocsList"></ul>
+            </div>
+        </div>
+
+        <!-- First-Time Setup Warning -->
+        <div class="warning-box">
+            <h3>ℹ️ Embedding Model</h3>
+            <p>
+                <strong>Using Ollama:</strong> This system uses the local Ollama API with the nomic-embed-text model for
+                fast,
+                offline embeddings. Make sure Ollama is running on localhost:11434 before re-indexing.
+            </p>
+        </div>
+
+        <!-- Adding Documents -->
+        <div class="config-section">
+            <h2>➕ Upload New Documents</h2>
+
+            <div style="background: #e8f4f8; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+                <h3 style="margin-top: 0; color: #1a252f;">📤 Upload .txt File</h3>
+                <p style="color: #2c3e50; font-size: 14px; margin-bottom: 16px;">
+                    Upload a plain text (.txt) file to add it to the knowledge base. The system will automatically
+                    re-index all documents after upload.
+                </p>
+
+                <form id="uploadForm" style="display: flex; flex-direction: column; gap: 16px;">
+                    <div>
+                        <input type="file" id="fileInput" accept=".txt"
+                            style="padding: 10px; border: 2px solid #667eea; border-radius: 8px; font-size: 14px; width: 100%; max-width: 500px;">
+                    </div>
+
+                    <div style="display: flex; gap: 12px;">
+                        <button type="submit" class="btn-save" style="min-width: 150px;">
+                            📤 Upload & Index
+                        </button>
+                        <button type="button" class="btn-reset"
+                            onclick="document.getElementById('fileInput').value = ''">
+                            ❌ Clear
+                        </button>
+                    </div>
+
+                    <div id="uploadProgress"
+                        style="display: none; background: #fff3cd; padding: 12px; border-radius: 8px; color: #856404;">
+                        ⏳ Uploading and indexing...
+                    </div>
+                </form>
+            </div>
+
+            <div style="background: #f8f9fa; border-radius: 8px; padding: 15px;">
+                <h3 style="margin-top: 0; color: #1a252f;">📝 Manual Upload Alternative</h3>
+                <p style="color: #2c3e50; font-size: 14px; margin-bottom: 12px;">
+                    You can also manually place files in the directory:
+                </p>
+                <ol style="font-size: 14px; line-height: 1.8;">
+                    <li>Place your .txt files in: <code
+                            style="background: white; padding: 2px 6px; border-radius: 3px;">backend/data/knowledge_base/</code>
+                    </li>
+                    <li>Click the "🔄 Re-index Knowledge Base" button above</li>
+                    <li>Wait for indexing to complete (~10-30 seconds)</li>
+                </ol>
+
+                <p style="font-size: 14px; color: #2c3e50; margin-top: 16px;">
+                    <strong>Supported format:</strong> Plain text (.txt) files with UTF-8 encoding<br>
+                    <strong>Recommended size:</strong> Any size (large files will be automatically chunked)<br>
+                    <strong>Best practices:</strong> Use clear headings and structured content for better retrieval
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE_URL = 'http://localhost:8850';
+
+        // Load RAG stats on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            loadRAGStats();
+            setupUploadForm();
+        });
+
+        function setupUploadForm() {
+            const form = document.getElementById('uploadForm');
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                await uploadDocument();
+            });
+        }
+
+        async function uploadDocument() {
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                showAlert('⚠️ Please select a file to upload', 'error');
+                return;
+            }
+
+            if (!file.name.endsWith('.txt')) {
+                showAlert('⚠️ Only .txt files are supported', 'error');
+                return;
+            }
+
+            const uploadProgress = document.getElementById('uploadProgress');
+            const submitBtn = form.querySelector('button[type="submit"]');
+
+            try {
+                // Show progress
+                uploadProgress.style.display = 'block';
+                submitBtn.disabled = true;
+                submitBtn.textContent = '⏳ Uploading...';
+
+                // Create form data
+                const formData = new FormData();
+                formData.append('file', file);
+
+                // Upload file
+                const response = await fetch(`${API_BASE_URL}/api/admin/rag/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Upload failed');
+                }
+
+                const result = await response.json();
+                showAlert(`✅ ${result.message} (${result.chunks_indexed} total chunks)`, 'success');
+
+                // Clear form
+                fileInput.value = '';
+
+                // Reload stats
+                setTimeout(() => loadRAGStats(), 1000);
+
+            } catch (error) {
+                showAlert(`❌ Upload failed: ${error.message}`, 'error');
+            } finally {
+                uploadProgress.style.display = 'none';
+                submitBtn.disabled = false;
+                submitBtn.textContent = '📤 Upload & Index';
+            }
+        }
+
+        async function loadRAGStats() {
+            console.log('🔄 Loading RAG stats...');
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/admin/rag/stats`, {
+                    signal: AbortSignal.timeout(5000) // 5 second timeout
+                });
+                if (!response.ok) throw new Error('Failed to load RAG stats');
+
+                const stats = await response.json();
+                console.log('RAG stats loaded:', stats);
+
+                document.getElementById('ragStatus').textContent = '✅ Ready';
+                document.getElementById('ragStatus').style.color = '#28a745';
+                document.getElementById('ragChunks').textContent = stats.total_chunks;
+                document.getElementById('ragDocs').textContent = stats.total_documents;
+
+                if (stats.sources.length > 0) {
+                    document.getElementById('ragSources').innerHTML = stats.sources
+                        .map(s => `• ${s}`)
+                        .join('<br>');
+                } else {
+                    document.getElementById('ragSources').textContent = 'No documents indexed yet';
+                }
+
+            } catch (error) {
+                console.error('❌ Error loading RAG stats:', error);
+                if (error.name === 'TimeoutError' || error.message.includes('timed out')) {
+                    document.getElementById('ragStatus').textContent = '⏳ Init...';
+                    document.getElementById('ragStatus').style.color = 'orange';
+                    document.getElementById('ragChunks').textContent = '...';
+                    document.getElementById('ragDocs').textContent = '...';
+                    document.getElementById('ragSources').innerHTML =
+                        '<em style="color: orange;">Initializing... first-time setup may take 30-60s</em>';
+                } else {
+                    document.getElementById('ragStatus').textContent = '❌ Error';
+                    document.getElementById('ragStatus').style.color = 'red';
+                    document.getElementById('ragSources').innerHTML =
+                        '<em style="color: red;">Failed to load. Check server logs.</em>';
+                }
+            }
+        }
+
+        async function reindexRAG() {
+            if (!confirm('Re-indexing will clear the current database and re-process all documents. This may take 10-30 seconds. Continue?')) {
+                return;
+            }
+
+            const btn = event.target;
+            btn.disabled = true;
+            btn.textContent = '⏳ Re-indexing...';
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/admin/rag/reindex`, {
+                    method: 'POST'
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Failed to re-index');
+                }
+
+                const result = await response.json();
+                showAlert('✅ ' + result.message + ` (${result.chunks_indexed} chunks indexed)`, 'success');
+
+                // Reload stats
+                setTimeout(() => loadRAGStats(), 1000);
+
+            } catch (error) {
+                showAlert('❌ Error: ' + error.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🔄 Re-index Knowledge Base';
+            }
+        }
+
+        function viewRAGDocs() {
+            const container = document.getElementById('ragDocsContainer');
+            const isHidden = container.style.display === 'none';
+
+            if (isHidden) {
+                container.style.display = 'block';
+                event.target.textContent = '🔼 Hide Chunks';
+                loadRAGDocuments();
+            } else {
+                container.style.display = 'none';
+                event.target.textContent = '📋 View All Chunks';
+            }
+        }
+
+        async function loadRAGDocuments() {
+            const docsList = document.getElementById('ragDocsList');
+            docsList.innerHTML = '<li>⏳ Loading chunks...</li>';
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/admin/rag/stats`);
+                if (!response.ok) throw new Error('Failed to load documents');
+
+                const stats = await response.json();
+
+                if (stats.sources.length === 0) {
+                    docsList.innerHTML = '<li>No documents indexed yet. Click "Re-index Knowledge Base" to start.</li>';
+                    return;
+                }
+
+                docsList.innerHTML = stats.sources
+                    .map(source => `<li>📄 ${source}</li>`)
+                    .join('');
+
+            } catch (error) {
+                docsList.innerHTML = '<li style="color: red;">❌ Error loading documents</li>';
+            }
+        }
+
+        function showAlert(message, type) {
+            const alertBox = document.getElementById('alertBox');
+            alertBox.textContent = message;
+            alertBox.className = `alert ${type}`;
+
+            setTimeout(() => {
+                alertBox.className = 'alert';
+            }, 5000);
+        }
+    </script>
+</body>
+
+</html>
