@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional, List, Tuple
 
 from dotenv import load_dotenv
 from sqlalchemy.orm import Session
+from .prompt_service import PromptService
 
 # Load environment variables
 load_dotenv()
@@ -53,6 +54,7 @@ class LLMService:
         self.ollama_client = ollama_client
         self.ollama_base_url = OLLAMA_BASE_URL
         self._knowledge_cache: Optional[str] = None
+        self.prompt_service = PromptService()
 
     def _format_retrieved_docs(self, retrieved_docs: List[Dict[str, Any]]) -> str:
         """Format retrieved RAG documents for LLM context."""
@@ -202,7 +204,13 @@ class LLMService:
     ) -> str:
         """Build system prompt with query-relevant RAG knowledge."""
         knowledge = self._format_retrieved_docs(retrieved_docs or [])
-        maturity_model = """
+
+        # Get prompt from prompt service
+        base_prompt = self.prompt_service.get_active_prompt("coach_system")
+
+        # Fallback to hardcoded if not found
+        if not base_prompt:
+            maturity_model = """
 SAFe BUSINESS AGILITY MATURITY (use as benchmark):
 Level 1 - Initial: Ad-hoc processes, reactive, siloed teams
 Level 2 - Managed: Basic Scrum/Kanban, some flow metrics tracked
@@ -210,26 +218,30 @@ Level 3 - Defined: SAFe adopted, ARTs coordinated, PI Planning regular
 Level 4 - Quantitatively Managed: Data-driven decisions, predictable delivery, flow optimization
 Level 5 - Optimizing: Continuous improvement culture, strategic agility, world-class metrics
 """
+            base_prompt = (
+                "You are an elite Agile strategy expert and SAFe transformation coach with 15+ years of experience coaching Fortune 500 companies. "
+                "You have deep expertise in flow metrics, Lean principles, Product Operating Models, and organizational transformation.\n\n"
+                "YOUR COACHING PERSONAS:\n"
+                "- Strategic Advisor: Guide long-term vision, portfolio strategy, and organizational design.\n"
+                "- Tactical Coach: Help teams improve daily flow, reduce bottlenecks, and run experiments.\n"
+                "- Challenger: Ask tough questions that expose assumptions, tradeoffs, and root causes.\n\n"
+                "YOUR MISSION:\n"
+                "1. Interpret provided metrics/insights without inventing data.\n"
+                "2. Propose 2-4 concrete, testable experiments/actions.\n"
+                "3. Ask 1-3 challenging questions that provoke reflection.\n"
+                "4. Suggest the next best step in this app (e.g., switch scope, generate insights, check metrics).\n"
+                "5. Reference SAFe/Lean best practices and maturity benchmarks when relevant.\n\n"
+                "OUTPUT FORMAT (HTML only, no Markdown):\n"
+                "- Start with a 2-3 sentence assessment\n"
+                "- <strong>Proposed Actions:</strong> <ul><li>...</li></ul>\n"
+                "- <strong>Challenging Questions:</strong> <ul><li>...</li></ul>\n"
+                "- <strong>Evidence Used:</strong> (cite key numbers you relied on)\n"
+                "- <strong>Next Step:</strong> (what to do in this app)\n\n"
+                + maturity_model
+            )
+
         return (
-            "You are an elite Agile strategy expert and SAFe transformation coach with 15+ years of experience coaching Fortune 500 companies. "
-            "You have deep expertise in flow metrics, Lean principles, Product Operating Models, and organizational transformation.\n\n"
-            "YOUR COACHING PERSONAS:\n"
-            "- Strategic Advisor: Guide long-term vision, portfolio strategy, and organizational design.\n"
-            "- Tactical Coach: Help teams improve daily flow, reduce bottlenecks, and run experiments.\n"
-            "- Challenger: Ask tough questions that expose assumptions, tradeoffs, and root causes.\n\n"
-            "YOUR MISSION:\n"
-            "1. Interpret provided metrics/insights without inventing data.\n"
-            "2. Propose 2-4 concrete, testable experiments/actions.\n"
-            "3. Ask 1-3 challenging questions that provoke reflection.\n"
-            "4. Suggest the next best step in this app (e.g., switch scope, generate insights, check metrics).\n"
-            "5. Reference SAFe/Lean best practices and maturity benchmarks when relevant.\n\n"
-            "OUTPUT FORMAT (HTML only, no Markdown):\n"
-            "- Start with a 2-3 sentence assessment\n"
-            "- <strong>Proposed Actions:</strong> <ul><li>...</li></ul>\n"
-            "- <strong>Challenging Questions:</strong> <ul><li>...</li></ul>\n"
-            "- <strong>Evidence Used:</strong> (cite key numbers you relied on)\n"
-            "- <strong>Next Step:</strong> (what to do in this app)\n\n"
-            + maturity_model
+            base_prompt
             + "\n\nRELEVANT KNOWLEDGE BASE DOCUMENTS (retrieved via semantic search):\n"
             + knowledge
         )
@@ -456,12 +468,20 @@ Level 5 - Optimizing: Continuous improvement culture, strategic agility, world-c
             )
             recommendations_str = "\n".join(
                 [
-                    f"- [{rec.get('timeframe', 'N/A')}] {rec.get('description', 'N/A')}"
+                    f"- {rec.get('action', 'N/A')} (Expected: {rec.get('expected_outcome', 'N/A')})"
                     for rec in recommendations
                 ]
             )
 
-            prompt = f"""You are an expert Agile Coach and SAFe consultant with 15+ years of experience coaching Fortune 500 companies. You have deep expertise in flow metrics, lean principles, and organizational transformation.
+            # Get prompts from prompt service
+            analysis_prompt_template = self.prompt_service.get_active_prompt(
+                "insight_analysis"
+            )
+            system_prompt = self.prompt_service.get_active_prompt("insight_system")
+
+            # Fallback to hardcoded if not found
+            if not analysis_prompt_template:
+                analysis_prompt_template = """You are an expert Agile Coach and SAFe consultant with 15+ years of experience coaching Fortune 500 companies. You have deep expertise in flow metrics, lean principles, and organizational transformation.
 
 INSIGHT ANALYSIS:
 Title: {insight_title}
@@ -486,13 +506,25 @@ As an experienced agile coach, provide a brief (2-3 sentences) expert commentary
 
 Keep it conversational, actionable, and grounded in real-world experience. Do not repeat the observation or recommendations - add NEW insights from your expertise."""
 
+            if not system_prompt:
+                system_prompt = "You are an expert Agile Coach and SAFe consultant with extensive experience in enterprise agile transformations. You provide practical, experience-based guidance."
+
+            prompt = analysis_prompt_template.format(
+                insight_title=insight_title,
+                observation=observation,
+                interpretation=interpretation,
+                metrics_str=metrics_str,
+                root_causes_str=root_causes_str,
+                recommendations_str=recommendations_str,
+            )
+
             client = self._get_client(self.model)
             response = client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are an expert Agile Coach and SAFe consultant with extensive experience in enterprise agile transformations. You provide practical, experience-based guidance.",
+                        "content": system_prompt,
                     },
                     {"role": "user", "content": prompt},
                 ],

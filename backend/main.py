@@ -2972,6 +2972,302 @@ async def upload_rag_document(file: UploadFile = File(...)):
         )
 
 
+# ============================================================================
+# PROMPT MANAGEMENT ENDPOINTS
+# ============================================================================
+
+
+@app.get("/api/admin/prompts/stats")
+async def get_prompt_stats():
+    """
+    Get statistics about prompts.
+
+    Returns:
+        Statistics including total prompts, active/inactive counts, versions
+    """
+    try:
+        from services.prompt_service import PromptService
+
+        prompt_service = PromptService()
+
+        stats = prompt_service.get_stats()
+
+        return stats
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get prompt stats: {str(e)}",
+        )
+
+
+@app.get("/api/admin/prompts")
+async def get_all_prompts():
+    """
+    Get all prompts with their metadata.
+
+    Returns:
+        List of all prompts with versions and status
+    """
+    try:
+        from services.prompt_service import PromptService
+
+        prompt_service = PromptService()
+        prompts = prompt_service.get_all_prompts()
+        return {"prompts": prompts}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get prompts: {str(e)}",
+        )
+
+
+@app.get("/api/admin/prompts/{prompt_id}")
+async def get_prompt(prompt_id: str):
+    """
+    Get a specific prompt by ID.
+
+    Args:
+        prompt_id: The unique identifier for the prompt
+
+    Returns:
+        Prompt data including current version
+    """
+    try:
+        from services.prompt_service import PromptService
+
+        prompt_service = PromptService()
+        prompt = prompt_service.get_prompt(prompt_id)
+
+        if not prompt:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Prompt '{prompt_id}' not found",
+            )
+
+        return prompt
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get prompt: {str(e)}",
+        )
+
+
+@app.post("/api/admin/prompts")
+async def create_prompt(data: Dict[str, Any]):
+    """
+    Create a new prompt.
+
+    Expected fields:
+        - id: Unique identifier
+        - name: Display name
+        - description: Description of the prompt's purpose
+        - prompt: The actual prompt text
+        - tags: Optional list of tags
+
+    Returns:
+        Created prompt data
+    """
+    try:
+        from services.prompt_service import PromptService
+
+        prompt_service = PromptService()
+
+        required_fields = ["id", "name", "description", "prompt"]
+        for field in required_fields:
+            if field not in data:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Missing required field: {field}",
+                )
+
+        prompt = prompt_service.create_prompt(
+            prompt_id=data["id"],
+            name=data["name"],
+            description=data["description"],
+            prompt=data["prompt"],
+            tags=data.get("tags", []),
+            created_by=data.get("created_by", "user"),
+        )
+
+        return prompt
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create prompt: {str(e)}",
+        )
+
+
+@app.put("/api/admin/prompts/{prompt_id}")
+async def update_prompt(prompt_id: str, data: Dict[str, Any]):
+    """
+    Update an existing prompt (creates new version).
+
+    Args:
+        prompt_id: The unique identifier for the prompt
+        data: Fields to update (name, description, prompt, tags)
+
+    Returns:
+        Updated prompt data with new version
+    """
+    try:
+        from services.prompt_service import PromptService
+
+        prompt_service = PromptService()
+
+        prompt = prompt_service.update_prompt(
+            prompt_id=prompt_id,
+            name=data.get("name"),
+            description=data.get("description"),
+            prompt=data.get("prompt"),
+            tags=data.get("tags"),
+            updated_by=data.get("updated_by", "user"),
+        )
+
+        return prompt
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update prompt: {str(e)}",
+        )
+
+
+@app.delete("/api/admin/prompts/{prompt_id}")
+async def delete_prompt(prompt_id: str):
+    """
+    Delete a prompt.
+
+    Args:
+        prompt_id: The unique identifier for the prompt
+
+    Returns:
+        Success confirmation
+    """
+    try:
+        from services.prompt_service import PromptService
+
+        prompt_service = PromptService()
+
+        success = prompt_service.delete_prompt(prompt_id)
+
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Prompt '{prompt_id}' not found",
+            )
+
+        return {"status": "success", "message": f"Prompt '{prompt_id}' deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete prompt: {str(e)}",
+        )
+
+
+@app.post("/api/admin/prompts/{prompt_id}/toggle")
+async def toggle_prompt_active(prompt_id: str):
+    """
+    Toggle active status of a prompt.
+
+    Args:
+        prompt_id: The unique identifier for the prompt
+
+    Returns:
+        Updated prompt with new active status
+    """
+    try:
+        from services.prompt_service import PromptService
+
+        prompt_service = PromptService()
+
+        prompt = prompt_service.toggle_active(prompt_id)
+
+        return prompt
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to toggle prompt: {str(e)}",
+        )
+
+
+@app.get("/api/admin/prompts/{prompt_id}/history")
+async def get_prompt_history(prompt_id: str):
+    """
+    Get version history for a prompt.
+
+    Args:
+        prompt_id: The unique identifier for the prompt
+
+    Returns:
+        List of all versions with metadata
+    """
+    try:
+        from services.prompt_service import PromptService
+
+        prompt_service = PromptService()
+
+        history = prompt_service.get_prompt_history(prompt_id)
+
+        return {"prompt_id": prompt_id, "history": history}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get prompt history: {str(e)}",
+        )
+
+
+@app.post("/api/admin/prompts/{prompt_id}/restore/{version}")
+async def restore_prompt_version(prompt_id: str, version: int):
+    """
+    Restore a specific version of a prompt.
+
+    Args:
+        prompt_id: The unique identifier for the prompt
+        version: Version number to restore
+
+    Returns:
+        Restored prompt data with new version number
+    """
+    try:
+        from services.prompt_service import PromptService
+
+        prompt_service = PromptService()
+
+        prompt = prompt_service.restore_version(prompt_id, version)
+
+        return prompt
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to restore prompt version: {str(e)}",
+        )
+
+
 # Mount static frontend files - MUST be after all API routes
 frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend")
 app.mount("/", StaticFiles(directory=frontend_path, html=True), name="frontend")
