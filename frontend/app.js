@@ -130,6 +130,69 @@ function getLLMConfig() {
     return { model: 'gpt-4o-mini', temperature: 0.7 };
 }
 
+// Strategic Targets Functions
+async function loadStrategicTargets() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/admin/config`);
+        const data = await response.json();
+        const thresholds = data.thresholds || {};
+
+        // Load Lead-Time targets
+        if (thresholds.leadtime_target_2026) {
+            document.getElementById('leadtime2026Target').value = thresholds.leadtime_target_2026;
+        }
+        if (thresholds.leadtime_target_2027) {
+            document.getElementById('leadtime2027Target').value = thresholds.leadtime_target_2027;
+        }
+        if (thresholds.leadtime_target_true_north) {
+            document.getElementById('leadtimeTrueNorthTarget').value = thresholds.leadtime_target_true_north;
+        }
+
+        // Load Planning Accuracy targets
+        if (thresholds.planning_accuracy_target_2026) {
+            document.getElementById('planningAccuracy2026Target').value = thresholds.planning_accuracy_target_2026;
+        }
+        if (thresholds.planning_accuracy_target_2027) {
+            document.getElementById('planningAccuracy2027Target').value = thresholds.planning_accuracy_target_2027;
+        }
+        if (thresholds.planning_accuracy_target_true_north) {
+            document.getElementById('planningAccuracyTrueNorthTarget').value = thresholds.planning_accuracy_target_true_north;
+        }
+
+        console.log('✅ Strategic targets loaded');
+    } catch (error) {
+        console.error('Error loading strategic targets:', error);
+    }
+}
+
+async function saveStrategicTargets() {
+    try {
+        const targets = {
+            leadtime_target_2026: parseFloat(document.getElementById('leadtime2026Target').value) || null,
+            leadtime_target_2027: parseFloat(document.getElementById('leadtime2027Target').value) || null,
+            leadtime_target_true_north: parseFloat(document.getElementById('leadtimeTrueNorthTarget').value) || null,
+            planning_accuracy_target_2026: parseFloat(document.getElementById('planningAccuracy2026Target').value) || null,
+            planning_accuracy_target_2027: parseFloat(document.getElementById('planningAccuracy2027Target').value) || null,
+            planning_accuracy_target_true_north: parseFloat(document.getElementById('planningAccuracyTrueNorthTarget').value) || null,
+            bottleneck_threshold_days: 7.0,  // Keep existing default
+            planning_accuracy_threshold_pct: 70.0  // Keep existing default
+        };
+
+        const response = await fetch(`${API_BASE_URL}/admin/config/thresholds`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(targets)
+        });
+
+        const result = await response.json();
+        alert('✅ Strategic Targets Saved!\n\nThese targets will be used by AI Insights for analysis.');
+        console.log('Strategic targets saved:', result);
+    } catch (error) {
+        console.error('Error saving strategic targets:', error);
+        alert('❌ Error saving targets. Please try again.');
+    }
+}
+
 // Loading Banner Functions (Non-blocking)
 function showLoadingOverlay(message = 'Loading...') {
     let banner = document.getElementById('loadingBanner');
@@ -908,6 +971,8 @@ function switchMainTab(tabName) {
         renderInsightsTab();
     } else if (tabName === 'metrics') {
         loadMetricsCatalog();
+    } else if (tabName === 'admin') {
+        loadStrategicTargets();
     }
 
     updateStatusBar(`Switched to ${tabName} view`);
@@ -1262,11 +1327,136 @@ function displayGeneratedInsights(insights) {
 // View insight details (placeholder for future modal/detail view)
 function viewInsightDetails(index) {
     const insight = appState.currentInsights?.[index];
-    if (insight) {
-        console.log('📊 Viewing insight details:', insight);
-        alert(`Insight Details:\n\nTitle: ${insight.title}\n\nThis would open a detailed modal view with full insight information, evidence, and action items.`);
+    if (!insight) return;
+
+    console.log('📊 Viewing insight details:', insight);
+
+    const modal = document.getElementById('insightDetailsModal');
+    const titleEl = document.getElementById('insightDetailsTitle');
+    const bodyEl = document.getElementById('insightDetailsBody');
+
+    if (!modal || !titleEl || !bodyEl) {
+        // Fallback if modal isn't present
+        alert(`Insight Details:\n\nTitle: ${insight.title}`);
+        return;
     }
+
+    const confidencePct = Math.round((insight.confidence || 0) * 100);
+    const rootCauses = insight.root_causes || [];
+    const actions = insight.recommended_actions || [];
+    const expected = insight.expected_outcomes || {};
+    const evidence = insight.evidence || [];
+    const metricRefs = insight.metric_references || [];
+
+    titleEl.textContent = insight.title || 'Insight Details';
+
+    bodyEl.innerHTML = `
+        <div style="display:flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; color:#666; font-size: 14px;">
+            <div>🎯 Confidence: <strong>${confidencePct}%</strong></div>
+            <div>📊 Scope: <strong>${insight.scope || 'Portfolio'}</strong></div>
+            ${insight.severity ? `<div>⚠️ Severity: <strong>${insight.severity}</strong></div>` : ''}
+        </div>
+
+        ${insight.observation ? `
+            <div style="margin-bottom: 14px;">
+                <div style="font-weight: 700; margin-bottom: 6px;">📋 Observation</div>
+                <div style="color:#333; line-height:1.6;">${insight.observation}</div>
+            </div>
+        ` : ''}
+
+        ${insight.interpretation ? `
+            <div style="margin-bottom: 14px;">
+                <div style="font-weight: 700; margin-bottom: 6px;">💭 Interpretation</div>
+                <div style="color:#333; line-height:1.6; white-space: pre-wrap;">${insight.interpretation}</div>
+            </div>
+        ` : ''}
+
+        ${rootCauses.length ? `
+            <div style="margin-bottom: 14px;">
+                <div style="font-weight: 700; margin-bottom: 6px;">🔍 Root Causes</div>
+                <ul style="margin: 0; padding-left: 18px; line-height: 1.7; color:#333;">
+                    ${rootCauses.map(rc => `
+                        <li style="margin-bottom: 8px;">
+                            <div><strong>${rc.description || 'Root cause'}</strong>
+                                ${rc.confidence ? ` <span style="color:#888; font-size: 12px;">(${Math.round((rc.confidence || 0) * 100)}% confidence)</span>` : ''}
+                            </div>
+                            ${rc.evidence && rc.evidence.length ? `
+                                <ul style="margin-top: 4px; padding-left: 18px; color:#666; font-size: 13px;">
+                                    ${rc.evidence.map(e => `<li>${e}</li>`).join('')}
+                                </ul>
+                            ` : ''}
+                            ${rc.reference ? `<div style="color:#888; font-size: 12px; margin-top: 4px;">📎 Reference: ${rc.reference}</div>` : ''}
+                        </li>
+                    `).join('')}
+                </ul>
+            </div>
+        ` : ''}
+
+        ${actions.length ? `
+            <div style="margin-bottom: 14px;">
+                <div style="font-weight: 700; margin-bottom: 6px;">✅ Recommended Actions</div>
+                <ul style="margin: 0; padding-left: 18px; line-height: 1.7; color:#333;">
+                    ${actions.map(a => `
+                        <li style="margin-bottom: 10px;">
+                            <div>
+                                ${a.timeframe ? `<strong>[${String(a.timeframe).replace('_', ' ').toUpperCase()}]</strong> ` : ''}
+                                ${a.description || ''}
+                            </div>
+                            <div style="color:#666; font-size: 13px; margin-top: 4px;">
+                                ${a.owner ? `👤 Owner: ${a.owner}` : '👤 Owner: TBD'}
+                                ${a.effort ? ` | ⏱️ Effort: ${a.effort}` : ''}
+                                ${a.dependencies && a.dependencies.length ? `<br/>🔗 Dependencies: ${a.dependencies.join(', ')}` : ''}
+                                ${a.success_signal ? `<br/>🎯 Success Signal: ${a.success_signal}` : ''}
+                            </div>
+                        </li>
+                    `).join('')}
+                </ul>
+            </div>
+        ` : ''}
+
+        ${(expected.timeline || (expected.metrics_to_watch && expected.metrics_to_watch.length)) ? `
+            <div style="margin-bottom: 14px;">
+                <div style="font-weight: 700; margin-bottom: 6px;">📊 Expected Outcomes</div>
+                ${expected.timeline ? `<div style="color:#333; margin-bottom: 6px;">⏱️ Timeline: <strong>${expected.timeline}</strong></div>` : ''}
+                ${expected.metrics_to_watch && expected.metrics_to_watch.length ? `<div style="color:#666; font-size: 13px;">📈 Metrics to Watch: ${expected.metrics_to_watch.join(', ')}</div>` : ''}
+                ${expected.leading_indicators && expected.leading_indicators.length ? `<div style="color:#666; font-size: 13px; margin-top: 4px;">⚡ Leading Indicators: ${expected.leading_indicators.join(', ')}</div>` : ''}
+                ${expected.lagging_indicators && expected.lagging_indicators.length ? `<div style="color:#666; font-size: 13px; margin-top: 4px;">📉 Lagging Indicators: ${expected.lagging_indicators.join(', ')}</div>` : ''}
+                ${expected.risks && expected.risks.length ? `<div style="color:#666; font-size: 13px; margin-top: 4px;">⚠️ Risks: ${expected.risks.join(', ')}</div>` : ''}
+            </div>
+        ` : ''}
+
+        ${metricRefs.length ? `
+            <div style="margin-bottom: 14px;">
+                <div style="font-weight: 700; margin-bottom: 6px;">🔗 Metric References</div>
+                <div style="color:#666; font-size: 13px; line-height:1.6;">${metricRefs.join('<br/>')}</div>
+            </div>
+        ` : ''}
+
+        ${evidence.length ? `
+            <div style="margin-bottom: 0;">
+                <div style="font-weight: 700; margin-bottom: 6px;">🧾 Evidence</div>
+                <ul style="margin: 0; padding-left: 18px; line-height: 1.7; color:#333;">
+                    ${evidence.map(ev => `<li>${ev}</li>`).join('')}
+                </ul>
+            </div>
+        ` : ''}
+    `;
+
+    modal.style.display = 'block';
 }
+
+function closeInsightDetails() {
+    const modal = document.getElementById('insightDetailsModal');
+    if (modal) modal.style.display = 'none';
+}
+
+// Close insight details modal when clicking outside the dialog
+window.addEventListener('click', (event) => {
+    const modal = document.getElementById('insightDetailsModal');
+    if (modal && event.target === modal) {
+        closeInsightDetails();
+    }
+});
 
 // Export insight (placeholder for future export functionality)
 function exportInsight(index) {
@@ -1500,7 +1690,7 @@ function renderMetricsCatalog(data) {
             <div style="background: #f8f9fa; padding: 12px; border-radius: 6px; margin-bottom: 12px; font-family: monospace; font-size: 13px;">
                 Formula: ${metric.formula}
             </div>
-            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px;">
+            <div style="display: grid; grid-template-columns: repeat(${metric.avg_last_4_pis !== undefined ? '4' : '3'}, 1fr); gap: 12px; margin-bottom: 12px;">
                 ${metric.industry_average !== undefined ? `
                 <div>
                     <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Industry Average</div>
@@ -1519,8 +1709,16 @@ function renderMetricsCatalog(data) {
                     <div style="font-size: 20px; font-weight: 600; color: #34C759;">${metric.target}</div>
                 </div>
                 ` : ''}
+                ${metric.avg_last_4_pis !== undefined ? `
                 <div>
-                    <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Your Current</div>
+                    <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Avg Last 4 PIs</div>
+                    <div style="font-size: 20px; font-weight: 600; color: #667eea;">${metric.avg_last_4_pis} ${metric.unit}</div>
+                </div>
+                ` : ''}
+                <div>
+                    <div style="font-size: 12px; color: #666; margin-bottom: 4px;">
+                        ${appState.selectedPIs.length === 1 ? `${appState.selectedPIs[0]}` : appState.selectedPIs.length > 1 ? `Total (${appState.selectedPIs.length} PIs)` : 'Total (All PIs)'}
+                    </div>
                     <div style="font-size: 20px; font-weight: 600; color: ${getStatusColor(metric.status)};">
                         ${metric.current_value} ${metric.unit}
                     </div>
@@ -1640,6 +1838,20 @@ function renderMetricsCatalog(data) {
                 <details style="margin-top: 12px;">
                     <summary style="cursor: pointer; color: #667eea; font-weight: 600;">View Throughput by PI</summary>
                     <div style="margin-top: 8px; padding: 12px; background: #f8f9fa; border-radius: 6px;">
+                        ${metric.avg_last_4_pis !== undefined && metric.avg_last_4_pis > 0 ? `
+                        <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 2px solid #667eea; background: #e7f3ff; margin: -12px -12px 8px -12px; padding: 12px;">
+                            <span style="font-weight: 700; color: #667eea;">Avg Last 4 PIs</span>
+                            <span style="font-weight: 700; color: #667eea;">${metric.avg_last_4_pis} ${metric.unit}</span>
+                        </div>
+                        ` : ''}
+                        ${metric.prev_4_pis_data && Object.keys(metric.prev_4_pis_data).length > 0 ?
+                Object.entries(metric.prev_4_pis_data).map(([pi, stats]) => `
+                                <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e0e0e0; background: #f0f4ff;">
+                                    <span style="font-weight: 600; color: #667eea;">${pi}</span>
+                                    <span style="color: #667eea;">${stats.throughput} features (${stats.avg_leadtime.toFixed(1)} days avg)</span>
+                                </div>
+                            `).join('') : ''
+            }
                         ${Object.entries(metric.trend_by_pi).map(([pi, stats]) => `
                             <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e0e0e0;">
                                 <span style="font-weight: 600;">${pi}</span>

@@ -291,6 +291,46 @@ class ThresholdConfig(BaseModel):
         description="Minimum acceptable planning accuracy percentage",
     )
 
+    # Strategic Targets for Feature Lead-Time (days)
+    leadtime_target_2026: Optional[float] = Field(
+        None,
+        ge=1.0,
+        le=365.0,
+        description="Target Feature lead-time for 2026 (days)",
+    )
+    leadtime_target_2027: Optional[float] = Field(
+        None,
+        ge=1.0,
+        le=365.0,
+        description="Target Feature lead-time for 2027 (days)",
+    )
+    leadtime_target_true_north: Optional[float] = Field(
+        None,
+        ge=1.0,
+        le=365.0,
+        description="True North target for Feature lead-time (long-term goal in days)",
+    )
+
+    # Strategic Targets for Planning Accuracy (%)
+    planning_accuracy_target_2026: Optional[float] = Field(
+        None,
+        ge=0.0,
+        le=100.0,
+        description="Target Planning Accuracy for 2026 (%)",
+    )
+    planning_accuracy_target_2027: Optional[float] = Field(
+        None,
+        ge=0.0,
+        le=100.0,
+        description="Target Planning Accuracy for 2027 (%)",
+    )
+    planning_accuracy_target_true_north: Optional[float] = Field(
+        None,
+        ge=0.0,
+        le=100.0,
+        description="True North target for Planning Accuracy (long-term goal %)",
+    )
+
     # Stage-specific overrides (optional)
     threshold_in_backlog: Optional[float] = Field(None, ge=1.0, le=90.0)
     threshold_in_analysis: Optional[float] = Field(None, ge=1.0, le=90.0)

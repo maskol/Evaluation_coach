@@ -31,7 +31,7 @@ from api_models import (
     ThresholdConfig,
 )
 from config.settings import settings
-from database import Base, engine, get_db, init_db
+from database import Base, RuntimeConfiguration, engine, get_db, init_db
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from services.excel_import_service import excel_import_service
@@ -78,8 +78,101 @@ except Exception as e:
 @app.on_event("startup")
 async def startup_event():
     """Initialize database on startup"""
+    import sys
+
     init_db()
-    print("🚀 Evaluation Coach API started")
+    # Load persisted configuration from database
+    print("📦 Loading configuration from database...", flush=True)
+    sys.stdout.flush()
+    load_config_from_db()
+    print("🚀 Evaluation Coach API started", flush=True)
+    sys.stdout.flush()
+
+
+# Configuration persistence helpers
+def load_config_from_db():
+    """Load configuration from database into settings object"""
+    print("📦 Loading configuration from database...")
+    # `get_db()` is a generator dependency for request scope.
+    # Calling `next(get_db())` here leaks the generator/session and can stall startup.
+    from database import SessionLocal
+
+    db = SessionLocal()
+    loaded_count = 0
+    try:
+        config_fields = [
+            "leadtime_target_2026",
+            "leadtime_target_2027",
+            "leadtime_target_true_north",
+            "planning_accuracy_target_2026",
+            "planning_accuracy_target_2027",
+            "planning_accuracy_target_true_north",
+            "bottleneck_threshold_days",
+            "planning_accuracy_threshold_pct",
+            "threshold_in_backlog",
+            "threshold_in_analysis",
+            "threshold_in_planned",
+            "threshold_in_progress",
+            "threshold_in_reviewing",
+            "threshold_ready_for_sit",
+            "threshold_in_sit",
+            "threshold_ready_for_uat",
+            "threshold_in_uat",
+            "threshold_ready_for_deployment",
+        ]
+
+        for field in config_fields:
+            try:
+                config_row = (
+                    db.query(RuntimeConfiguration)
+                    .filter(RuntimeConfiguration.config_key == field)
+                    .first()
+                )
+
+                if config_row and config_row.config_value is not None:
+                    setattr(settings, field, config_row.config_value)
+                    print(f"   ✅ Loaded {field} = {config_row.config_value}")
+                    loaded_count += 1
+            except Exception as field_error:
+                print(f"   ⚠️  Error loading {field}: {field_error}")
+
+        if loaded_count == 0:
+            print("   ℹ️  No configuration values found in database")
+        else:
+            print(f"   ✅ Loaded {loaded_count} configuration values")
+
+    except Exception as e:
+        print(f"⚠️  Could not load configuration from database: {e}")
+        import traceback
+
+        traceback.print_exc()
+    finally:
+        db.close()
+
+
+def save_config_to_db(db: Session, config_key: str, config_value: Optional[float]):
+    """Save a configuration value to database"""
+    try:
+        config_row = (
+            db.query(RuntimeConfiguration)
+            .filter(RuntimeConfiguration.config_key == config_key)
+            .first()
+        )
+
+        if config_row:
+            config_row.config_value = config_value
+            config_row.updated_at = datetime.now()
+        else:
+            config_row = RuntimeConfiguration(
+                config_key=config_key,
+                config_value=config_value,
+            )
+            db.add(config_row)
+
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise e
 
 
 # Health check endpoint
@@ -172,6 +265,7 @@ async def generate_insights_endpoint(
     arts: Optional[str] = None,
     model: Optional[str] = None,
     temperature: Optional[float] = None,
+    enhance_with_llm: bool = False,
     db: Session = Depends(get_db),
 ):
     """Generate AI-powered insights using expert analysis (LLM)
@@ -189,15 +283,20 @@ async def generate_insights_endpoint(
     try:
         from agents.nodes.advanced_insights import generate_advanced_insights
 
-        # Update LLM service with custom parameters if provided
-        if model:
-            llm_service.model = model
-        if temperature is not None:
-            llm_service.temperature = temperature
+        llm_service_for_insights = llm_service if enhance_with_llm else None
 
-        print(
-            f"🤖 Using LLM: model={llm_service.model}, temperature={llm_service.temperature}"
-        )
+        # Update LLM service with custom parameters if provided
+        if enhance_with_llm:
+            if model:
+                llm_service.model = model
+            if temperature is not None:
+                llm_service.temperature = temperature
+
+            print(
+                f"🤖 Using LLM: model={llm_service.model}, temperature={llm_service.temperature}"
+            )
+        else:
+            print("🤖 Generating insights without LLM enhancement")
 
         # Parse filter parameters
         selected_pis = (
@@ -261,7 +360,7 @@ async def generate_insights_endpoint(
                     art_comparison=art_comparison,
                     selected_arts=selected_arts,
                     selected_pis=selected_pis,
-                    llm_service=llm_service,
+                    llm_service=llm_service_for_insights,
                 )
 
                 print(f"✅ Generated {len(insights)} AI-powered insights")
@@ -1098,8 +1197,12 @@ async def get_scorecard(scorecard_id: int, db: Session = Depends(get_db)):
 
 
 # Insights Endpoints
-@app.post("/api/v1/insights/generate", response_model=List[InsightResponse])
-async def generate_insights(request: AnalysisRequest, db: Session = Depends(get_db)):
+# NOTE: Keep this legacy/body-based generator on a distinct path.
+# The UI uses the query-param endpoint at POST /api/v1/insights/generate.
+@app.post("/api/v1/insights/generate_basic", response_model=List[InsightResponse])
+async def generate_insights_basic(
+    request: AnalysisRequest, db: Session = Depends(get_db)
+):
     """Generate new insights for specified scope based on real lead-time data"""
     try:
         # If lead-time service available, generate insights from real data
@@ -1115,6 +1218,16 @@ async def generate_insights(request: AnalysisRequest, db: Session = Depends(get_
             planning = leadtime_service.get_planning_accuracy(arts=arts)
             bottlenecks = leadtime_service.identify_bottlenecks(arts=arts)
             waste = leadtime_service.analyze_waste(arts=arts)
+
+            # Extract current metrics for strategic target comparison
+            current_leadtime = None
+            current_planning_accuracy = None
+
+            if stats and "average_leadtime_days" in stats:
+                current_leadtime = stats["average_leadtime_days"]
+
+            if planning and "predictability_score" in planning:
+                current_planning_accuracy = planning["predictability_score"]
 
             # Generate insights based on real data
             generated_insights = []
@@ -1212,10 +1325,25 @@ async def generate_insights(request: AnalysisRequest, db: Session = Depends(get_
                         )
                     )
 
-            if generated_insights:
-                return generated_insights
+            # Always add strategic target insights if configured
+            strategic_insights = await insights_service.generate_insights(
+                scope=request.scope,
+                scope_id=request.scope_id,
+                time_range=request.time_range,
+                db=db,
+                current_leadtime=current_leadtime,
+                current_planning_accuracy=current_planning_accuracy,
+            )
 
-        # Fallback to service-generated insights
+            # Merge leadtime insights with strategic target insights
+            if generated_insights:
+                # Combine both types of insights
+                return generated_insights + strategic_insights
+
+            # Return strategic insights if no leadtime insights
+            return strategic_insights
+
+        # Fallback: just strategic/sample insights when leadtime service unavailable
         insights = await insights_service.generate_insights(
             scope=request.scope,
             scope_id=request.scope_id,
@@ -1984,6 +2112,11 @@ async def get_metrics_catalog(
             arts=selected_arts, pis=selected_pis
         )
 
+        # Get ALL PIs throughput data (unfiltered) for calculating "Avg Last 4 PIs"
+        throughput_all_pis = leadtime_service.client.get_throughput_analysis(
+            arts=selected_arts, pis=None  # Get all PIs
+        )
+
         # Calculate waste metrics
         waiting_waste = waste_data.get("waiting_time_waste", {})
         removed_work = waste_data.get("removed_work", {})
@@ -1993,6 +2126,58 @@ async def get_metrics_catalog(
         # Extract throughput trends
         throughput_by_pi = throughput_full.get("by_pi", {})
         overall_throughput = throughput_full.get("overall_statistics", {})
+
+        # Calculate average of 4 PIs BEFORE the selected PI(s)
+        # Use ALL PIs data to find the ones before selected
+        throughput_all_by_pi = throughput_all_pis.get("by_pi", {})
+        avg_last_4_pis = 0
+        prev_4_pis_data = {}
+
+        if selected_pis and len(throughput_all_by_pi) > 0:
+            # Get all PIs sorted chronologically
+            all_pis_sorted = sorted(throughput_all_by_pi.keys())
+
+            # Find the earliest selected PI
+            earliest_selected = min(selected_pis) if selected_pis else None
+
+            if earliest_selected and earliest_selected in all_pis_sorted:
+                # Get index of earliest selected PI
+                selected_index = all_pis_sorted.index(earliest_selected)
+
+                # Get the 4 PIs before the selected one
+                prev_4_pis = all_pis_sorted[max(0, selected_index - 4) : selected_index]
+
+                if prev_4_pis:
+                    prev_throughputs = [
+                        throughput_all_by_pi[pi].get("throughput", 0)
+                        for pi in prev_4_pis
+                    ]
+                    avg_last_4_pis = round(
+                        sum(prev_throughputs) / len(prev_throughputs), 1
+                    )
+
+                    # Store the previous 4 PIs data for display
+                    for pi in prev_4_pis:
+                        prev_4_pis_data[pi] = {
+                            "throughput": throughput_all_by_pi[pi].get("throughput", 0),
+                            "avg_leadtime": round(
+                                throughput_all_by_pi[pi].get("average_leadtime", 0), 1
+                            ),
+                        }
+        elif not selected_pis and len(throughput_by_pi) > 0:
+            # If no PIs selected, use the last 4 available PIs
+            last_4 = sorted(throughput_by_pi.items())[-4:]
+            if last_4:
+                avg_last_4_pis = round(
+                    sum(data.get("throughput", 0) for pi, data in last_4) / len(last_4),
+                    1,
+                )
+                # Store the last 4 PIs data
+                for pi, data in last_4:
+                    prev_4_pis_data[pi] = {
+                        "throughput": data.get("throughput", 0),
+                        "avg_leadtime": round(data.get("average_leadtime", 0), 1),
+                    }
 
         # Get raw flow data for proper calculations
         flow_data = leadtime_service.client.get_flow_leadtime(
@@ -2168,6 +2353,8 @@ async def get_metrics_catalog(
                         / max(len(throughput_by_pi), 1),
                         1,
                     ),
+                    "avg_last_4_pis": avg_last_4_pis,
+                    "prev_4_pis_data": prev_4_pis_data,
                     "status": "good",
                     "target": "Stable throughput per PI (use for capacity planning)",
                     "jira_fields": ["status", "resolutiondate", "fixVersion"],
@@ -2228,13 +2415,34 @@ async def get_metrics_catalog(
                     "jira_fields": ["labels", "fixVersion", "status"],
                 },
                 "velocity_stability": {
-                    "name": "Velocity Stability",
-                    "description": "Standard deviation of velocity over last 6 sprints",
-                    "formula": "stdev(story_points_completed)",
-                    "current_value": 0,  # Not available yet
-                    "unit": "story points",
-                    "status": "unknown",
-                    "jira_fields": ["customfield_10016 (story points)", "sprint"],
+                    "name": "Velocity (Feature Throughput)",
+                    "description": "Features completed per PI - measures team capacity and predictability",
+                    "formula": "count(status = 'Done' AND resolved IN pi_timeframe)",
+                    "current_value": overall_throughput.get("total_throughput", 0),
+                    "unit": "features",
+                    "average_per_pi": round(
+                        overall_throughput.get("total_throughput", 0)
+                        / max(len(throughput_by_pi), 1),
+                        1,
+                    ),
+                    "avg_last_4_pis": avg_last_4_pis,
+                    "prev_4_pis_data": prev_4_pis_data,
+                    "status": (
+                        "good"
+                        if overall_throughput.get("total_throughput", 0) > 0
+                        else "unknown"
+                    ),
+                    "target": "Stable Feature throughput per PI",
+                    "jira_fields": ["status", "resolutiondate", "fixVersion"],
+                    "trend_by_pi": {
+                        pi: {
+                            "throughput": data.get("throughput", 0),
+                            "avg_leadtime": round(data.get("average_leadtime", 0), 1),
+                        }
+                        for pi, data in sorted(throughput_by_pi.items())[
+                            -6:
+                        ]  # Last 6 PIs
+                    },
                 },
             },
             "quality_metrics": {
@@ -2279,6 +2487,12 @@ async def get_admin_config():
     thresholds = ThresholdConfig(
         bottleneck_threshold_days=settings.bottleneck_threshold_days,
         planning_accuracy_threshold_pct=settings.planning_accuracy_threshold_pct,
+        leadtime_target_2026=settings.leadtime_target_2026,
+        leadtime_target_2027=settings.leadtime_target_2027,
+        leadtime_target_true_north=settings.leadtime_target_true_north,
+        planning_accuracy_target_2026=settings.planning_accuracy_target_2026,
+        planning_accuracy_target_2027=settings.planning_accuracy_target_2027,
+        planning_accuracy_target_true_north=settings.planning_accuracy_target_true_north,
         threshold_in_backlog=settings.threshold_in_backlog,
         threshold_in_analysis=settings.threshold_in_analysis,
         threshold_in_planned=settings.threshold_in_planned,
@@ -2299,40 +2513,58 @@ async def get_admin_config():
 
 
 @app.post("/api/admin/config/thresholds")
-async def update_thresholds(thresholds: ThresholdConfig):
+async def update_thresholds(thresholds: ThresholdConfig, db: Session = Depends(get_db)):
     """
     Update threshold configuration.
 
-    NOTE: This updates runtime configuration. For persistent changes,
-    update the .env file or environment variables.
+    This now persists configuration to the database, so values will
+    survive server restarts and page refreshes.
 
     Args:
         thresholds: New threshold configuration
+        db: Database session
 
     Returns:
         Updated configuration
     """
-    # Update settings (runtime only)
-    settings.bottleneck_threshold_days = thresholds.bottleneck_threshold_days
-    settings.planning_accuracy_threshold_pct = (
-        thresholds.planning_accuracy_threshold_pct
-    )
-    settings.threshold_in_backlog = thresholds.threshold_in_backlog
-    settings.threshold_in_analysis = thresholds.threshold_in_analysis
-    settings.threshold_in_planned = thresholds.threshold_in_planned
-    settings.threshold_in_progress = thresholds.threshold_in_progress
-    settings.threshold_in_reviewing = thresholds.threshold_in_reviewing
-    settings.threshold_ready_for_sit = thresholds.threshold_ready_for_sit
-    settings.threshold_in_sit = thresholds.threshold_in_sit
-    settings.threshold_ready_for_uat = thresholds.threshold_ready_for_uat
-    settings.threshold_in_uat = thresholds.threshold_in_uat
-    settings.threshold_ready_for_deployment = thresholds.threshold_ready_for_deployment
-
-    return {
-        "status": "success",
-        "message": "Thresholds updated successfully (runtime only)",
-        "thresholds": thresholds,
+    # Define all configuration fields
+    config_updates = {
+        "bottleneck_threshold_days": thresholds.bottleneck_threshold_days,
+        "planning_accuracy_threshold_pct": thresholds.planning_accuracy_threshold_pct,
+        "leadtime_target_2026": thresholds.leadtime_target_2026,
+        "leadtime_target_2027": thresholds.leadtime_target_2027,
+        "leadtime_target_true_north": thresholds.leadtime_target_true_north,
+        "planning_accuracy_target_2026": thresholds.planning_accuracy_target_2026,
+        "planning_accuracy_target_2027": thresholds.planning_accuracy_target_2027,
+        "planning_accuracy_target_true_north": thresholds.planning_accuracy_target_true_north,
+        "threshold_in_backlog": thresholds.threshold_in_backlog,
+        "threshold_in_analysis": thresholds.threshold_in_analysis,
+        "threshold_in_planned": thresholds.threshold_in_planned,
+        "threshold_in_progress": thresholds.threshold_in_progress,
+        "threshold_in_reviewing": thresholds.threshold_in_reviewing,
+        "threshold_ready_for_sit": thresholds.threshold_ready_for_sit,
+        "threshold_in_sit": thresholds.threshold_in_sit,
+        "threshold_ready_for_uat": thresholds.threshold_ready_for_uat,
+        "threshold_in_uat": thresholds.threshold_in_uat,
+        "threshold_ready_for_deployment": thresholds.threshold_ready_for_deployment,
     }
+
+    try:
+        # Update runtime settings AND save to database
+        for config_key, config_value in config_updates.items():
+            setattr(settings, config_key, config_value)
+            save_config_to_db(db, config_key, config_value)
+
+        return {
+            "status": "success",
+            "message": "Configuration saved successfully and will persist across restarts",
+            "thresholds": thresholds,
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save configuration: {str(e)}",
+        )
 
 
 # Run server

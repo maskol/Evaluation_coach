@@ -90,6 +90,11 @@ def generate_advanced_insights(
     # 10. Feature Size & Batch Analysis (Way of Working)
     insights.extend(_analyze_feature_sizing(throughput, selected_arts, selected_pis))
 
+    # 11. Strategic Target Analysis - Compare current performance vs targets
+    insights.extend(
+        _analyze_strategic_targets(leadtime, planning, selected_arts, selected_pis)
+    )
+
     # Enhance insights with expert LLM commentary
     if _llm_service:
         _enhance_insights_with_expert_analysis(insights)
@@ -1435,9 +1440,307 @@ def _format_scope(
     if selected_pis:
         if len(selected_pis) == 1:
             parts.append(f"PI: {selected_pis[0]}")
-        elif len(selected_pis) <= 3:
-            parts.append(f"PIs: {', '.join(selected_pis)}")
         else:
             parts.append(f"{len(selected_pis)} PIs")
 
     return " | ".join(parts) if parts else "Portfolio"
+
+
+def _analyze_strategic_targets(
+    leadtime: Dict[str, Any],
+    planning: Dict[str, Any],
+    selected_arts: Optional[List[str]],
+    selected_pis: Optional[List[str]],
+) -> List[InsightResponse]:
+    """Analyze current performance against strategic targets (2026, 2027, True North).
+
+    Note: This uses the same keys as the existing lead-time and planning analysis blocks.
+    """
+
+    from config.settings import settings
+
+    insights: List[InsightResponse] = []
+
+    def _to_float(value: Any) -> float:
+        try:
+            if value is None:
+                return 0.0
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
+
+    # Extract current lead-time median (days)
+    stage_stats = (
+        leadtime.get("stage_statistics", {}) if isinstance(leadtime, dict) else {}
+    )
+    total_stats = (
+        stage_stats.get("total_leadtime", {}) if isinstance(stage_stats, dict) else {}
+    )
+    current_leadtime_median = _to_float(total_stats.get("median"))
+    if current_leadtime_median <= 0:
+        # Fallbacks (in case upstream schema changes)
+        current_leadtime_median = _to_float(leadtime.get("median_lead_time"))
+
+    # Extract current planning accuracy (%)
+    current_planning_accuracy = 0.0
+    if isinstance(planning, dict):
+        for key in [
+            "accuracy_percentage",  # primary key used by _analyze_planning_accuracy
+            "pi_predictability",  # common alternate naming
+            "predictability_score",  # used in some older endpoints
+            "planning_accuracy",  # legacy
+        ]:
+            candidate = _to_float(planning.get(key))
+            if candidate > 0:
+                current_planning_accuracy = candidate
+                break
+
+    has_leadtime_targets = any(
+        (_to_float(t) > 0)
+        for t in [
+            settings.leadtime_target_2026,
+            settings.leadtime_target_2027,
+            settings.leadtime_target_true_north,
+        ]
+    )
+    has_planning_targets = any(
+        (_to_float(t) > 0)
+        for t in [
+            settings.planning_accuracy_target_2026,
+            settings.planning_accuracy_target_2027,
+            settings.planning_accuracy_target_true_north,
+        ]
+    )
+
+    # Feature Lead-Time vs Targets (lower is better)
+    if has_leadtime_targets and current_leadtime_median > 0:
+        target_2026 = _to_float(settings.leadtime_target_2026)
+        target_2027 = _to_float(settings.leadtime_target_2027)
+        target_true_north = _to_float(settings.leadtime_target_true_north)
+
+        gap_2026 = current_leadtime_median - target_2026 if target_2026 > 0 else 0.0
+        gap_2027 = current_leadtime_median - target_2027 if target_2027 > 0 else 0.0
+        gap_true_north = (
+            current_leadtime_median - target_true_north
+            if target_true_north > 0
+            else 0.0
+        )
+
+        if target_2026 > 0:
+            if gap_2026 > 20:
+                severity = "critical"
+            elif gap_2026 > 10:
+                severity = "warning"
+            elif gap_2026 > 0:
+                severity = "info"
+            else:
+                severity = "success"
+        else:
+            severity = "info"
+
+        observation_parts = [
+            f"Current median lead time: {current_leadtime_median:.0f} days."
+        ]
+        if target_2026 > 0:
+            observation_parts.append(
+                f"2026 target: {target_2026:.0f} days (gap: {gap_2026:+.0f} days)."
+            )
+        if target_2027 > 0:
+            observation_parts.append(
+                f"2027 target: {target_2027:.0f} days (gap: {gap_2027:+.0f} days)."
+            )
+        if target_true_north > 0:
+            observation_parts.append(
+                f"True North: {target_true_north:.0f} days (gap: {gap_true_north:+.0f} days)."
+            )
+
+        if target_2026 > 0 and gap_2026 > 0:
+            interpretation = (
+                f"Median lead time exceeds the 2026 target by {gap_2026:.0f} days. "
+                "Reducing queue time and limiting WIP are the fastest levers."
+            )
+            root_causes = [
+                RootCause(
+                    description="Lead time above 2026 strategic target",
+                    evidence=[
+                        f"Median lead time {current_leadtime_median:.0f}d vs target {target_2026:.0f}d",
+                        f"Gap: {gap_2026:.0f} days",
+                    ],
+                    confidence=0.85,
+                    reference="Strategic targets",
+                )
+            ]
+            recommended_actions = [
+                Action(
+                    timeframe="immediate",
+                    description="Implement/strengthen WIP limits and run a weekly flow review focused on oldest items",
+                    owner="scrum_master",
+                    effort="1-2 weeks",
+                    dependencies=[],
+                    success_signal="Median lead time trend decreases for 2 consecutive weeks",
+                ),
+                Action(
+                    timeframe="short_term",
+                    description="Value stream mapping: identify top 2 waiting states and remove/automate handoffs",
+                    owner="agile_coach",
+                    effort="1-2 weeks",
+                    dependencies=[],
+                    success_signal="Time-in-waiting reduced in the worst 2 stages",
+                ),
+            ]
+        else:
+            interpretation = "Lead time is on track vs the 2026 milestone. Maintain focus on flow to progress toward 2027 and True North."
+            root_causes = []
+            recommended_actions = []
+
+        insights.append(
+            InsightResponse(
+                id=0,
+                title="Feature Lead-Time vs Strategic Targets",
+                severity=severity,
+                confidence=0.85,
+                scope=_format_scope(selected_arts, selected_pis),
+                scope_id=None,
+                observation=" ".join(observation_parts),
+                interpretation=interpretation,
+                root_causes=root_causes,
+                recommended_actions=recommended_actions,
+                expected_outcomes=ExpectedOutcome(
+                    metrics_to_watch=["median_leadtime", "p85_leadtime"],
+                    leading_indicators=["Reduced WIP", "Fewer items aging in queue"],
+                    lagging_indicators=["Median lead time <= target"],
+                    timeline="1-3 PIs",
+                    risks=[
+                        "Targets may be met by deferring scope rather than improving flow"
+                    ],
+                ),
+                metric_references=[
+                    "leadtime_analysis.stage_statistics.total_leadtime.median",
+                    "leadtime_target_2026",
+                    "leadtime_target_2027",
+                    "leadtime_target_true_north",
+                ],
+                evidence=[],
+                status="active",
+                created_at=datetime.now(),
+            )
+        )
+
+    # Planning Accuracy vs Targets (higher is better)
+    if has_planning_targets and current_planning_accuracy > 0:
+        target_2026 = _to_float(settings.planning_accuracy_target_2026)
+        target_2027 = _to_float(settings.planning_accuracy_target_2027)
+        target_true_north = _to_float(settings.planning_accuracy_target_true_north)
+
+        gap_2026 = current_planning_accuracy - target_2026 if target_2026 > 0 else 0.0
+        gap_2027 = current_planning_accuracy - target_2027 if target_2027 > 0 else 0.0
+        gap_true_north = (
+            current_planning_accuracy - target_true_north
+            if target_true_north > 0
+            else 0.0
+        )
+
+        if target_2026 > 0:
+            if gap_2026 < -15:
+                severity = "critical"
+            elif gap_2026 < -5:
+                severity = "warning"
+            elif gap_2026 < 0:
+                severity = "info"
+            else:
+                severity = "success"
+        else:
+            severity = "info"
+
+        observation_parts = [
+            f"Current planning accuracy: {current_planning_accuracy:.1f}%."
+        ]
+        if target_2026 > 0:
+            observation_parts.append(
+                f"2026 target: {target_2026:.1f}% (gap: {gap_2026:+.1f}%)."
+            )
+        if target_2027 > 0:
+            observation_parts.append(
+                f"2027 target: {target_2027:.1f}% (gap: {gap_2027:+.1f}%)."
+            )
+        if target_true_north > 0:
+            observation_parts.append(
+                f"True North: {target_true_north:.1f}% (gap: {gap_true_north:+.1f}%)."
+            )
+
+        if target_2026 > 0 and gap_2026 < 0:
+            interpretation = (
+                f"Planning accuracy is below the 2026 target by {abs(gap_2026):.1f} percentage points. "
+                "Focus on commitment hygiene (DoR, dependency mapping, capacity buffers)."
+            )
+            root_causes = [
+                RootCause(
+                    description="Planning accuracy below 2026 strategic target",
+                    evidence=[
+                        f"Accuracy {current_planning_accuracy:.1f}% vs target {target_2026:.1f}%",
+                        f"Gap: {abs(gap_2026):.1f} pp",
+                    ],
+                    confidence=0.8,
+                    reference="PI planning data",
+                )
+            ]
+            recommended_actions = [
+                Action(
+                    timeframe="immediate",
+                    description="Add/strengthen capacity buffer (15-20%) and enforce commitment rules",
+                    owner="rte",
+                    effort="1 PI",
+                    dependencies=[],
+                    success_signal="Committed-to-delivered ratio improves next PI",
+                ),
+                Action(
+                    timeframe="short_term",
+                    description="Implement a strict Definition of Ready for committed work (dependencies, acceptance criteria)",
+                    owner="product_owner",
+                    effort="2-4 weeks",
+                    dependencies=[],
+                    success_signal="Fewer mid-PI scope changes; predictability trend improves",
+                ),
+            ]
+        else:
+            interpretation = "Planning accuracy is on track vs the 2026 milestone. Maintain discipline to progress toward 2027 and True North."
+            root_causes = []
+            recommended_actions = []
+
+        insights.append(
+            InsightResponse(
+                id=0,
+                title="Planning Accuracy vs Strategic Targets",
+                severity=severity,
+                confidence=0.8,
+                scope=_format_scope(selected_arts, selected_pis),
+                scope_id=None,
+                observation=" ".join(observation_parts),
+                interpretation=interpretation,
+                root_causes=root_causes,
+                recommended_actions=recommended_actions,
+                expected_outcomes=ExpectedOutcome(
+                    metrics_to_watch=["planning_accuracy"],
+                    leading_indicators=[
+                        "Stable commitments",
+                        "Reduced mid-PI scope change",
+                    ],
+                    lagging_indicators=["Planning accuracy >= target"],
+                    timeline="1-3 PIs",
+                    risks=[
+                        "Improving predictability by under-committing can reduce throughput"
+                    ],
+                ),
+                metric_references=[
+                    "planning_accuracy.accuracy_percentage",
+                    "planning_accuracy_target_2026",
+                    "planning_accuracy_target_2027",
+                    "planning_accuracy_target_true_north",
+                ],
+                evidence=[],
+                status="active",
+                created_at=datetime.now(),
+            )
+        )
+
+    return insights

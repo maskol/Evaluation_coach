@@ -80,6 +80,16 @@ class Settings(BaseSettings):
     bottleneck_threshold_days: float = 7.0  # Default: 7 days for all stages
     planning_accuracy_threshold_pct: float = 70.0  # Default: 70% planning accuracy
 
+    # Strategic Targets for Feature Lead-Time (days)
+    leadtime_target_2026: Optional[float] = None  # Target for 2026
+    leadtime_target_2027: Optional[float] = None  # Target for 2027
+    leadtime_target_true_north: Optional[float] = None  # True North (long-term goal)
+
+    # Strategic Targets for Planning Accuracy (%)
+    planning_accuracy_target_2026: Optional[float] = None  # Target for 2026
+    planning_accuracy_target_2027: Optional[float] = None  # Target for 2027
+    planning_accuracy_target_true_north: Optional[float] = None  # True North
+
     # Stage-specific thresholds (optional overrides)
     # If not set, uses bottleneck_threshold_days for all stages
     threshold_in_backlog: Optional[float] = None

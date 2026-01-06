@@ -134,6 +134,20 @@
             color: var(--primary-color);
         }
 
+        .targets-section {
+            background-color: #f8f9fa;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 24px;
+        }
+
+        .targets-section h3 {
+            color: #2c3e50;
+            margin-top: 0;
+            font-size: 18px;
+        }
+
         .back-link {
             display: inline-block;
             margin-bottom: 20px;
@@ -186,6 +200,59 @@
                     <input type="number" id="planning_accuracy_threshold_pct" name="planning_accuracy_threshold_pct"
                         min="0" max="100" step="1" required>
                     <small>Minimum acceptable planning accuracy percentage. Range: 0-100%.</small>
+                </div>
+
+                <div class="targets-section">
+                    <h3 style="margin-bottom: 8px;">📊 Strategic Targets</h3>
+                    <p style="color: var(--text-secondary); margin-bottom: 20px; font-size: 14px;">Define strategic
+                        targets for Feature Lead-Time and Planning Accuracy. AI Insights will analyze current
+                        performance against these targets.</p>
+
+                    <div class="form-grid">
+                        <!-- Feature Lead-Time Targets -->
+                        <div class="form-group">
+                            <label for="leadtime_target_2026">🎯 Feature Lead-Time Target 2026 (days)</label>
+                            <input type="number" id="leadtime_target_2026" name="leadtime_target_2026" min="1" max="365"
+                                step="0.5">
+                            <small>Target lead-time for 2026</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="leadtime_target_2027">🎯 Feature Lead-Time Target 2027 (days)</label>
+                            <input type="number" id="leadtime_target_2027" name="leadtime_target_2027" min="1" max="365"
+                                step="0.5">
+                            <small>Target lead-time for 2027</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="leadtime_target_true_north">⭐ Feature Lead-Time True North (days)</label>
+                            <input type="number" id="leadtime_target_true_north" name="leadtime_target_true_north"
+                                min="1" max="365" step="0.5">
+                            <small>Long-term vision for lead-time</small>
+                        </div>
+
+                        <!-- Planning Accuracy Targets -->
+                        <div class="form-group">
+                            <label for="planning_accuracy_target_2026">🎯 Planning Accuracy Target 2026 (%)</label>
+                            <input type="number" id="planning_accuracy_target_2026" name="planning_accuracy_target_2026"
+                                min="0" max="100" step="1">
+                            <small>Target accuracy for 2026</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="planning_accuracy_target_2027">🎯 Planning Accuracy Target 2027 (%)</label>
+                            <input type="number" id="planning_accuracy_target_2027" name="planning_accuracy_target_2027"
+                                min="0" max="100" step="1">
+                            <small>Target accuracy for 2027</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="planning_accuracy_target_true_north">⭐ Planning Accuracy True North (%)</label>
+                            <input type="number" id="planning_accuracy_target_true_north"
+                                name="planning_accuracy_target_true_north" min="0" max="100" step="1">
+                            <small>Long-term vision for accuracy</small>
+                        </div>
+                    </div>
                 </div>
 
                 <h3 style="margin-top: 32px; margin-bottom: 16px;">Stage-Specific Overrides (Optional)</h3>
@@ -286,20 +353,31 @@
         });
 
         async function loadConfiguration() {
+            console.log('🔄 Loading configuration...');
             try {
                 const response = await fetch(`${API_BASE_URL}/api/admin/config`);
+                console.log('Response status:', response.status);
                 if (!response.ok) throw new Error('Failed to load configuration');
 
                 const config = await response.json();
+                console.log('Configuration loaded:', config);
 
                 // Populate form with current values
                 const thresholds = config.thresholds;
+                console.log('Thresholds:', thresholds);
+
+                let populatedCount = 0;
                 for (const [key, value] of Object.entries(thresholds)) {
                     const input = document.getElementById(key);
                     if (input) {
                         input.value = value !== null && value !== undefined ? value : '';
+                        console.log(`✅ Set ${key} = ${value}`);
+                        populatedCount++;
+                    } else {
+                        console.warn(`⚠️ No input found for ${key}`);
                     }
                 }
+                console.log(`✅ Populated ${populatedCount} fields`);
 
                 // Update server info
                 document.getElementById('serverUrl').textContent = config.leadtime_server_url;
@@ -307,6 +385,7 @@
                 document.getElementById('serverStatus').style.color = config.leadtime_server_enabled ? 'green' : 'red';
 
             } catch (error) {
+                console.error('❌ Error loading configuration:', error);
                 showAlert('Error loading configuration: ' + error.message, 'error');
             }
         }

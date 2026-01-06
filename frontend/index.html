@@ -387,7 +387,7 @@
                                 Metrics</button>
                             <button class="action-tab"
                                 onclick="showMetricCategory('predictability')">Predictability</button>
-                            <button class="action-tab" onclick="showMetricCategory('quality')">Quality</button>
+                            <button class="action-tab disabled" title="No bug data available">Quality</button>
                             <button class="action-tab" onclick="showMetricCategory('structure')">Structure</button>
                         </div>
 
@@ -413,9 +413,10 @@
                         <!-- Quality Metrics -->
                         <div id="qualityMetrics" class="metric-category" style="display: none;">
                             <div
-                                style="background: #f8f9fa; border-radius: 8px; padding: 40px; text-align: center; color: #666;">
-                                <div style="font-size: 32px; margin-bottom: 12px;">✅</div>
-                                <div style="font-size: 16px;">Loading quality metrics...</div>
+                                style="background: #f8f9fa; border-radius: 8px; padding: 40px; text-align: center; color: #999;">
+                                <div style="font-size: 32px; margin-bottom: 12px; opacity: 0.4;">✅</div>
+                                <div style="font-size: 16px; opacity: 0.6;">Quality metrics unavailable</div>
+                                <div style="font-size: 14px; margin-top: 8px; opacity: 0.5;">No bug data available</div>
                             </div>
                         </div>
 
@@ -452,6 +453,84 @@
                                     ⚙️ Open Threshold Settings
                                 </a>
                             </div>
+                        </div>
+
+                        <!-- Strategic Targets Configuration -->
+                        <div
+                            style="background: linear-gradient(135deg, #34C759 0%, #30B050 100%); padding: 24px; border-radius: 12px; margin-bottom: 24px; color: white; box-shadow: 0 4px 12px rgba(52, 199, 89, 0.3);">
+                            <h3 style="margin: 0 0 16px 0; color: white;">🎯 Strategic Targets</h3>
+                            <p style="margin: 0 0 20px 0; opacity: 0.9; font-size: 14px;">Set targets for 2026, 2027,
+                                and True North (long-term goals). AI Insights will analyze metrics against these
+                                targets.</p>
+
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+                                <!-- Feature Lead-Time Targets -->
+                                <div style="background: rgba(255,255,255,0.1); padding: 16px; border-radius: 8px;">
+                                    <h4 style="margin: 0 0 12px 0; color: white;">⏱️ Feature Lead-Time (days)</h4>
+                                    <div style="display: flex; flex-direction: column; gap: 12px;">
+                                        <div>
+                                            <label
+                                                style="display: block; font-size: 13px; margin-bottom: 4px; opacity: 0.9;">2026
+                                                Target:</label>
+                                            <input type="number" id="leadtime2026Target" placeholder="e.g., 45" min="1"
+                                                max="365"
+                                                style="width: 100%; padding: 8px; border: none; border-radius: 6px; font-size: 14px;">
+                                        </div>
+                                        <div>
+                                            <label
+                                                style="display: block; font-size: 13px; margin-bottom: 4px; opacity: 0.9;">2027
+                                                Target:</label>
+                                            <input type="number" id="leadtime2027Target" placeholder="e.g., 30" min="1"
+                                                max="365"
+                                                style="width: 100%; padding: 8px; border: none; border-radius: 6px; font-size: 14px;">
+                                        </div>
+                                        <div>
+                                            <label
+                                                style="display: block; font-size: 13px; margin-bottom: 4px; opacity: 0.9;">True
+                                                North:</label>
+                                            <input type="number" id="leadtimeTrueNorthTarget" placeholder="e.g., 15"
+                                                min="1" max="365"
+                                                style="width: 100%; padding: 8px; border: none; border-radius: 6px; font-size: 14px;">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Planning Accuracy Targets -->
+                                <div style="background: rgba(255,255,255,0.1); padding: 16px; border-radius: 8px;">
+                                    <h4 style="margin: 0 0 12px 0; color: white;">📊 Planning Accuracy (%)</h4>
+                                    <div style="display: flex; flex-direction: column; gap: 12px;">
+                                        <div>
+                                            <label
+                                                style="display: block; font-size: 13px; margin-bottom: 4px; opacity: 0.9;">2026
+                                                Target:</label>
+                                            <input type="number" id="planningAccuracy2026Target" placeholder="e.g., 75"
+                                                min="0" max="100"
+                                                style="width: 100%; padding: 8px; border: none; border-radius: 6px; font-size: 14px;">
+                                        </div>
+                                        <div>
+                                            <label
+                                                style="display: block; font-size: 13px; margin-bottom: 4px; opacity: 0.9;">2027
+                                                Target:</label>
+                                            <input type="number" id="planningAccuracy2027Target" placeholder="e.g., 85"
+                                                min="0" max="100"
+                                                style="width: 100%; padding: 8px; border: none; border-radius: 6px; font-size: 14px;">
+                                        </div>
+                                        <div>
+                                            <label
+                                                style="display: block; font-size: 13px; margin-bottom: 4px; opacity: 0.9;">True
+                                                North:</label>
+                                            <input type="number" id="planningAccuracyTrueNorthTarget"
+                                                placeholder="e.g., 95" min="0" max="100"
+                                                style="width: 100%; padding: 8px; border: none; border-radius: 6px; font-size: 14px;">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <button onclick="saveStrategicTargets()"
+                                style="margin-top: 16px; padding: 12px 24px; background: white; color: #34C759; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                                💾 Save Strategic Targets
+                            </button>
                         </div>
 
                         <!-- Import Status -->
@@ -667,6 +746,7 @@
                                 </div>
                             </div>
                         </div>
+
                     </div>
                 </div>
             </div>
@@ -675,6 +755,19 @@
         <!-- Status Bar -->
         <div class="status-bar">
             <span id="statusText">Ready | Last updated: Just now | Data source: Jira Cloud</span>
+        </div>
+    </div>
+
+    <!-- Insight Details Modal (hidden by default) -->
+    <div id="insightDetailsModal" class="modal">
+        <div class="modal-content" style="max-width: 900px;">
+            <div class="modal-header">
+                <h2 id="insightDetailsTitle">Insight Details</h2>
+                <button class="modal-close" onclick="closeInsightDetails()">×</button>
+            </div>
+            <div class="modal-body" id="insightDetailsBody">
+                <!-- Dynamically populated -->
+            </div>
         </div>
     </div>
 

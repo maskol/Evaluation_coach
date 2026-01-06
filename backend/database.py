@@ -203,6 +203,24 @@ class KnowledgeDocument(Base):
     )
 
 
+class RuntimeConfiguration(Base):
+    """Stores runtime configuration settings that persist across restarts"""
+
+    __tablename__ = "runtime_configuration"
+
+    id = Column(Integer, primary_key=True, index=True)
+    config_key = Column(String, unique=True, index=True, nullable=False)
+    config_value = Column(Float, nullable=True)
+    config_type = Column(String, default="float")  # float, string, int, bool, json
+
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
 # Database initialization
 def init_db():
     """Create all tables"""
