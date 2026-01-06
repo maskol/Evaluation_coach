@@ -1670,6 +1670,7 @@ function renderMetricsCatalog(data) {
     const flowMetrics = data.flow_metrics;
     const predictabilityMetrics = data.predictability_metrics;
     const qualityMetrics = data.quality_metrics;
+    const structureMetrics = data.structure_metrics;
     const scope = data.scope;
 
     // Helper function to get status color
@@ -1725,7 +1726,7 @@ function renderMetricsCatalog(data) {
                 </div>
             </div>
             <div style="font-size: 13px; color: #666;">
-                <strong>Jira Fields:</strong> ${metric.jira_fields.map(f => `<code>${f}</code>`).join(', ')}
+                <strong>Jira Fields:</strong> ${(metric.jira_fields || []).map(f => `<code>${f}</code>`).join(', ')}
             </div>
             ${metric.stage_breakdown ? `
                 <details style="margin-top: 12px;">
@@ -1773,6 +1774,26 @@ function renderMetricsCatalog(data) {
                         <div>
                             <div style="font-size: 11px; color: #666; margin-bottom: 4px;">Mean (Average)</div>
                             <div style="font-size: 18px; font-weight: 600;">${metric.mean} ${metric.unit}</div>
+                        </div>
+                    </div>
+                </div>
+            ` : ''}
+
+            ${(metric.min !== undefined || metric.max !== undefined || metric.avg !== undefined) ? `
+                <div style="margin-top: 12px; padding: 12px; background: #f0f4ff; border-radius: 6px;">
+                    <div style="font-weight: 600; color: #667eea; margin-bottom: 8px;">📏 Distribution Summary</div>
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
+                        <div>
+                            <div style="font-size: 11px; color: #666; margin-bottom: 4px;">Min</div>
+                            <div style="font-size: 18px; font-weight: 600;">${metric.min !== undefined ? metric.min : '-'} ${metric.unit || ''}</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 11px; color: #666; margin-bottom: 4px;">Avg</div>
+                            <div style="font-size: 18px; font-weight: 600;">${metric.avg !== undefined ? metric.avg : '-'} ${metric.unit || ''}</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 11px; color: #666; margin-bottom: 4px;">Max</div>
+                            <div style="font-size: 18px; font-weight: 600;">${metric.max !== undefined ? metric.max : '-'} ${metric.unit || ''}</div>
                         </div>
                     </div>
                 </div>
@@ -1831,6 +1852,20 @@ function renderMetricsCatalog(data) {
                                 `).join('')}
                             </div>
                         ` : ''}
+                    </div>
+                </details>
+            ` : ''}
+
+            ${metric.breakdown_kv && Object.keys(metric.breakdown_kv).length ? `
+                <details style="margin-top: 12px;">
+                    <summary style="cursor: pointer; color: #667eea; font-weight: 600;">View Breakdown</summary>
+                    <div style="margin-top: 8px; padding: 12px; background: #f8f9fa; border-radius: 6px;">
+                        ${Object.entries(metric.breakdown_kv).map(([k, v]) => `
+                            <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #e0e0e0;">
+                                <span style="font-weight: 600;">${k}</span>
+                                <span>${v}</span>
+                            </div>
+                        `).join('')}
                     </div>
                 </details>
             ` : ''}
@@ -1894,6 +1929,21 @@ function renderMetricsCatalog(data) {
     if (qualityMetricsDiv && qualityMetrics) {
         qualityMetricsDiv.innerHTML = `
             ${createMetricCard(qualityMetrics.defect_rate)}
+        `;
+    }
+
+    // Update Structure Metrics
+    const structureMetricsDiv = document.getElementById('structureMetrics');
+    if (structureMetricsDiv && structureMetrics) {
+        structureMetricsDiv.innerHTML = `
+            <div style="background: #f0f4ff; border-left: 4px solid #667eea; padding: 12px; margin-bottom: 20px; border-radius: 4px;">
+                <strong>🏗️ Structure Metrics for:</strong> ${scope.arts.join(', ')} | ${scope.pis.join(', ')}
+            </div>
+            ${structureMetrics.art_count ? createMetricCard(structureMetrics.art_count) : ''}
+            ${structureMetrics.team_count ? createMetricCard(structureMetrics.team_count) : ''}
+            ${structureMetrics.teams_per_art ? createMetricCard(structureMetrics.teams_per_art) : ''}
+            ${structureMetrics.team_ownership_coverage ? createMetricCard(structureMetrics.team_ownership_coverage) : ''}
+            ${structureMetrics.delivery_concentration ? createMetricCard(structureMetrics.delivery_concentration) : ''}
         `;
     }
 

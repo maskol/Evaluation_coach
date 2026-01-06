@@ -2184,6 +2184,29 @@ async def get_metrics_catalog(
             arts=selected_arts, pis=selected_pis
         )
 
+        def _norm_str(value: Any) -> Optional[str]:
+            if value is None:
+                return None
+            if isinstance(value, str):
+                trimmed = value.strip()
+                return trimmed if trimmed else None
+            return str(value)
+
+        def _get_art_label(item: Dict[str, Any]) -> Optional[str]:
+            return (
+                _norm_str(item.get("art"))
+                or _norm_str(item.get("art_name"))
+                or _norm_str(item.get("art_id"))
+            )
+
+        def _get_team_label(item: Dict[str, Any]) -> Optional[str]:
+            return (
+                _norm_str(item.get("team"))
+                or _norm_str(item.get("development_team"))
+                or _norm_str(item.get("team_name"))
+                or _norm_str(item.get("team_id"))
+            )
+
         # Calculate proper lead time statistics (not sum of stage means!)
         completed_items = [f for f in flow_data if f.get("total_leadtime", 0) > 0]
         if completed_items:
@@ -2250,6 +2273,120 @@ async def get_metrics_catalog(
             if total_features > 0
             else {}
         )
+
+        # =========================
+        # Structure Metrics
+        # =========================
+
+        # ARTs/Teams lists for topology counts
+        all_arts = []
+        try:
+            all_arts = leadtime_service.client.get_arts() or []
+        except Exception:
+            all_arts = []
+
+        all_teams = []
+        try:
+            all_teams = leadtime_service.client.get_teams() or []
+        except Exception:
+            all_teams = []
+
+        if selected_arts:
+            art_count = len(selected_arts)
+        else:
+            art_names = [
+                _norm_str(a.get("art"))
+                or _norm_str(a.get("art_name"))
+                or _norm_str(a.get("name"))
+                for a in all_arts
+            ]
+            art_count = len({a for a in art_names if a})
+
+        # Prefer team count from feature_data in scope (more reliable than global team list)
+        team_labels_in_scope = {_get_team_label(f) for f in feature_data}
+        team_labels_in_scope = {t for t in team_labels_in_scope if t}
+        team_count = (
+            len(team_labels_in_scope) if team_labels_in_scope else len(all_teams)
+        )
+
+        # Teams per ART (based on feature_data relationships)
+        teams_by_art: Dict[str, set] = {}
+        for f in feature_data:
+            art_label = _get_art_label(f)
+            team_label = _get_team_label(f)
+            if not art_label:
+                continue
+            if art_label not in teams_by_art:
+                teams_by_art[art_label] = set()
+            if team_label:
+                teams_by_art[art_label].add(team_label)
+
+        teams_per_art_counts = {k: len(v) for k, v in teams_by_art.items()}
+        teams_per_art_values = list(teams_per_art_counts.values())
+        if teams_per_art_values:
+            teams_per_art_values_sorted = sorted(teams_per_art_values)
+            teams_per_art_min = teams_per_art_values_sorted[0]
+            teams_per_art_max = teams_per_art_values_sorted[-1]
+            teams_per_art_median = teams_per_art_values_sorted[
+                len(teams_per_art_values_sorted) // 2
+            ]
+            teams_per_art_avg = round(
+                sum(teams_per_art_values) / len(teams_per_art_values), 1
+            )
+        else:
+            teams_per_art_min = 0
+            teams_per_art_max = 0
+            teams_per_art_median = 0
+            teams_per_art_avg = 0
+
+        # Ownership coverage (team populated) in current scope
+        total_features_in_scope = len(flow_data)
+        features_with_team = sum(1 for f in flow_data if _get_team_label(f))
+        team_coverage_pct = (
+            round((features_with_team / total_features_in_scope) * 100, 1)
+            if total_features_in_scope > 0
+            else 0
+        )
+
+        # Delivery concentration (top 5 teams share of delivered features)
+        delivered_features = []
+        try:
+            if selected_arts:
+                for art in selected_arts:
+                    delivered_features.extend(
+                        leadtime_service.client.get_throughput_data(
+                            art=art, limit=10000
+                        )
+                    )
+            else:
+                delivered_features = leadtime_service.client.get_throughput_data(
+                    limit=10000
+                )
+        except Exception:
+            delivered_features = []
+
+        if selected_pis and delivered_features:
+            delivered_features = [
+                f
+                for f in delivered_features
+                if (f.get("pi") in selected_pis)
+                or (f.get("program_increment") in selected_pis)
+            ]
+
+        delivered_total = len(delivered_features)
+        delivered_by_team: Dict[str, int] = {}
+        for f in delivered_features:
+            team_label = _get_team_label(f) or "Unknown"
+            delivered_by_team[team_label] = delivered_by_team.get(team_label, 0) + 1
+
+        top_teams = sorted(
+            delivered_by_team.items(), key=lambda kv: kv[1], reverse=True
+        )[:5]
+        top5_count = sum(count for _, count in top_teams)
+        top5_share_pct = (
+            round((top5_count / delivered_total) * 100, 1) if delivered_total > 0 else 0
+        )
+        top5_breakdown = {name: count for name, count in top_teams}
 
         # Calculate WIP (Features only - not stories/tasks)
         # Active stages = stages where work is actively being done
@@ -2455,6 +2592,68 @@ async def get_metrics_catalog(
                     "status": "unknown",
                     "jira_fields": ["issuetype", "parent"],
                 }
+            },
+            "structure_metrics": {
+                "art_count": {
+                    "name": "ART Count",
+                    "description": "Number of Agile Release Trains (ARTs) in the current scope.",
+                    "formula": "count(distinct ART)",
+                    "current_value": art_count,
+                    "unit": "ARTs",
+                    "status": "good" if art_count > 0 else "unknown",
+                    "jira_fields": ["art"],
+                },
+                "team_count": {
+                    "name": "Team Count",
+                    "description": "Number of teams represented by feature data in the current scope.",
+                    "formula": "count(distinct Team)",
+                    "current_value": team_count,
+                    "unit": "teams",
+                    "status": "good" if team_count > 0 else "unknown",
+                    "jira_fields": ["team"],
+                },
+                "teams_per_art": {
+                    "name": "Teams per ART (Distribution)",
+                    "description": "Distribution of teams per ART based on feature ownership relationships.",
+                    "formula": "count(distinct Team) grouped by ART",
+                    "current_value": teams_per_art_median,
+                    "unit": "teams/ART (median)",
+                    "status": "good" if teams_per_art_median > 0 else "unknown",
+                    "jira_fields": ["art", "team"],
+                    "min": teams_per_art_min,
+                    "max": teams_per_art_max,
+                    "avg": teams_per_art_avg,
+                    "breakdown_kv": dict(
+                        sorted(teams_per_art_counts.items(), key=lambda kv: kv[0])
+                    ),
+                },
+                "team_ownership_coverage": {
+                    "name": "Team Ownership Coverage",
+                    "description": "Percent of features in scope with a team populated (ownership clarity).",
+                    "formula": "count(team != null) / count(features) * 100",
+                    "current_value": team_coverage_pct,
+                    "unit": "%",
+                    "status": (
+                        "good"
+                        if team_coverage_pct >= 90
+                        else "warning" if team_coverage_pct >= 70 else "critical"
+                    ),
+                    "jira_fields": ["team"],
+                },
+                "delivery_concentration": {
+                    "name": "Delivery Concentration (Top 5 Teams)",
+                    "description": "Share of delivered features owned by the top 5 teams (higher = more concentrated risk).",
+                    "formula": "sum(top5_team_throughput) / total_throughput * 100",
+                    "current_value": top5_share_pct,
+                    "unit": "%",
+                    "status": (
+                        "critical"
+                        if top5_share_pct >= 80
+                        else "warning" if top5_share_pct >= 60 else "good"
+                    ),
+                    "jira_fields": ["team", "resolutiondate"],
+                    "breakdown_kv": top5_breakdown,
+                },
             },
             "scope": {
                 "arts": selected_arts if selected_arts else ["All ARTs"],
