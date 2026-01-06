@@ -1469,14 +1469,31 @@ def _analyze_strategic_targets(
         except (TypeError, ValueError):
             return 0.0
 
-    # Extract current lead-time median (days)
+    # Extract current lead-time stats (days)
     stage_stats = (
         leadtime.get("stage_statistics", {}) if isinstance(leadtime, dict) else {}
     )
     total_stats = (
         stage_stats.get("total_leadtime", {}) if isinstance(stage_stats, dict) else {}
     )
+    current_leadtime_mean = _to_float(total_stats.get("mean"))
     current_leadtime_median = _to_float(total_stats.get("median"))
+    current_leadtime_p85 = _to_float(total_stats.get("p85"))
+
+    if current_leadtime_mean <= 0:
+        # Fallbacks (in case upstream schema changes)
+        for key in [
+            "mean_lead_time",
+            "average_lead_time",
+            "avg_lead_time",
+            "avg_leadtime",
+            "average_leadtime",
+        ]:
+            candidate = _to_float(leadtime.get(key))
+            if candidate > 0:
+                current_leadtime_mean = candidate
+                break
+
     if current_leadtime_median <= 0:
         # Fallbacks (in case upstream schema changes)
         current_leadtime_median = _to_float(leadtime.get("median_lead_time"))
@@ -1513,17 +1530,17 @@ def _analyze_strategic_targets(
     )
 
     # Feature Lead-Time vs Targets (lower is better)
-    if has_leadtime_targets and current_leadtime_median > 0:
+    # IMPORTANT: Strategic targets/True North are defined on AVERAGE (mean) lead-time.
+    # We also report median and p85 to capture distribution and outliers.
+    if has_leadtime_targets and current_leadtime_mean > 0:
         target_2026 = _to_float(settings.leadtime_target_2026)
         target_2027 = _to_float(settings.leadtime_target_2027)
         target_true_north = _to_float(settings.leadtime_target_true_north)
 
-        gap_2026 = current_leadtime_median - target_2026 if target_2026 > 0 else 0.0
-        gap_2027 = current_leadtime_median - target_2027 if target_2027 > 0 else 0.0
+        gap_2026 = current_leadtime_mean - target_2026 if target_2026 > 0 else 0.0
+        gap_2027 = current_leadtime_mean - target_2027 if target_2027 > 0 else 0.0
         gap_true_north = (
-            current_leadtime_median - target_true_north
-            if target_true_north > 0
-            else 0.0
+            current_leadtime_mean - target_true_north if target_true_north > 0 else 0.0
         )
 
         if target_2026 > 0:
@@ -1539,8 +1556,16 @@ def _analyze_strategic_targets(
             severity = "info"
 
         observation_parts = [
-            f"Current median lead time: {current_leadtime_median:.0f} days."
+            f"Current average lead time: {current_leadtime_mean:.0f} days."
         ]
+        if current_leadtime_median > 0:
+            observation_parts.append(
+                f"Current median lead time: {current_leadtime_median:.0f} days."
+            )
+        if current_leadtime_p85 > 0:
+            observation_parts.append(
+                f"85th percentile lead time: {current_leadtime_p85:.0f} days."
+            )
         if target_2026 > 0:
             observation_parts.append(
                 f"2026 target: {target_2026:.0f} days (gap: {gap_2026:+.0f} days)."
@@ -1554,16 +1579,26 @@ def _analyze_strategic_targets(
                 f"True North: {target_true_north:.0f} days (gap: {gap_true_north:+.0f} days)."
             )
 
+        distribution_note = ""
+        if current_leadtime_median > 0 and current_leadtime_mean > 0:
+            # If mean is materially above median, we likely have a long tail/outliers.
+            if current_leadtime_mean >= (current_leadtime_median * 1.2):
+                distribution_note = (
+                    " Average is materially higher than median, indicating a long tail of outliers. "
+                    "Focus on aging items and the worst stages to reduce the tail."
+                )
+
         if target_2026 > 0 and gap_2026 > 0:
             interpretation = (
-                f"Median lead time exceeds the 2026 target by {gap_2026:.0f} days. "
+                f"Average lead time exceeds the 2026 target by {gap_2026:.0f} days. "
                 "Reducing queue time and limiting WIP are the fastest levers."
+                + distribution_note
             )
             root_causes = [
                 RootCause(
                     description="Lead time above 2026 strategic target",
                     evidence=[
-                        f"Median lead time {current_leadtime_median:.0f}d vs target {target_2026:.0f}d",
+                        f"Average lead time {current_leadtime_mean:.0f}d vs target {target_2026:.0f}d",
                         f"Gap: {gap_2026:.0f} days",
                     ],
                     confidence=0.85,
@@ -1577,7 +1612,7 @@ def _analyze_strategic_targets(
                     owner="scrum_master",
                     effort="1-2 weeks",
                     dependencies=[],
-                    success_signal="Median lead time trend decreases for 2 consecutive weeks",
+                    success_signal="Average lead time trend decreases for 2 consecutive weeks (and median follows)",
                 ),
                 Action(
                     timeframe="short_term",
@@ -1589,7 +1624,10 @@ def _analyze_strategic_targets(
                 ),
             ]
         else:
-            interpretation = "Lead time is on track vs the 2026 milestone. Maintain focus on flow to progress toward 2027 and True North."
+            interpretation = (
+                "Lead time is on track vs the 2026 milestone. Maintain focus on flow to progress toward 2027 and True North."
+                + distribution_note
+            )
             root_causes = []
             recommended_actions = []
 
@@ -1606,16 +1644,26 @@ def _analyze_strategic_targets(
                 root_causes=root_causes,
                 recommended_actions=recommended_actions,
                 expected_outcomes=ExpectedOutcome(
-                    metrics_to_watch=["median_leadtime", "p85_leadtime"],
+                    metrics_to_watch=[
+                        "avg_leadtime",
+                        "median_leadtime",
+                        "p85_leadtime",
+                    ],
                     leading_indicators=["Reduced WIP", "Fewer items aging in queue"],
-                    lagging_indicators=["Median lead time <= target"],
+                    lagging_indicators=[
+                        "Average lead time <= target",
+                        "Median lead time trending down",
+                        "P85 lead time trending down",
+                    ],
                     timeline="1-3 PIs",
                     risks=[
                         "Targets may be met by deferring scope rather than improving flow"
                     ],
                 ),
                 metric_references=[
+                    "leadtime_analysis.stage_statistics.total_leadtime.mean",
                     "leadtime_analysis.stage_statistics.total_leadtime.median",
+                    "leadtime_analysis.stage_statistics.total_leadtime.p85",
                     "leadtime_target_2026",
                     "leadtime_target_2027",
                     "leadtime_target_true_north",

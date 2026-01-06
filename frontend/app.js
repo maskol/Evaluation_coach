@@ -17,19 +17,27 @@ const appState = {
     isLoading: false  // Track loading state
 };
 
+function getSavedDefaultFilters() {
+    const savedDefaults = localStorage.getItem('defaultFilters');
+    if (!savedDefaults) return { pis: [], arts: [] };
+    try {
+        const parsed = JSON.parse(savedDefaults);
+        return {
+            pis: Array.isArray(parsed.pis) ? parsed.pis : [],
+            arts: Array.isArray(parsed.arts) ? parsed.arts : []
+        };
+    } catch (e) {
+        console.warn('⚠️ Failed to parse saved default filters');
+        return { pis: [], arts: [] };
+    }
+}
+
 // Default Filters (loaded from localStorage)
 function loadDefaultFilters() {
-    const savedDefaults = localStorage.getItem('defaultFilters');
-    if (savedDefaults) {
-        try {
-            const defaults = JSON.parse(savedDefaults);
-            appState.selectedPIs = defaults.pis || [];
-            appState.selectedARTs = defaults.arts || [];
-            console.log('📋 Loaded default filters:', defaults);
-        } catch (e) {
-            console.warn('⚠️ Failed to parse saved default filters');
-        }
-    }
+    const defaults = getSavedDefaultFilters();
+    appState.selectedPIs = defaults.pis;
+    appState.selectedARTs = defaults.arts;
+    console.log('📋 Loaded default filters:', defaults);
 }
 
 function saveDefaultFilters() {
@@ -672,6 +680,23 @@ function populateAdminDefaultFilters(availablePIs, availableARTs) {
 function selectScope(scope) {
     appState.scope = scope;
 
+    // When entering Portfolio view, ensure saved default filters are applied
+    // (otherwise a previously selected ART in ART view can keep constraining the portfolio).
+    if (scope === 'portfolio') {
+        const defaults = getSavedDefaultFilters();
+        appState.selectedPIs = defaults.pis;
+        appState.selectedARTs = defaults.arts;
+
+        // Clear any scope-specific selections when returning to portfolio
+        appState.selectedART = '';
+        appState.selectedTeam = '';
+
+        const artSelector = document.getElementById('artSelector');
+        if (artSelector) artSelector.value = '';
+        const teamSelector = document.getElementById('teamSelector');
+        if (teamSelector) teamSelector.value = '';
+    }
+
     // Update button states
     document.querySelectorAll('.sidebar-section button').forEach(btn => {
         btn.classList.remove('active');
@@ -693,7 +718,8 @@ function selectScope(scope) {
         teamSelection.style.display = 'none';
     }
 
-    // Reload dashboard with new scope
+    // Update context and reload dashboard with new scope
+    updateContext();
     loadDashboardData();
 }
 
@@ -786,25 +812,43 @@ function setMetricFocus(focus) {
 
 // Update context function
 function updateContext() {
+    const defaults = getSavedDefaultFilters();
+
+    // In Portfolio view we always use the saved default filters,
+    // regardless of what's currently selected in the (hidden) ART/Team dropdowns.
+    if (appState.scope === 'portfolio') {
+        appState.selectedART = '';
+        appState.selectedTeam = '';
+        appState.selectedARTs = defaults.arts;
+
+        const artSelector = document.getElementById('artSelector');
+        if (artSelector) artSelector.value = '';
+        const teamSelector = document.getElementById('teamSelector');
+        if (teamSelector) teamSelector.value = '';
+    }
+
     // Update selected ART
     const artSelector = document.getElementById('artSelector');
     if (artSelector) {
-        appState.selectedART = artSelector.value;
+        if (appState.scope !== 'portfolio') {
+            appState.selectedART = artSelector.value;
 
-        // If an ART is selected, update selectedARTs array for filtering
-        if (artSelector.value) {
-            appState.selectedARTs = [artSelector.value];
-        } else {
-            // If no ART selected, use default filters or all ARTs
-            const savedDefaults = JSON.parse(localStorage.getItem('defaultFilters') || '{"arts":[]}');
-            appState.selectedARTs = savedDefaults.arts || [];
+            // If an ART is selected, update selectedARTs array for filtering
+            if (artSelector.value) {
+                appState.selectedARTs = [artSelector.value];
+            } else {
+                // If no ART selected, use default filters or all ARTs
+                appState.selectedARTs = defaults.arts;
+            }
         }
     }
 
     // Update selected team
     const teamSelector = document.getElementById('teamSelector');
     if (teamSelector) {
-        appState.selectedTeam = teamSelector.value;
+        if (appState.scope !== 'portfolio') {
+            appState.selectedTeam = teamSelector.value;
+        }
     }
 
     // Build simplified context without filter details (shown in Active Filters banner)

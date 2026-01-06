@@ -58,7 +58,7 @@ class InsightsService:
                 severity = "success"
 
             observation_parts = [
-                f"Current Feature lead-time is {current_leadtime:.1f} days."
+                f"Current average Feature lead-time is {current_leadtime:.1f} days."
             ]
             interpretation_parts = []
 
