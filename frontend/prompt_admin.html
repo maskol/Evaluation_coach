@@ -910,6 +910,11 @@
             currentTags.splice(index, 1);
             renderTags();
         }
+
+        // Initialize tag input on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            setupTagInput();
+        });
     </script>
 </body>
 

@@ -22,7 +22,9 @@ if USE_OPENAI:
     try:
         from openai import OpenAI
 
-        openai_client = OpenAI(api_key=OPENAI_API_KEY)
+        openai_client = OpenAI(
+            api_key=OPENAI_API_KEY, timeout=300.0  # 5 minute timeout for longer reports
+        )
     except ImportError:
         USE_OPENAI = False
         openai_client = None
@@ -113,6 +115,28 @@ class LLMService:
                 "OpenAI API key is not configured (OPENAI_API_KEY missing).",
             )
         return True, ""
+
+    def get_available_ollama_models(self) -> List[str]:
+        """Get list of available Ollama models installed locally"""
+        if not self.ollama_client:
+            return []
+
+        try:
+            import requests
+
+            # Ollama API endpoint for listing models
+            response = requests.get(f"{self.ollama_base_url}/api/tags", timeout=2)
+            if response.status_code == 200:
+                data = response.json()
+                models = data.get("models", [])
+                # Extract model names
+                model_names = [model.get("name", "").split(":")[0] for model in models]
+                # Remove duplicates and empty strings
+                return sorted(list(set(filter(None, model_names))))
+            return []
+        except Exception as e:
+            print(f"⚠️  Could not fetch Ollama models: {e}")
+            return []
 
     def _compact_metrics_facts(self, facts: Dict[str, Any]) -> Dict[str, Any]:
         """Reduce large metric payloads into a small, LLM-friendly snapshot."""
@@ -245,6 +269,110 @@ Level 5 - Optimizing: Continuous improvement culture, strategic agility, world-c
             + "\n\nRELEVANT KNOWLEDGE BASE DOCUMENTS (retrieved via semantic search):\n"
             + knowledge
         )
+
+    def generate_completion(
+        self, prompt: str, max_tokens: int = 4000, retry_count: int = 2
+    ) -> str:
+        """
+        Generate a simple completion from a prompt (synchronous) with retry logic.
+
+        Args:
+            prompt: The prompt to generate completion for
+            max_tokens: Maximum tokens in response (default 4000 for detailed reports)
+            retry_count: Number of retries on timeout (default 2)
+
+        Returns:
+            Generated text completion
+        """
+        ok, reason = self._has_llm_client(self.model)
+        if not ok:
+            return f"LLM not available: {reason}"
+
+        # Try with retries
+        for attempt in range(retry_count + 1):
+            try:
+                client = self._get_client(self.model)
+
+                if attempt > 0:
+                    print(f"🔄 Retry attempt {attempt}/{retry_count}...")
+                else:
+                    print(
+                        f"🤖 Generating completion with {self.model} (max_tokens={max_tokens}, temperature={self.temperature})..."
+                    )
+
+                # For OpenAI, try to use a more appropriate timeout per request
+                import time
+
+                start_time = time.time()
+
+                response = client.chat.completions.create(
+                    model=self.model,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=self.temperature,
+                    max_tokens=max_tokens,
+                    timeout=600.0,  # 10 minute timeout per attempt
+                )
+
+                elapsed = time.time() - start_time
+                content = response.choices[0].message.content
+                print(
+                    f"✅ Completion generated successfully in {elapsed:.1f}s ({len(content or '')} chars)"
+                )
+                return (content or "").strip()
+
+            except Exception as e:
+                error_str = str(e).lower()
+
+                # Check if it's a timeout or rate limit that we should retry
+                is_retryable = any(
+                    keyword in error_str
+                    for keyword in [
+                        "timeout",
+                        "timed out",
+                        "rate limit",
+                        "overload",
+                        "server error",
+                        "500",
+                        "502",
+                        "503",
+                        "504",
+                    ]
+                )
+
+                if is_retryable and attempt < retry_count:
+                    wait_time = (attempt + 1) * 2  # Exponential backoff: 2s, 4s, 6s
+                    print(f"⚠️  {type(e).__name__}: {str(e)}")
+                    print(f"⏳ Waiting {wait_time}s before retry...")
+                    import time
+
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    # Final attempt or non-retryable error
+                    import traceback
+
+                    print(
+                        f"❌ LLM completion error after {attempt + 1} attempt(s): {str(e)}"
+                    )
+                    print(traceback.format_exc())
+
+                    # Provide helpful error message
+                    if "timeout" in error_str or "timed out" in error_str:
+                        return (
+                            f"Error: Request timed out after multiple attempts. "
+                            f"The AI service is taking longer than expected. "
+                            f"Try: (1) Use a faster model like 'gpt-4o-mini', "
+                            f"(2) Select fewer PIs, or (3) Try again in a few moments."
+                        )
+                    elif "rate limit" in error_str:
+                        return (
+                            f"Error: Rate limit exceeded. Please wait a moment and try again. "
+                            f"If this persists, consider upgrading your OpenAI plan."
+                        )
+                    else:
+                        return f"Error generating completion: {str(e)}"
+
+        return "Error: Maximum retry attempts exceeded"
 
     async def generate_response(
         self,

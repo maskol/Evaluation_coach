@@ -188,6 +188,27 @@ class ReportRequest(BaseModel):
     format: str = "pdf"  # pdf, html, json
 
 
+class PIReportRequest(BaseModel):
+    """Request for PI management report generation."""
+
+    pis: List[str] = Field(
+        ...,
+        description="List of PIs to analyze (e.g., ['25Q1', '25Q2', '25Q3', '25Q4'])",
+    )
+    pi: Optional[str] = Field(
+        None, description="Deprecated: Single PI for backward compatibility"
+    )
+    compare_with_previous: bool = Field(
+        default=True, description="Whether to compare with previous PI"
+    )
+    model: Optional[str] = Field(
+        None, description="LLM model to use for report generation"
+    )
+    temperature: Optional[float] = Field(
+        None, ge=0.0, le=2.0, description="LLM temperature for response creativity"
+    )
+
+
 class ReportResponse(BaseModel):
     report_id: str
     download_url: str

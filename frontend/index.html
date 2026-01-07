@@ -100,6 +100,9 @@
                     <button class="sidebar-button" onclick="generateInsights()">
                         💡 Generate Insights
                     </button>
+                    <button class="sidebar-button" onclick="openPIReportDialog()">
+                        📊 Generate PI Report
+                    </button>
                     <button class="sidebar-button" onclick="exportReport()">
                         📥 Export Report
                     </button>
@@ -803,6 +806,105 @@
             </div>
             <div class="modal-body" id="insightDetailsBody">
                 <!-- Dynamically populated -->
+            </div>
+        </div>
+    </div>
+
+    <!-- PI Report Modal -->
+    <div id="piReportModal" class="modal">
+        <div class="modal-content" style="max-width: 1200px; max-height: 90vh; overflow-y: auto;">
+            <div class="modal-header">
+                <h2 id="piReportTitle">📊 Program Increment Management Report</h2>
+                <button class="modal-close" onclick="closePIReport()">×</button>
+            </div>
+            <div class="modal-body" id="piReportBody">
+                <!-- Dynamically populated -->
+            </div>
+            <div class="modal-footer"
+                style="display: flex; justify-content: space-between; padding: 16px; border-top: 1px solid #eee;">
+                <button onclick="printPIReport()"
+                    style="padding: 10px 20px; background: #667eea; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">
+                    🖨️ Print Report
+                </button>
+                <button onclick="closePIReport()"
+                    style="padding: 10px 20px; background: #8E8E93; color: white; border: none; border-radius: 6px; cursor: pointer;">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- PI Report Generation Dialog -->
+    <div id="piReportDialog" class="modal">
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header">
+                <h2>📊 Generate PI Report</h2>
+                <button class="modal-close" onclick="closePIReportDialog()">×</button>
+            </div>
+            <div class="modal-body">
+                <p style="margin-bottom: 20px; color: #666;">
+                    Generate a comprehensive management report analyzing PI performance, comparing with targets and
+                    previous PI, and providing actionable proposals.
+                </p>
+
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; font-weight: 600; margin-bottom: 8px; color: #333;">
+                        Select PI(s) to Analyze:
+                    </label>
+                    <div style="display: flex; gap: 12px; margin-bottom: 8px;">
+                        <button onclick="selectAllPIs()" type="button"
+                            style="padding: 6px 12px; background: #007AFF; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">
+                            Select All
+                        </button>
+                        <button onclick="deselectAllPIs()" type="button"
+                            style="padding: 6px 12px; background: #8E8E93; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">
+                            Deselect All
+                        </button>
+                        <button onclick="selectYear2025()" type="button"
+                            style="padding: 6px 12px; background: #34C759; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">
+                            2025 Full Year
+                        </button>
+                    </div>
+                    <div id="piReportSelect"
+                        style="max-height: 200px; overflow-y: auto; border: 2px solid #ddd; border-radius: 6px; padding: 8px; background: white;">
+                        <div style="color: #8E8E93; text-align: center; padding: 20px;">Loading PIs...</div>
+                    </div>
+                    <div id="piSelectionCount" style="margin-top: 8px; font-size: 12px; color: #8E8E93;">
+                        0 PIs selected
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 16px;">
+                    <label style="display: flex; align-items: center; cursor: pointer;">
+                        <input type="checkbox" id="comparePrevious" checked
+                            style="margin-right: 8px; width: 18px; height: 18px;">
+                        <span style="color: #333;">Compare with previous PI</span>
+                    </label>
+                </div>
+
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; font-weight: 600; margin-bottom: 8px; color: #333;">
+                        AI Model (Optional):
+                    </label>
+                    <select id="piReportModel"
+                        style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 6px; font-size: 14px;">
+                        <option value="">Loading models...</option>
+                    </select>
+                    <div style="margin-top: 4px; font-size: 11px; color: #8E8E93;">
+                        💡 Checking available models...
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 12px; margin-top: 24px;">
+                    <button onclick="generatePIReport()" id="generatePIReportBtn"
+                        style="flex: 1; padding: 12px; background: linear-gradient(135deg, #5856D6, #4A48B4); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px;">
+                        Generate Report
+                    </button>
+                    <button onclick="closePIReportDialog()"
+                        style="padding: 12px 24px; background: #8E8E93; color: white; border: none; border-radius: 6px; cursor: pointer;">
+                        Cancel
+                    </button>
+                </div>
             </div>
         </div>
     </div>

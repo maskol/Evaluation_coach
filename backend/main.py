@@ -25,6 +25,7 @@ from api_models import (
     JiraIssueCreate,
     JiraIssueResponse,
     MetricValue,
+    PIReportRequest,
     ReportRequest,
     ReportResponse,
     RootCause,
@@ -32,7 +33,14 @@ from api_models import (
     ThresholdConfig,
 )
 from config.settings import settings
-from database import Base, RuntimeConfiguration, engine, get_db, init_db
+from database import (
+    Base,
+    RuntimeConfiguration,
+    StrategicTarget,
+    engine,
+    get_db,
+    init_db,
+)
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -177,6 +185,78 @@ def save_config_to_db(db: Session, config_key: str, config_value: Optional[float
         raise e
 
 
+# Get available AI models endpoint
+@app.get("/api/v1/models/available")
+async def get_available_models():
+    """Get list of available AI models (OpenAI + Ollama)"""
+    try:
+        models = {"openai": [], "ollama": []}
+
+        # OpenAI models (if API key is configured)
+        if llm_service.use_openai:
+            models["openai"] = [
+                {
+                    "id": "gpt-4o-mini",
+                    "name": "GPT-4o Mini",
+                    "description": "Fast, Recommended",
+                },
+                {"id": "gpt-4o", "name": "GPT-4o", "description": "Balanced"},
+                {
+                    "id": "gpt-4-turbo",
+                    "name": "GPT-4 Turbo",
+                    "description": "Detailed, Slower",
+                },
+                {
+                    "id": "gpt-4-turbo-preview",
+                    "name": "GPT-4 Turbo Preview",
+                    "description": "Preview",
+                },
+            ]
+
+        # Ollama models (check what's actually installed)
+        ollama_models = llm_service.get_available_ollama_models()
+        if ollama_models:
+            # Map model IDs to friendly names
+            model_descriptions = {
+                "llama3.3": "Latest Llama",
+                "llama3.2": "Llama 3.2",
+                "llama3.1": "Llama 3.1",
+                "llama3": "Llama 3",
+                "mistral": "Fast & Efficient",
+                "mistral-nemo": "Mistral Nemo",
+                "qwen2.5": "Excellent Reasoning",
+                "qwen2.5-coder": "Qwen Coder",
+                "qwen2": "Qwen 2",
+                "deepseek-r1": "Advanced Reasoning",
+                "deepseek-coder": "DeepSeek Coder",
+                "phi4": "Small & Fast",
+                "phi3": "Phi 3",
+                "gemma2": "Gemma 2",
+                "gemma": "Gemma",
+            }
+
+            for model_id in ollama_models:
+                models["ollama"].append(
+                    {
+                        "id": model_id,
+                        "name": model_id.title(),
+                        "description": model_descriptions.get(model_id, "Local Model"),
+                    }
+                )
+
+        return {
+            "models": models,
+            "default": (
+                "gpt-4o-mini"
+                if llm_service.use_openai
+                else (ollama_models[0] if ollama_models else None)
+            ),
+        }
+    except Exception as e:
+        print(f"⚠️  Error getting available models: {e}")
+        return {"models": {"openai": [], "ollama": []}, "default": None}
+
+
 # Health check endpoint
 @app.get("/api/health", response_model=SystemStatus)
 async def health_check(db: Session = Depends(get_db)):
@@ -257,6 +337,380 @@ async def save_llm_config(config: Dict[str, Any]):
 async def get_llm_config():
     """Get current LLM configuration"""
     return {"model": llm_service.model, "temperature": llm_service.temperature}
+
+
+# PI Report Generation Endpoint
+@app.post("/api/v1/insights/pi-report")
+async def generate_pi_report(
+    request: PIReportRequest,
+    db: Session = Depends(get_db),
+):
+    """Generate comprehensive PI management report
+
+    Creates a detailed report comparing performance vs targets,
+    improvements from previous PI, and actionable proposals.
+    Supports single or multiple PI analysis (e.g., full year).
+
+    Args:
+        request: PIReportRequest containing pis, compare_with_previous, model, temperature
+        db: Database session
+    """
+    try:
+        from datetime import datetime
+
+        # Extract values from request (support both single PI and multiple PIs)
+        pis = request.pis if request.pis else ([request.pi] if request.pi else [])
+        if not pis:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="At least one PI must be specified",
+            )
+
+        compare_with_previous = request.compare_with_previous
+        model = request.model
+        temperature = request.temperature
+
+        # Update LLM config if provided
+        if model:
+            llm_service.model = model
+        if temperature is not None:
+            llm_service.temperature = temperature
+
+        # Get metrics for all selected PIs
+        all_pi_metrics = {}
+        previous_metrics = {}
+
+        is_multi_pi = len(pis) > 1
+
+        if leadtime_service and leadtime_service.is_available():
+            try:
+                # Get all features once
+                all_features = leadtime_service.client.get_flow_leadtime(limit=10000)
+                all_pip_features = leadtime_service.client.get_pip_data(limit=10000)
+                all_throughput = leadtime_service.client.get_throughput_data(
+                    limit=10000
+                )
+
+                def calculate_pi_metrics(pi_name, features, pip_data, throughput_data):
+                    """Calculate metrics for a single PI"""
+                    metrics = {"pi_name": pi_name}
+
+                    # Flow efficiency and lead time
+                    pi_features = [f for f in features if f.get("pi") == pi_name]
+                    if pi_features:
+                        value_add_times = []
+                        total_times = []
+                        for f in pi_features:
+                            value_add = f.get("in_progress", 0) + f.get(
+                                "in_reviewing", 0
+                            )
+                            total = f.get("total_leadtime", 0)
+                            if total > 0:
+                                value_add_times.append(value_add)
+                                total_times.append(total)
+
+                        if value_add_times and total_times:
+                            avg_value_add = sum(value_add_times) / len(value_add_times)
+                            avg_total = sum(total_times) / len(total_times)
+                            metrics["flow_efficiency"] = round(
+                                (avg_value_add / avg_total) * 100, 1
+                            )
+                            metrics["avg_leadtime"] = round(avg_total, 1)
+
+                    # Planning accuracy
+                    pi_pip = [f for f in pip_data if f.get("pi") == pi_name]
+                    if pi_pip:
+                        planned = sum(
+                            1 for f in pi_pip if f.get("planned_committed", 0) > 0
+                        )
+                        delivered = sum(
+                            1
+                            for f in pi_pip
+                            if f.get("planned_committed", 0) > 0
+                            and f.get("plc_delivery") not in ["", "0", None, "null"]
+                        )
+                        if planned > 0:
+                            metrics["planning_accuracy"] = round(
+                                (delivered / planned) * 100, 1
+                            )
+
+                    # Throughput
+                    pi_throughput = [
+                        f for f in throughput_data if f.get("pi") == pi_name
+                    ]
+                    metrics["throughput"] = len(pi_throughput)
+
+                    return metrics
+
+                # Calculate metrics for each selected PI
+                for pi in pis:
+                    all_pi_metrics[pi] = calculate_pi_metrics(
+                        pi, all_features, all_pip_features, all_throughput
+                    )
+
+                # Get previous PI metrics for comparison (only if single PI or first PI)
+                if compare_with_previous:
+                    first_pi = pis[0]
+                    year = first_pi[:2]
+                    quarter = first_pi[2:]
+                    prev_quarter = (
+                        f"{year}Q{int(quarter[1]) - 1}"
+                        if int(quarter[1]) > 1
+                        else f"{int(year)-1}Q4"
+                    )
+
+                    previous_metrics = calculate_pi_metrics(
+                        prev_quarter, all_features, all_pip_features, all_throughput
+                    )
+
+                    previous_metrics = calculate_pi_metrics(
+                        prev_quarter, all_features, all_pip_features, all_throughput
+                    )
+
+            except Exception as e:
+                print(f"⚠️  Could not fetch PI metrics: {e}")
+                import traceback
+
+                traceback.print_exc()
+
+        # Get strategic targets from database
+        targets = db.query(StrategicTarget).all()
+        target_dict = {t.metric_name: t for t in targets}
+
+        # Get PI Management Report system prompt from prompt service
+        from services.prompt_service import prompt_service
+
+        system_prompt_obj = prompt_service.get_prompt(
+            "pi_management_report_system_prompt"
+        )
+        system_prompt = system_prompt_obj.get("prompt", "") if system_prompt_obj else ""
+
+        # Build the data context for the report
+        if is_multi_pi:
+            # Multi-PI report (e.g., full year)
+            pi_list = ", ".join(pis)
+            data_context = f"""
+**Analysis Period:** {pi_list} ({len(pis)} Program Increments)
+**Report Type:** Multi-PI Performance Analysis
+
+"""
+            # Show metrics for each PI
+            data_context += "**Performance by PI:**\n\n"
+            for pi_name in pis:
+                metrics = all_pi_metrics.get(pi_name, {})
+                data_context += f"**{pi_name}:**\n"
+                data_context += (
+                    f"- Flow Efficiency: {metrics.get('flow_efficiency', 'N/A')}%\n"
+                )
+                data_context += (
+                    f"- Average Lead-Time: {metrics.get('avg_leadtime', 'N/A')} days\n"
+                )
+                data_context += (
+                    f"- Planning Accuracy: {metrics.get('planning_accuracy', 'N/A')}%\n"
+                )
+                data_context += (
+                    f"- Features Delivered: {metrics.get('throughput', 'N/A')}\n\n"
+                )
+
+            # Calculate aggregate metrics
+            all_flow_eff = [
+                m.get("flow_efficiency")
+                for m in all_pi_metrics.values()
+                if m.get("flow_efficiency")
+            ]
+            all_leadtime = [
+                m.get("avg_leadtime")
+                for m in all_pi_metrics.values()
+                if m.get("avg_leadtime")
+            ]
+            all_planning = [
+                m.get("planning_accuracy")
+                for m in all_pi_metrics.values()
+                if m.get("planning_accuracy")
+            ]
+            total_throughput = sum(
+                m.get("throughput", 0) for m in all_pi_metrics.values()
+            )
+
+            if all_flow_eff:
+                data_context += f"\n**Aggregate Metrics ({pi_list}):**\n"
+                data_context += f"- Average Flow Efficiency: {round(sum(all_flow_eff) / len(all_flow_eff), 1)}%\n"
+                data_context += f"- Average Lead-Time: {round(sum(all_leadtime) / len(all_leadtime), 1)} days\n"
+                data_context += f"- Average Planning Accuracy: {round(sum(all_planning) / len(all_planning), 1)}%\n"
+                data_context += f"- Total Features Delivered: {total_throughput}\n"
+
+            # Trend analysis
+            if len(pis) > 1:
+                first_pi_metrics = all_pi_metrics.get(pis[0], {})
+                last_pi_metrics = all_pi_metrics.get(pis[-1], {})
+
+                if first_pi_metrics and last_pi_metrics:
+                    flow_trend = last_pi_metrics.get(
+                        "flow_efficiency", 0
+                    ) - first_pi_metrics.get("flow_efficiency", 0)
+                    leadtime_trend = last_pi_metrics.get(
+                        "avg_leadtime", 0
+                    ) - first_pi_metrics.get("avg_leadtime", 0)
+                    planning_trend = last_pi_metrics.get(
+                        "planning_accuracy", 0
+                    ) - first_pi_metrics.get("planning_accuracy", 0)
+
+                    data_context += f"\n**Trend Analysis ({pis[0]} → {pis[-1]}):**\n"
+                    data_context += f"- Flow Efficiency: {flow_trend:+.1f}% ({'improving' if flow_trend > 0 else 'declining'})\n"
+                    data_context += f"- Lead-Time: {leadtime_trend:+.1f} days ({'improving' if leadtime_trend < 0 else 'worsening'})\n"
+                    data_context += f"- Planning Accuracy: {planning_trend:+.1f}% ({'improving' if planning_trend > 0 else 'declining'})\n"
+
+        else:
+            # Single PI report
+            pi = pis[0]
+            current_metrics = all_pi_metrics.get(pi, {})
+            data_context = f"""
+**PI Being Analyzed:** {pi}
+
+**Current PI Performance:**
+- Flow Efficiency: {current_metrics.get('flow_efficiency', 'N/A')}%
+- Average Lead-Time: {current_metrics.get('avg_leadtime', 'N/A')} days
+- Planning Accuracy: {current_metrics.get('planning_accuracy', 'N/A')}%
+- Features Delivered: {current_metrics.get('throughput', 'N/A')}
+"""
+
+            if compare_with_previous and previous_metrics:
+                flow_change = current_metrics.get(
+                    "flow_efficiency", 0
+                ) - previous_metrics.get("flow_efficiency", 0)
+                leadtime_change = current_metrics.get(
+                    "avg_leadtime", 0
+                ) - previous_metrics.get("avg_leadtime", 0)
+                planning_change = current_metrics.get(
+                    "planning_accuracy", 0
+                ) - previous_metrics.get("planning_accuracy", 0)
+                throughput_change = current_metrics.get(
+                    "throughput", 0
+                ) - previous_metrics.get("throughput", 0)
+
+                data_context += f"""
+
+**Previous PI ({previous_metrics.get('pi_name')}) Performance:**
+- Flow Efficiency: {previous_metrics.get('flow_efficiency', 'N/A')}%
+- Average Lead-Time: {previous_metrics.get('avg_leadtime', 'N/A')} days
+- Planning Accuracy: {previous_metrics.get('planning_accuracy', 'N/A')}%
+- Features Delivered: {previous_metrics.get('throughput', 'N/A')}
+
+**Changes from Previous PI:**
+- Flow Efficiency: {flow_change:+.1f}% ({'+improved' if flow_change > 0 else 'declined'})
+- Average Lead-Time: {leadtime_change:+.1f} days ({'improved' if leadtime_change < 0 else 'increased'})
+- Planning Accuracy: {planning_change:+.1f}% ({'+improved' if planning_change > 0 else 'declined'})
+- Throughput: {throughput_change:+d} features ({'+increased' if throughput_change > 0 else 'decreased'})
+"""
+
+        # Add strategic targets
+        if target_dict:
+            data_context += "\n**Strategic Targets:**\n"
+            for metric_name, target in target_dict.items():
+                data_context += f"- {metric_name}: 2026 target = {target.target_2026}, 2027 target = {target.target_2027}, True North = {target.true_north}\n"
+
+        # Get RAG context
+        rag_context = ""
+        try:
+            from services.rag_service import rag_service
+
+            if rag_service:
+                rag_docs = rag_service.query(
+                    f"PI performance analysis, metrics improvement, agile coaching recommendations for {pi}",
+                    n_results=3,  # Reduced from 5 to 3 to limit prompt size
+                )
+                if rag_docs and len(rag_docs) > 0:
+                    rag_context = "\n\n**Knowledge Base Context:**\n"
+                    for i, doc in enumerate(
+                        rag_docs[:2], 1
+                    ):  # Only use top 2 most relevant docs
+                        # Truncate long documents to prevent prompt overflow
+                        text = doc.get("text", "")
+                        if len(text) > 500:
+                            text = text[:500] + "... (truncated)"
+                        rag_context += f"\n{i}. {text}\n"
+        except Exception as e:
+            print(f"⚠️  Could not retrieve RAG context: {e}")
+
+        # Combine system prompt with data context
+        pi_query = ", ".join(pis) if is_multi_pi else pis[0]
+        full_prompt = f"""{system_prompt}
+
+---
+
+DATA CONTEXT
+
+{data_context}
+{rag_context}
+
+---
+
+Please generate a comprehensive {"Multi-PI" if is_multi_pi else "PI"} Management Report based on the data context provided above. 
+{"This report covers multiple Program Increments and should provide year-over-year or period analysis with trends and patterns." if is_multi_pi else ""}
+Follow the structure and guidelines specified in your role instructions.
+Use clear markdown formatting with headers (##, ###), bullet points, and **bold** text for emphasis.
+"""
+
+        # Generate report with LLM
+        print(
+            f"📊 Generating {'Multi-' if is_multi_pi else ''}PI Report for {pi_query} using prompt: {system_prompt_obj.get('name', 'N/A') if system_prompt_obj else 'fallback'}..."
+        )
+        print(
+            f"📏 Prompt size: {len(full_prompt)} characters (~{len(full_prompt.split())} words)"
+        )
+        print(
+            f"🤖 Using model: {llm_service.model} (temperature: {llm_service.temperature})"
+        )
+
+        # Add recommendation for large reports
+        if is_multi_pi and len(pis) > 2:
+            print(
+                f"💡 Tip: For multi-PI reports with {len(pis)} PIs, consider using gpt-4o-mini for faster generation"
+            )
+
+        report_content = llm_service.generate_completion(
+            full_prompt, max_tokens=4000, retry_count=2
+        )
+
+        # Check if report generation failed due to timeout
+        if report_content.startswith("Error:"):
+            print(f"⚠️  Report generation encountered an issue")
+            # If using a slower model and got timeout, suggest faster model
+            if (
+                "timeout" in report_content.lower()
+                and "gpt-4" in llm_service.model.lower()
+                and "mini" not in llm_service.model.lower()
+            ):
+                report_content += "\n\n**Recommendation**: The model you're using (GPT-4) is very thorough but slower. Try using 'gpt-4o-mini' for faster results while maintaining quality."
+        else:
+            print(f"✅ PI Report generated ({len(report_content)} chars)")
+
+        # Prepare response
+        response_data = {
+            "pis": pis,
+            "report_content": report_content,
+            "all_pi_metrics": all_pi_metrics if is_multi_pi else None,
+            "current_metrics": all_pi_metrics.get(pis[0]) if not is_multi_pi else None,
+            "previous_metrics": previous_metrics if compare_with_previous else None,
+            "generated_at": datetime.now().isoformat(),
+        }
+
+        # Add backward compatibility for single PI
+        if not is_multi_pi:
+            response_data["pi"] = pis[0]
+
+        return response_data
+
+    except Exception as e:
+        import traceback
+
+        error_details = traceback.format_exc()
+        print(f"❌ PI Report generation error: {str(e)}")
+        print(f"Full traceback:\n{error_details}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating PI report: {str(e)}",
+        )
 
 
 # Insights Generation Endpoint

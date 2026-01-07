@@ -312,3 +312,7 @@ Keep it conversational, actionable, and grounded in real-world experience. Do no
             "inactive_prompts": len(prompts) - active_count,
             "total_versions": total_versions,
         }
+
+
+# Singleton instance
+prompt_service = PromptService()

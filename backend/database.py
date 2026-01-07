@@ -221,6 +221,26 @@ class RuntimeConfiguration(Base):
     )
 
 
+class StrategicTarget(Base):
+    """Stores strategic targets for metrics (2026, 2027, True North)"""
+
+    __tablename__ = "strategic_targets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    metric_name = Column(String, unique=True, index=True, nullable=False)
+    target_2026 = Column(Float, nullable=True)
+    target_2027 = Column(Float, nullable=True)
+    true_north = Column(Float, nullable=True)
+    unit = Column(String, nullable=True)  # e.g., "days", "%", "count"
+
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
 # Database initialization
 def init_db():
     """Create all tables"""

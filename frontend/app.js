@@ -2850,4 +2850,405 @@ window.downloadTemplate = downloadTemplate;
 window.showTemplates = showTemplates;
 window.closeIssueEditor = closeIssueEditor;
 
+// PI Report Functions
+let currentPIReport = null;
+
+// Open PI Report generation dialog
+async function openPIReportDialog() {
+    const dialog = document.getElementById('piReportDialog');
+    dialog.style.display = 'block';
+
+    // Load available PIs
+    try {
+        const response = await fetch(`${API_BASE_URL}/v1/dashboard?scope=portfolio`);
+        const data = await response.json();
+
+        const container = document.getElementById('piReportSelect');
+        if (data.available_pis && data.available_pis.length > 0) {
+            container.innerHTML = '';
+            data.available_pis.forEach(pi => {
+                const checkboxWrapper = document.createElement('div');
+                checkboxWrapper.style.cssText = 'padding: 8px; margin: 4px 0; border-radius: 4px; transition: background 0.2s;';
+                checkboxWrapper.onmouseover = () => checkboxWrapper.style.background = '#f5f5f5';
+                checkboxWrapper.onmouseout = () => checkboxWrapper.style.background = 'transparent';
+
+                const label = document.createElement('label');
+                label.style.cssText = 'display: flex; align-items: center; cursor: pointer;';
+
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'pi-checkbox';
+                checkbox.value = pi;
+                checkbox.style.cssText = 'margin-right: 8px; width: 18px; height: 18px; cursor: pointer;';
+                checkbox.onchange = updatePISelectionCount;
+
+                const text = document.createElement('span');
+                text.textContent = pi;
+                text.style.cssText = 'color: #333; font-size: 14px;';
+
+                if (pi === data.current_pi) {
+                    checkbox.checked = true;
+                    const badge = document.createElement('span');
+                    badge.textContent = 'Current';
+                    badge.style.cssText = 'margin-left: 8px; padding: 2px 8px; background: #007AFF; color: white; border-radius: 10px; font-size: 11px; font-weight: 600;';
+                    text.appendChild(badge);
+                }
+
+                label.appendChild(checkbox);
+                label.appendChild(text);
+                checkboxWrapper.appendChild(label);
+                container.appendChild(checkboxWrapper);
+            });
+            updatePISelectionCount();
+        }
+    } catch (error) {
+        console.error('Error loading PIs:', error);
+        updateStatusBar('Error loading PIs');
+    }
+
+    // Load available AI models
+    await loadAvailableModels();
+}
+
+// Load available AI models
+async function loadAvailableModels() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/v1/models/available`);
+        const data = await response.json();
+
+        const select = document.getElementById('piReportModel');
+        select.innerHTML = '<option value="">Default (gpt-4o-mini)</option>';
+
+        // Add OpenAI models
+        if (data.models.openai && data.models.openai.length > 0) {
+            const openaiGroup = document.createElement('optgroup');
+            openaiGroup.label = 'OpenAI Models';
+            data.models.openai.forEach(model => {
+                const option = document.createElement('option');
+                option.value = model.id;
+                option.textContent = `${model.name} (${model.description})`;
+                openaiGroup.appendChild(option);
+            });
+            select.appendChild(openaiGroup);
+        }
+
+        // Add Ollama models (only if available)
+        if (data.models.ollama && data.models.ollama.length > 0) {
+            const ollamaGroup = document.createElement('optgroup');
+            ollamaGroup.label = `Ollama Models (${data.models.ollama.length} installed)`;
+            data.models.ollama.forEach(model => {
+                const option = document.createElement('option');
+                option.value = model.id;
+                option.textContent = `${model.name} (${model.description})`;
+                ollamaGroup.appendChild(option);
+            });
+            select.appendChild(ollamaGroup);
+        }
+
+        // Update help text based on available models
+        const helpText = select.parentElement.querySelector('div[style*="font-size: 11px"]');
+        if (helpText) {
+            const hasOpenAI = data.models.openai && data.models.openai.length > 0;
+            const hasOllama = data.models.ollama && data.models.ollama.length > 0;
+
+            if (hasOpenAI && hasOllama) {
+                helpText.innerHTML = `💡 OpenAI: Fast cloud models | Ollama: ${data.models.ollama.length} free local models`;
+            } else if (hasOpenAI) {
+                helpText.innerHTML = '💡 OpenAI models available. Install Ollama for free local models.';
+            } else if (hasOllama) {
+                helpText.innerHTML = `💡 ${data.models.ollama.length} Ollama models available. Add OPENAI_API_KEY for cloud models.`;
+            } else {
+                helpText.innerHTML = '⚠️ No AI models available. Configure OPENAI_API_KEY or install Ollama.';
+            }
+        }
+    } catch (error) {
+        console.error('Error loading AI models:', error);
+    }
+}
+
+// Close PI Report dialog
+function closePIReportDialog() {
+    document.getElementById('piReportDialog').style.display = 'none';
+}
+
+// Generate PI Report
+async function generatePIReport() {
+    const checkboxes = document.querySelectorAll('.pi-checkbox:checked');
+    const selectedPIs = Array.from(checkboxes).map(cb => cb.value);
+
+    if (selectedPIs.length === 0) {
+        alert('Please select at least one PI to analyze');
+        return;
+    }
+
+    const compareWithPrevious = document.getElementById('comparePrevious').checked;
+    const selectedModel = document.getElementById('piReportModel').value;
+    const generateBtn = document.getElementById('generatePIReportBtn');
+
+    // Disable button and show loading
+    generateBtn.disabled = true;
+    generateBtn.textContent = '⏳ Generating Report...';
+    const piText = selectedPIs.length === 1 ? selectedPIs[0] : `${selectedPIs.length} PIs`;
+
+    // Show model info in status if non-default
+    const modelInfo = selectedModel ? ` using ${selectedModel}` : '';
+    updateStatusBar(`Generating comprehensive report for ${piText}${modelInfo}... This may take 30-60 seconds.`);
+
+    try {
+        const requestBody = {
+            pis: selectedPIs,
+            compare_with_previous: compareWithPrevious,
+        };
+
+        // Add model if selected
+        if (selectedModel) {
+            requestBody.model = selectedModel;
+        }
+
+        const response = await fetch(`${API_BASE_URL}/v1/insights/pi-report`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestBody),
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const reportData = await response.json();
+        currentPIReport = reportData;
+
+        // Close dialog and show report
+        closePIReportDialog();
+        displayPIReport(reportData);
+
+        updateStatusBar(`Report for ${piText} generated successfully`);
+    } catch (error) {
+        console.error('Error generating PI report:', error);
+
+        // Show more user-friendly error message
+        let errorMsg = `Failed to generate PI report: ${error.message}`;
+
+        if (error.message.includes('timeout') || error.message.includes('timed out')) {
+            errorMsg = `⏱️ The report generation timed out.\n\n` +
+                `Try these solutions:\n` +
+                `• Select "gpt-4o-mini" model for faster generation\n` +
+                `• Select fewer PIs (e.g., single quarter instead of full year)\n` +
+                `• Wait a moment and try again`;
+        } else if (error.message.includes('500')) {
+            errorMsg = `Server error occurred. Check the backend logs for details.\n` +
+                `Try: Select a faster model (gpt-4o-mini) or fewer PIs.`;
+        }
+
+        alert(errorMsg);
+        updateStatusBar('❌ Error generating PI report');
+    } finally {
+        generateBtn.disabled = false;
+        generateBtn.textContent = 'Generate Report';
+    }
+}
+
+// Display PI Report in modal
+function displayPIReport(reportData) {
+    const modal = document.getElementById('piReportModal');
+    const body = document.getElementById('piReportBody');
+    const title = document.getElementById('piReportTitle');
+
+    const piDisplay = Array.isArray(reportData.pis) ? reportData.pis.join(', ') : reportData.pi;
+    title.textContent = `📊 ${Array.isArray(reportData.pis) && reportData.pis.length > 1 ? 'Multi-PI' : 'PI'} ${piDisplay} Management Report`;
+
+    // Convert markdown-style content to HTML
+    let htmlContent = reportData.report_content
+        .replace(/### (.*)/g, '<h3 style="color: #667eea; margin-top: 24px; margin-bottom: 12px;">$1</h3>')
+        .replace(/## (.*)/g, '<h2 style="color: #5856D6; margin-top: 32px; margin-bottom: 16px;">$1</h2>')
+        .replace(/# (.*)/g, '<h1 style="color: #5856D6; margin-top: 0; margin-bottom: 20px;">$1</h1>')
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em>$1</em>')
+        .replace(/^- (.*)$/gm, '<li>$1</li>')
+        .replace(/(<li>.*<\/li>)/s, '<ul style="margin: 12px 0; padding-left: 24px; line-height: 1.8;">$1</ul>')
+        .replace(/^\d+\. (.*)$/gm, '<li>$1</li>')
+        .replace(/\n\n/g, '</p><p style="margin: 12px 0; line-height: 1.6; color: #333;">')
+        .replace(/^(?!<[h|u|l|p])/gm, '<p style="margin: 12px 0; line-height: 1.6; color: #333;">');
+
+    // Get metrics for display (handle both single and multi-PI reports)
+    const isMultiPI = Array.isArray(reportData.pis) && reportData.pis.length > 1;
+    let displayMetrics = reportData.current_metrics;
+
+    if (isMultiPI && reportData.all_pi_metrics) {
+        // For multi-PI, calculate aggregate metrics
+        const allMetrics = Object.values(reportData.all_pi_metrics);
+        const flowEffValues = allMetrics.map(m => m.flow_efficiency).filter(v => v != null);
+        const leadtimeValues = allMetrics.map(m => m.avg_leadtime).filter(v => v != null);
+        const planningValues = allMetrics.map(m => m.planning_accuracy).filter(v => v != null);
+        const throughputTotal = allMetrics.reduce((sum, m) => sum + (m.throughput || 0), 0);
+
+        displayMetrics = {
+            flow_efficiency: flowEffValues.length > 0 ? Math.round(flowEffValues.reduce((a, b) => a + b, 0) / flowEffValues.length * 10) / 10 : null,
+            avg_leadtime: leadtimeValues.length > 0 ? Math.round(leadtimeValues.reduce((a, b) => a + b, 0) / leadtimeValues.length * 10) / 10 : null,
+            planning_accuracy: planningValues.length > 0 ? Math.round(planningValues.reduce((a, b) => a + b, 0) / planningValues.length * 10) / 10 : null,
+            throughput: throughputTotal
+        };
+    }
+
+    // Only show metrics card if we have metrics to display
+    let metricsCard = '';
+    if (displayMetrics && displayMetrics.flow_efficiency !== null) {
+        metricsCard = `
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 24px; border-radius: 12px; margin-bottom: 32px; box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);">
+                <h3 style="margin: 0 0 20px 0; color: white;">📊 Key Metrics Summary ${isMultiPI ? '(Aggregate)' : ''}</h3>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
+                    <div style="background: rgba(255,255,255,0.1); padding: 16px; border-radius: 8px;">
+                        <div style="font-size: 12px; opacity: 0.9; margin-bottom: 4px;">Flow Efficiency</div>
+                        <div style="font-size: 28px; font-weight: 700;">${displayMetrics.flow_efficiency || 'N/A'}%</div>
+                        ${reportData.previous_metrics ? `<div style="font-size: 13px; opacity: 0.9; margin-top: 4px;">${getChangeIndicator(displayMetrics.flow_efficiency, reportData.previous_metrics.flow_efficiency, true)}</div>` : ''}
+                    </div>
+                    <div style="background: rgba(255,255,255,0.1); padding: 16px; border-radius: 8px;">
+                        <div style="font-size: 12px; opacity: 0.9; margin-bottom: 4px;">Avg Lead-Time</div>
+                        <div style="font-size: 28px; font-weight: 700;">${displayMetrics.avg_leadtime || 'N/A'}<span style="font-size: 14px; font-weight: 400;"> days</span></div>
+                        ${reportData.previous_metrics ? `<div style="font-size: 13px; opacity: 0.9; margin-top: 4px;">${getChangeIndicator(displayMetrics.avg_leadtime, reportData.previous_metrics.avg_leadtime, false)}</div>` : ''}
+                    </div>
+                    <div style="background: rgba(255,255,255,0.1); padding: 16px; border-radius: 8px;">
+                        <div style="font-size: 12px; opacity: 0.9; margin-bottom: 4px;">Planning Accuracy</div>
+                        <div style="font-size: 28px; font-weight: 700;">${displayMetrics.planning_accuracy || 'N/A'}%</div>
+                        ${reportData.previous_metrics ? `<div style="font-size: 13px; opacity: 0.9; margin-top: 4px;">${getChangeIndicator(displayMetrics.planning_accuracy, reportData.previous_metrics.planning_accuracy, true)}</div>` : ''}
+                    </div>
+                    <div style="background: rgba(255,255,255,0.1); padding: 16px; border-radius: 8px;">
+                        <div style="font-size: 12px; opacity: 0.9; margin-bottom: 4px;">Features Delivered</div>
+                        <div style="font-size: 28px; font-weight: 700;">${displayMetrics.throughput || 'N/A'}</div>
+                        ${reportData.previous_metrics ? `<div style="font-size: 13px; opacity: 0.9; margin-top: 4px;">${getChangeIndicator(displayMetrics.throughput, reportData.previous_metrics.throughput, true, '')}</div>` : ''}
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    body.innerHTML = metricsCard + '<div style="color: #333; font-size: 15px;">' + htmlContent + '</div>';
+    modal.style.display = 'block';
+}
+
+// Helper function to get change indicator
+function getChangeIndicator(current, previous, higherIsBetter, suffix = '%') {
+    if (!current || !previous) return '';
+
+    const change = current - previous;
+    const isPositive = higherIsBetter ? change > 0 : change < 0;
+    const arrow = isPositive ? '↑' : '↓';
+    const color = isPositive ? '#34C759' : '#FF3B30';
+
+    return `<span style="color: ${color};">${arrow} ${Math.abs(change).toFixed(1)}${suffix} from previous PI</span>`;
+}
+
+// Close PI Report modal
+function closePIReport() {
+    document.getElementById('piReportModal').style.display = 'none';
+}
+
+// Print PI Report
+function printPIReport() {
+    if (!currentPIReport) return;
+
+    const printWindow = window.open('', '', 'width=1000,height=800');
+    const reportHTML = document.getElementById('piReportBody').innerHTML;
+
+    const piDisplay = Array.isArray(currentPIReport.pis)
+        ? currentPIReport.pis.join(', ')
+        : currentPIReport.pi;
+    const reportType = Array.isArray(currentPIReport.pis) && currentPIReport.pis.length > 1
+        ? 'Multi-PI Management Report'
+        : 'Program Increment Management Report';
+
+    printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>${reportType} - ${piDisplay}</title>
+            <style>
+                @media print {
+                    @page { size: A4; margin: 20mm; }
+                }
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+                    line-height: 1.6;
+                    color: #333;
+                    max-width: 210mm;
+                    margin: 0 auto;
+                    padding: 20px;
+                }
+                h1 { color: #5856D6; page-break-after: avoid; }
+                h2 { color: #5856D6; margin-top: 32px; page-break-after: avoid; }
+                h3 { color: #667eea; margin-top: 24px; page-break-after: avoid; }
+                ul, ol { margin: 12px 0; padding-left: 24px; }
+                li { margin-bottom: 8px; }
+                p { margin: 12px 0; }
+                .page-break { page-break-after: always; }
+            </style>
+        </head>
+        <body>
+            <div style="text-align: center; margin-bottom: 40px;">
+                <h1>${reportType}</h1>
+                <h2>${piDisplay}</h2>
+                <p>Generated: ${new Date(currentPIReport.generated_at).toLocaleString()}</p>
+            </div>
+            ${reportHTML}
+            <div style="margin-top: 60px; padding-top: 20px; border-top: 2px solid #eee; text-align: center; font-size: 11px; color: #999;">
+                <p>This report was generated by Evaluation Coach - AI-Powered Agile & SAFe Analytics Platform</p>
+                <p>© ${new Date().getFullYear()} - Confidential</p>
+            </div>
+        </body>
+        </html>
+    `);
+
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => {
+        printWindow.print();
+        printWindow.close();
+    }, 250);
+}
+
+// Helper functions for PI selection
+function updatePISelectionCount() {
+    const checkboxes = document.querySelectorAll('.pi-checkbox:checked');
+    const count = checkboxes.length;
+    const countElement = document.getElementById('piSelectionCount');
+    if (countElement) {
+        countElement.textContent = `${count} PI${count !== 1 ? 's' : ''} selected`;
+        countElement.style.color = count > 0 ? '#007AFF' : '#8E8E93';
+        countElement.style.fontWeight = count > 0 ? '600' : 'normal';
+    }
+}
+
+function selectAllPIs() {
+    const checkboxes = document.querySelectorAll('.pi-checkbox');
+    checkboxes.forEach(cb => cb.checked = true);
+    updatePISelectionCount();
+}
+
+function deselectAllPIs() {
+    const checkboxes = document.querySelectorAll('.pi-checkbox');
+    checkboxes.forEach(cb => cb.checked = false);
+    updatePISelectionCount();
+}
+
+function selectYear2025() {
+    const checkboxes = document.querySelectorAll('.pi-checkbox');
+    checkboxes.forEach(cb => {
+        cb.checked = cb.value.startsWith('25Q');
+    });
+    updatePISelectionCount();
+}
+
+// Export functions to window
+window.openPIReportDialog = openPIReportDialog;
+window.closePIReportDialog = closePIReportDialog;
+window.generatePIReport = generatePIReport;
+window.closePIReport = closePIReport;
+window.printPIReport = printPIReport;
+window.updatePISelectionCount = updatePISelectionCount;
+window.selectAllPIs = selectAllPIs;
+window.deselectAllPIs = deselectAllPIs;
+window.selectYear2025 = selectYear2025;
+
 console.log('📊 Evaluation Coach app.js loaded successfully');
