@@ -815,6 +815,11 @@
             const tab = urlParams.get('tab');
             if (tab && typeof switchMainTab === 'function') {
                 switchMainTab(tab);
+            } else {
+                // Ensure dashboard is the default tab if no URL parameter
+                if (typeof switchMainTab === 'function') {
+                    switchMainTab('dashboard');
+                }
             }
         });
     </script>

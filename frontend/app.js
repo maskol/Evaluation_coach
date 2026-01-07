@@ -995,8 +995,9 @@ function switchMainTab(tabName) {
         tab.classList.remove('active');
     });
 
-    // Add active class to clicked button
-    const clickedButton = window.event?.target || document.querySelector(`[onclick*="${tabName}"]`);
+    // Add active class to the appropriate button
+    const clickedButton = window.event?.target?.closest?.('.main-tab') ||
+        document.querySelector(`.main-tab[onclick*="switchMainTab('${tabName}')"]`);
     if (clickedButton) {
         clickedButton.classList.add('active');
     }
@@ -1235,27 +1236,49 @@ function displayGeneratedInsights(insights) {
             
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                 <h2 style="margin: 0; color: #333;">AI Expert Insights (${insights.length})</h2>
-                <button 
-                    id="generateInsightsBtn"
-                    onclick="generateInsights()" 
-                    style="
-                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                        color: white;
-                        border: none;
-                        padding: 10px 20px;
-                        font-size: 14px;
-                        font-weight: 600;
-                        border-radius: 6px;
-                        cursor: pointer;
-                        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
-                        display: inline-flex;
-                        align-items: center;
-                        gap: 6px;
-                    "
-                >
-                    <span id="generateBtnIcon">🔄</span>
-                    <span id="generateBtnText">Regenerate Insights</span>
-                </button>
+                <div style="display: flex; gap: 12px;">
+                    <button 
+                        onclick="printAllInsights()" 
+                        style="
+                            background: linear-gradient(135deg, #34C759 0%, #30B350 100%);
+                            color: white;
+                            border: none;
+                            padding: 10px 20px;
+                            font-size: 14px;
+                            font-weight: 600;
+                            border-radius: 6px;
+                            cursor: pointer;
+                            box-shadow: 0 2px 8px rgba(52, 199, 89, 0.3);
+                            display: inline-flex;
+                            align-items: center;
+                            gap: 6px;
+                        "
+                    >
+                        <span>🖨️</span>
+                        <span>Print Report</span>
+                    </button>
+                    <button 
+                        id="generateInsightsBtn"
+                        onclick="generateInsights()" 
+                        style="
+                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                            color: white;
+                            border: none;
+                            padding: 10px 20px;
+                            font-size: 14px;
+                            font-weight: 600;
+                            border-radius: 6px;
+                            cursor: pointer;
+                            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+                            display: inline-flex;
+                            align-items: center;
+                            gap: 6px;
+                        "
+                    >
+                        <span id="generateBtnIcon">🔄</span>
+                        <span id="generateBtnText">Regenerate Insights</span>
+                    </button>
+                </div>
             </div>
             
             ${insights.length === 0 ? `
@@ -1352,6 +1375,7 @@ function displayGeneratedInsights(insights) {
                                 
                                 <div style="display: flex; gap: 8px; margin-top: 16px;">
                                     <button class="template-action-btn" onclick="viewInsightDetails(${index})">📋 View Full Details</button>
+                                    <button class="template-action-btn" style="background: #5856D6;" onclick="printInsight(${index})">🖨️ Print</button>
                                     <button class="template-action-btn" style="background: #34C759;" onclick="exportInsight(${index})">💾 Export</button>
                                 </div>
                             </div>
@@ -1518,6 +1542,372 @@ function exportInsight(index) {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
         updateStatusBar('Insight exported successfully');
+
+
+        // Print a single insight as a formatted report
+        function printInsight(index) {
+            const insight = appState.currentInsights?.[index];
+            if (!insight) return;
+
+            const printWindow = window.open('', '', 'width=800,height=600');
+            const formattedReport = generateInsightHTML(insight, index + 1);
+
+            printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Insight Report - ${insight.title}</title>
+            <style>
+                ${getPrintStyles()}
+            </style>
+        </head>
+        <body>
+            ${generateReportHeader()}
+            ${formattedReport}
+            ${generateReportFooter()}
+        </body>
+        </html>
+    `);
+
+            printWindow.document.close();
+            printWindow.focus();
+            setTimeout(() => {
+                printWindow.print();
+                printWindow.close();
+            }, 250);
+
+            updateStatusBar('Insight report prepared for printing');
+        }
+
+        // Print all insights as a comprehensive report
+        function printAllInsights() {
+            const insights = appState.currentInsights || [];
+            if (insights.length === 0) {
+                alert('No insights available to print');
+                return;
+            }
+
+            const printWindow = window.open('', '', 'width=800,height=600');
+            const insightsHTML = insights.map((insight, index) =>
+                generateInsightHTML(insight, index + 1)
+            ).join('<div style="page-break-after: always;"></div>');
+
+            printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>AI Expert Insights Report - ${new Date().toLocaleDateString()}</title>
+            <style>
+                ${getPrintStyles()}
+            </style>
+        </head>
+        <body>
+            ${generateReportHeader()}
+            <div class="summary-section">
+                <h2>Executive Summary</h2>
+                <p><strong>Total Insights:</strong> ${insights.length}</p>
+                <p><strong>Critical Issues:</strong> ${insights.filter(i => i.severity === 'critical').length}</p>
+                <p><strong>Warnings:</strong> ${insights.filter(i => i.severity === 'warning').length}</p>
+                <p><strong>Information:</strong> ${insights.filter(i => i.severity === 'info').length}</p>
+                <p><strong>Scope:</strong> ${appState.scope.charAt(0).toUpperCase() + appState.scope.slice(1)}</p>
+                <p><strong>PI(s):</strong> ${appState.selectedPIs.length > 0 ? appState.selectedPIs.join(', ') : 'All PIs'}</p>
+                ${appState.selectedARTs && appState.selectedARTs.length > 0 ?
+                    `<p><strong>ART(s):</strong> ${appState.selectedARTs.join(', ')}</p>` : ''}
+            </div>
+            <div style="page-break-after: always;"></div>
+            ${insightsHTML}
+            ${generateReportFooter()}
+        </body>
+        </html>
+    `);
+
+            printWindow.document.close();
+            printWindow.focus();
+            setTimeout(() => {
+                printWindow.print();
+                printWindow.close();
+            }, 250);
+
+            updateStatusBar(`Complete insights report prepared for printing (${insights.length} insights)`);
+        }
+
+        // Generate HTML for a single insight
+        function generateInsightHTML(insight, number) {
+            const severityColors = {
+                'critical': '#FF3B30',
+                'warning': '#FF9500',
+                'info': '#34C759'
+            };
+            const color = severityColors[insight.severity] || '#666';
+            const confidence = Math.round((insight.confidence || 0) * 100);
+            const actions = insight.recommended_actions || [];
+            const rootCauses = insight.root_causes || [];
+            const expectedOutcomes = insight.expected_outcomes || {};
+
+            return `
+        <div class="insight-section">
+            <div class="insight-header" style="border-color: ${color};">
+                <h2 style="color: ${color};">${number}. ${insight.title}</h2>
+                <span class="severity-badge" style="background: ${color};">${insight.severity.toUpperCase()}</span>
+            </div>
+            
+            <div class="metadata">
+                <span>🎯 Confidence: <strong>${confidence}%</strong></span> | 
+                <span>📊 Scope: <strong>${insight.scope || 'Portfolio'}</strong></span>
+            </div>
+            
+            ${insight.observation ? `
+                <div class="section">
+                    <h3>📋 Observation</h3>
+                    <p>${insight.observation}</p>
+                </div>
+            ` : ''}
+            
+            ${insight.interpretation ? `
+                <div class="section">
+                    <h3>💭 Interpretation</h3>
+                    <p>${insight.interpretation}</p>
+                </div>
+            ` : ''}
+            
+            ${rootCauses.length > 0 ? `
+                <div class="section">
+                    <h3>🔍 Root Causes</h3>
+                    <ul>
+                        ${rootCauses.map(rc => `
+                            <li>
+                                <strong>${rc.description}</strong>
+                                ${rc.confidence ? ` (${Math.round(rc.confidence * 100)}% confidence)` : ''}
+                                ${rc.evidence && rc.evidence.length > 0 ? `
+                                    <ul class="evidence-list">
+                                        ${rc.evidence.map(e => `<li>${e}</li>`).join('')}
+                                    </ul>
+                                ` : ''}
+                            </li>
+                        `).join('')}
+                    </ul>
+                </div>
+            ` : ''}
+            
+            ${actions.length > 0 ? `
+                <div class="section actions-section">
+                    <h3>✅ Recommended Actions</h3>
+                    <ol>
+                        ${actions.map(action => `
+                            <li>
+                                <strong>[${action.timeframe.replace('_', ' ').toUpperCase()}]</strong> ${action.description}
+                                <div class="action-details">
+                                    <div>👤 <strong>Owner:</strong> ${action.owner || 'TBD'}</div>
+                                    <div>⏱️ <strong>Effort:</strong> ${action.effort || 'TBD'}</div>
+                                    ${action.success_signal ? `<div>🎯 <strong>Success Signal:</strong> ${action.success_signal}</div>` : ''}
+                                </div>
+                            </li>
+                        `).join('')}
+                    </ol>
+                </div>
+            ` : ''}
+            
+            ${expectedOutcomes.timeline || expectedOutcomes.metrics_to_watch ? `
+                <div class="section outcomes-section">
+                    <h3>📊 Expected Outcomes</h3>
+                    ${expectedOutcomes.timeline ? `<p><strong>⏱️ Timeline:</strong> ${expectedOutcomes.timeline}</p>` : ''}
+                    ${expectedOutcomes.metrics_to_watch && expectedOutcomes.metrics_to_watch.length > 0 ? `
+                        <p><strong>📈 Metrics to Watch:</strong> ${expectedOutcomes.metrics_to_watch.join(', ')}</p>
+                    ` : ''}
+                    ${expectedOutcomes.leading_indicators && expectedOutcomes.leading_indicators.length > 0 ? `
+                        <p><strong>⚡ Leading Indicators:</strong> ${expectedOutcomes.leading_indicators.join(', ')}</p>
+                    ` : ''}
+                </div>
+            ` : ''}
+        </div>
+    `;
+        }
+
+        // Generate report header
+        function generateReportHeader() {
+            const now = new Date();
+            return `
+        <div class="report-header">
+            <h1>🎯 AI Expert Insights Report</h1>
+            <div class="report-meta">
+                <div>Generated: ${now.toLocaleString()}</div>
+                <div>Evaluation Coach v1.0</div>
+            </div>
+        </div>
+    `;
+        }
+
+        // Generate report footer
+        function generateReportFooter() {
+            return `
+        <div class="report-footer">
+            <p>This report was generated by Evaluation Coach - AI-Powered Agile & SAFe Analytics Platform</p>
+            <p>© ${new Date().getFullYear()} - Confidential</p>
+        </div>
+    `;
+        }
+
+        // Get print-specific CSS styles
+        function getPrintStyles() {
+            return `
+        @media print {
+            @page {
+                size: A4;
+                margin: 15mm;
+            }
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 210mm;
+            margin: 0 auto;
+            padding: 20px;
+            background: white;
+        }
+        
+        .report-header {
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .report-header h1 {
+            color: #667eea;
+            margin: 0 0 10px 0;
+            font-size: 28px;
+        }
+        
+        .report-meta {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: #666;
+        }
+        
+        .summary-section {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+        }
+        
+        .summary-section h2 {
+            margin-top: 0;
+            color: #667eea;
+        }
+        
+        .summary-section p {
+            margin: 8px 0;
+        }
+        
+        .insight-section {
+            margin-bottom: 40px;
+            page-break-inside: avoid;
+        }
+        
+        .insight-header {
+            border-left: 4px solid;
+            padding-left: 16px;
+            margin-bottom: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+        }
+        
+        .insight-header h2 {
+            margin: 0;
+            font-size: 20px;
+        }
+        
+        .severity-badge {
+            color: white;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        
+        .metadata {
+            color: #666;
+            font-size: 13px;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .section {
+            margin-bottom: 20px;
+        }
+        
+        .section h3 {
+            color: #667eea;
+            font-size: 16px;
+            margin: 0 0 10px 0;
+        }
+        
+        .section p {
+            margin: 8px 0;
+        }
+        
+        .section ul, .section ol {
+            padding-left: 24px;
+            margin: 8px 0;
+        }
+        
+        .section li {
+            margin-bottom: 12px;
+        }
+        
+        .evidence-list {
+            margin-top: 8px;
+            font-size: 13px;
+            color: #666;
+        }
+        
+        .evidence-list li {
+            margin-bottom: 4px;
+        }
+        
+        .actions-section {
+            background: #e8f5e9;
+            padding: 15px;
+            border-radius: 6px;
+        }
+        
+        .action-details {
+            margin-top: 8px;
+            padding-left: 16px;
+            font-size: 13px;
+            color: #666;
+        }
+        
+        .action-details div {
+            margin: 4px 0;
+        }
+        
+        .outcomes-section {
+            background: #fff9e6;
+            padding: 15px;
+            border-radius: 6px;
+        }
+        
+        .report-footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 2px solid #eee;
+            text-align: center;
+            font-size: 11px;
+            color: #999;
+        }
+        
+        .report-footer p {
+            margin: 4px 0;
+        }
+    `;
+        }
     }
 }
 

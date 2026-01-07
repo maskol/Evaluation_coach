@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any, Dict, List
 
 from ..state import AgentState
-from backend.services.rag_service import get_rag_service
+from services.rag_service import get_rag_service
 
 logger = logging.getLogger(__name__)
 

@@ -461,6 +461,24 @@ Level 5 - Optimizing: Continuous improvement culture, strategic agility, world-c
             return self._generate_fallback_expert_commentary(insight_title)
 
         try:
+            # Retrieve relevant knowledge from RAG based on insight content
+            retrieved_docs: List[Dict[str, Any]] = []
+            rag_query = f"{insight_title}. {observation[:200]}"  # Use title + observation as query
+            try:
+                from services.rag_service import get_rag_service
+
+                rag = get_rag_service()
+                retrieved_docs = rag.retrieve(
+                    rag_query, top_k=3
+                )  # Limit to top 3 for insights
+                if retrieved_docs:
+                    print(
+                        f"  📚 Retrieved {len(retrieved_docs)} RAG documents for insight enhancement"
+                    )
+            except Exception as e:
+                print(f"  ⚠️ RAG retrieval failed for insight: {e}")
+                # Continue without RAG knowledge
+
             # Build context for the LLM
             metrics_str = "\n".join([f"- {k}: {v}" for k, v in metrics.items()])
             root_causes_str = "\n".join(
@@ -472,6 +490,17 @@ Level 5 - Optimizing: Continuous improvement culture, strategic agility, world-c
                     for rec in recommendations
                 ]
             )
+
+            # Format RAG documents
+            rag_context = ""
+            if retrieved_docs:
+                rag_context = "\n\nRELEVANT ORGANIZATIONAL KNOWLEDGE:\n"
+                for i, doc in enumerate(retrieved_docs, 1):
+                    content = doc.get("content", "")
+                    source = doc.get("source", "Unknown")
+                    rag_context += (
+                        f"\n[Document {i}] Source: {source}\n{content[:300]}...\n"
+                    )
 
             # Get prompts from prompt service
             analysis_prompt_template = self.prompt_service.get_active_prompt(
@@ -518,6 +547,10 @@ Keep it conversational, actionable, and grounded in real-world experience. Do no
                 recommendations_str=recommendations_str,
             )
 
+            # Append RAG context to the prompt if available
+            if rag_context:
+                prompt += rag_context
+
             client = self._get_client(self.model)
             response = client.chat.completions.create(
                 model=self.model,
@@ -529,7 +562,7 @@ Keep it conversational, actionable, and grounded in real-world experience. Do no
                     {"role": "user", "content": prompt},
                 ],
                 temperature=self.temperature,
-                max_tokens=200,
+                max_tokens=250,  # Increased to accommodate RAG-enhanced responses
             )
 
             expert_commentary = response.choices[0].message.content.strip()
