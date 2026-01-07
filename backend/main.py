@@ -1110,7 +1110,7 @@ async def get_dashboard(
                             risks=["Context differences between teams"],
                         ),
                         metric_references=[
-                            f"{art['art_name']}: {art['flow_efficiency']}% flow, {art['pi_predictability']}% predictability"
+                            f"{art['art_name']}: {art['flow_efficiency']}% flow, {art.get('planning_accuracy', art.get('pi_predictability', 0))}% planning accuracy"
                             for art in high_performers[:3]
                         ],
                         evidence=["Performance metrics", "ART comparison data"],
@@ -1151,6 +1151,11 @@ async def get_dashboard(
             selected_pis=selected_pis if selected_pis else None,
         )
     except Exception as e:
+        import traceback
+
+        error_details = traceback.format_exc()
+        print(f"❌ Dashboard error: {str(e)}")
+        print(f"Full traceback:\n{error_details}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error fetching dashboard data: {str(e)}",

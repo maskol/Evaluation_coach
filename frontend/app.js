@@ -1140,6 +1140,7 @@ function generateInsights() {
     const llmConfig = getLLMConfig();
     params.append('model', llmConfig.model);
     params.append('temperature', llmConfig.temperature);
+    params.append('enhance_with_llm', 'true');  // Enable LLM enhancement with RAG
 
     // Update message after 2 seconds (LLM processing)
     const llmTimer = setTimeout(() => {
@@ -1542,17 +1543,18 @@ function exportInsight(index) {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
         updateStatusBar('Insight exported successfully');
+    }
+}
 
+// Print a single insight as a formatted report
+function printInsight(index) {
+    const insight = appState.currentInsights?.[index];
+    if (!insight) return;
 
-        // Print a single insight as a formatted report
-        function printInsight(index) {
-            const insight = appState.currentInsights?.[index];
-            if (!insight) return;
+    const printWindow = window.open('', '', 'width=800,height=600');
+    const formattedReport = generateInsightHTML(insight, index + 1);
 
-            const printWindow = window.open('', '', 'width=800,height=600');
-            const formattedReport = generateInsightHTML(insight, index + 1);
-
-            printWindow.document.write(`
+    printWindow.document.write(`
         <!DOCTYPE html>
         <html>
         <head>
@@ -1569,30 +1571,30 @@ function exportInsight(index) {
         </html>
     `);
 
-            printWindow.document.close();
-            printWindow.focus();
-            setTimeout(() => {
-                printWindow.print();
-                printWindow.close();
-            }, 250);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => {
+        printWindow.print();
+        printWindow.close();
+    }, 250);
 
-            updateStatusBar('Insight report prepared for printing');
-        }
+    updateStatusBar('Insight report prepared for printing');
+}
 
-        // Print all insights as a comprehensive report
-        function printAllInsights() {
-            const insights = appState.currentInsights || [];
-            if (insights.length === 0) {
-                alert('No insights available to print');
-                return;
-            }
+// Print all insights as a comprehensive report
+function printAllInsights() {
+    const insights = appState.currentInsights || [];
+    if (insights.length === 0) {
+        alert('No insights available to print');
+        return;
+    }
 
-            const printWindow = window.open('', '', 'width=800,height=600');
-            const insightsHTML = insights.map((insight, index) =>
-                generateInsightHTML(insight, index + 1)
-            ).join('<div style="page-break-after: always;"></div>');
+    const printWindow = window.open('', '', 'width=800,height=600');
+    const insightsHTML = insights.map((insight, index) =>
+        generateInsightHTML(insight, index + 1)
+    ).join('<div style="page-break-after: always;"></div>');
 
-            printWindow.document.write(`
+    printWindow.document.write(`
         <!DOCTYPE html>
         <html>
         <head>
@@ -1612,7 +1614,7 @@ function exportInsight(index) {
                 <p><strong>Scope:</strong> ${appState.scope.charAt(0).toUpperCase() + appState.scope.slice(1)}</p>
                 <p><strong>PI(s):</strong> ${appState.selectedPIs.length > 0 ? appState.selectedPIs.join(', ') : 'All PIs'}</p>
                 ${appState.selectedARTs && appState.selectedARTs.length > 0 ?
-                    `<p><strong>ART(s):</strong> ${appState.selectedARTs.join(', ')}</p>` : ''}
+            `<p><strong>ART(s):</strong> ${appState.selectedARTs.join(', ')}</p>` : ''}
             </div>
             <div style="page-break-after: always;"></div>
             ${insightsHTML}
@@ -1621,30 +1623,30 @@ function exportInsight(index) {
         </html>
     `);
 
-            printWindow.document.close();
-            printWindow.focus();
-            setTimeout(() => {
-                printWindow.print();
-                printWindow.close();
-            }, 250);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => {
+        printWindow.print();
+        printWindow.close();
+    }, 250);
 
-            updateStatusBar(`Complete insights report prepared for printing (${insights.length} insights)`);
-        }
+    updateStatusBar(`Complete insights report prepared for printing (${insights.length} insights)`);
+}
 
-        // Generate HTML for a single insight
-        function generateInsightHTML(insight, number) {
-            const severityColors = {
-                'critical': '#FF3B30',
-                'warning': '#FF9500',
-                'info': '#34C759'
-            };
-            const color = severityColors[insight.severity] || '#666';
-            const confidence = Math.round((insight.confidence || 0) * 100);
-            const actions = insight.recommended_actions || [];
-            const rootCauses = insight.root_causes || [];
-            const expectedOutcomes = insight.expected_outcomes || {};
+// Generate HTML for a single insight
+function generateInsightHTML(insight, number) {
+    const severityColors = {
+        'critical': '#FF3B30',
+        'warning': '#FF9500',
+        'info': '#34C759'
+    };
+    const color = severityColors[insight.severity] || '#666';
+    const confidence = Math.round((insight.confidence || 0) * 100);
+    const actions = insight.recommended_actions || [];
+    const rootCauses = insight.root_causes || [];
+    const expectedOutcomes = insight.expected_outcomes || {};
 
-            return `
+    return `
         <div class="insight-section">
             <div class="insight-header" style="border-color: ${color};">
                 <h2 style="color: ${color};">${number}. ${insight.title}</h2>
@@ -1721,12 +1723,12 @@ function exportInsight(index) {
             ` : ''}
         </div>
     `;
-        }
+}
 
-        // Generate report header
-        function generateReportHeader() {
-            const now = new Date();
-            return `
+// Generate report header
+function generateReportHeader() {
+    const now = new Date();
+    return `
         <div class="report-header">
             <h1>🎯 AI Expert Insights Report</h1>
             <div class="report-meta">
@@ -1735,21 +1737,21 @@ function exportInsight(index) {
             </div>
         </div>
     `;
-        }
+}
 
-        // Generate report footer
-        function generateReportFooter() {
-            return `
+// Generate report footer
+function generateReportFooter() {
+    return `
         <div class="report-footer">
             <p>This report was generated by Evaluation Coach - AI-Powered Agile & SAFe Analytics Platform</p>
             <p>© ${new Date().getFullYear()} - Confidential</p>
         </div>
     `;
-        }
+}
 
-        // Get print-specific CSS styles
-        function getPrintStyles() {
-            return `
+// Get print-specific CSS styles
+function getPrintStyles() {
+    return `
         @media print {
             @page {
                 size: A4;
@@ -1907,8 +1909,6 @@ function exportInsight(index) {
             margin: 4px 0;
         }
     `;
-        }
-    }
 }
 
 // Add message to chat
