@@ -3446,7 +3446,7 @@ async function exportExecutiveSummary() {
         }
 
         // Fetch Excel file
-        const response = await fetch(`${API_BASE_URL}/api/v1/insights/export-summary?${params.toString()}`);
+        const response = await fetch(`${API_BASE_URL}/v1/insights/export-summary?${params.toString()}`);
 
         if (!response.ok) {
             throw new Error(`Export failed: ${response.statusText}`);
