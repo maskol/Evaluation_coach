@@ -1808,10 +1808,10 @@ def _generate_executive_summary(
     selected_pis: Optional[List[str]],
 ) -> Optional[InsightResponse]:
     """
-    Generate comprehensive executive summary (similar to DL Webb App AI Summary)
+    Generate comprehensive executive summary with expert-level analysis.
 
-    This provides an overview of all key findings, bottlenecks, stuck items, risks,
-    and recommendations in a structured format.
+    This provides a strategic overview synthesizing all insights, identifying
+    systemic patterns, and delivering actionable executive recommendations.
     """
     try:
         # Extract data sections
@@ -1821,9 +1821,11 @@ def _generate_executive_summary(
         leadtime_data = analysis_summary.get("leadtime_analysis", {})
         waste_data = analysis_summary.get("waste_analysis", {})
         planning_data = analysis_summary.get("planning_accuracy", {})
+        flow_data = analysis_summary.get("flow_metrics", {})
 
         # Build scope description
         scope_desc = []
+        num_arts = len(selected_arts) if selected_arts else 0
         if selected_arts:
             if len(selected_arts) == 1:
                 scope_desc.append(f"ART: {selected_arts[0]}")
@@ -1839,20 +1841,28 @@ def _generate_executive_summary(
         else:
             scope_desc.append("ART: All ARTs")
 
+        num_pis = len(selected_pis) if selected_pis else 0
         if selected_pis:
             scope_desc.append(f"Program Increment: {', '.join(selected_pis)}")
 
         scope_text = " | ".join(scope_desc)
 
-        # Extract top bottlenecks
+        # =====================================================
+        # EXTRACT KEY METRICS FOR EXECUTIVE ANALYSIS
+        # =====================================================
+
+        # Extract bottleneck data
         bottleneck_stages = []
+        total_wip = 0
+        total_exceeding = 0
         for stage, metrics in wip_stats.items():
             if isinstance(metrics, dict):
                 mean_time = metrics.get("mean", 0)
                 count = metrics.get("count", 0)
                 exceeding = metrics.get("exceeding_threshold", 0)
+                total_wip += count
+                total_exceeding += exceeding
                 if mean_time > 0 and count > 0:
-                    # Calculate bottleneck score
                     score = (
                         (mean_time / 10) + (exceeding / count * 100) if count > 0 else 0
                     )
@@ -1861,240 +1871,726 @@ def _generate_executive_summary(
                             "stage": stage,
                             "score": score,
                             "mean": mean_time,
+                            "count": count,
                             "exceeding": exceeding,
                         }
                     )
 
         bottleneck_stages.sort(key=lambda x: x["score"], reverse=True)
         top_bottlenecks = bottleneck_stages[:4]
+        critical_bottlenecks = [b for b in bottleneck_stages if b["score"] > 50]
 
-        # Extract top stuck items
+        # Extract stuck items analysis
         top_stuck = sorted(
             stuck_items, key=lambda x: x.get("days_in_stage", 0), reverse=True
-        )[:3]
+        )[:5]
+        total_stuck_days = sum(item.get("days_in_stage", 0) for item in stuck_items)
 
-        # Build observation sections
-        observation_parts = [
-            f"**📊 Analysis Scope**\n{scope_text}\n",
-            "\n**🔍 Key Findings**\n",
-        ]
+        # Find items stuck in multiple stages (cross-stage blockers)
+        stuck_by_item = {}
+        for item in stuck_items:
+            key = item.get("issue_key", "")
+            if key:
+                if key not in stuck_by_item:
+                    stuck_by_item[key] = []
+                stuck_by_item[key].append(item)
+        multi_stage_stuck = {k: v for k, v in stuck_by_item.items() if len(v) > 1}
 
-        # Flow Efficiency / Bottlenecks
-        if top_bottlenecks:
-            observation_parts.append("\n**Flow Efficiency - Top Bottlenecks:**")
-            for bottleneck in top_bottlenecks:
-                stage_name = bottleneck["stage"].replace("_", " ").title()
-                observation_parts.append(
-                    f"• {stage_name} - Score: {bottleneck['score']:.1f}% "
-                    f"(Mean: {bottleneck['mean']:.1f} days, {bottleneck['exceeding']} items exceeding threshold)"
-                )
-            observation_parts.append(
-                "\nThese stages have high mean times and significant items exceeding threshold."
-            )
+        # Extract lead time data
+        avg_leadtime = leadtime_data.get("average_lead_time", 0)
+        median_leadtime = leadtime_data.get("median_lead_time", 0)
+        p85_leadtime = leadtime_data.get("p85_lead_time", 0)
+        features_completed = leadtime_data.get("features_completed", 0)
 
-        # Stuck Items
-        if top_stuck:
-            observation_parts.append("\n\n**⚠️ Stuck Items:**")
-            for item in top_stuck:
-                issue_key = item.get("issue_key", "Unknown")
-                days = item.get("days_in_stage", 0)
-                stage = item.get("current_stage", "unknown").replace("_", " ")
-                observation_parts.append(f"• {issue_key}: {days:.1f} days in {stage}")
+        # Extract waste data
+        total_waste = waste_data.get("total_waste_days", 0)
+        waiting_waste = waste_data.get("waiting_waste_days", 0)
+        removed_waste = waste_data.get("removed_work_days", 0)
 
-        # WIP Statistics
+        # Extract flow efficiency
+        flow_efficiency = flow_data.get("flow_efficiency", 0) if flow_data else 0
+
+        # Extract planning accuracy
+        planning_accuracy = (
+            planning_data.get("accuracy_percentage", 0) if planning_data else 0
+        )
+
+        # High WIP stages
         high_wip_stages = []
         for stage, metrics in wip_stats.items():
             if isinstance(metrics, dict):
                 count = metrics.get("count", 0)
-                if count > 1000:  # High WIP threshold
+                if count > 500:
                     high_wip_stages.append(
                         {"stage": stage, "count": count, "mean": metrics.get("mean", 0)}
                     )
+        high_wip_stages.sort(key=lambda x: x["count"], reverse=True)
 
-        if high_wip_stages:
-            observation_parts.append("\n\n**📈 WIP Statistics:**")
-            for wip in sorted(high_wip_stages, key=lambda x: x["count"], reverse=True)[
-                :3
-            ]:
-                stage_name = wip["stage"].replace("_", " ").title()
-                observation_parts.append(
-                    f"• {stage_name}: {wip['count']:,} items (Mean: {wip['mean']:.1f} days)"
-                )
+        # =====================================================
+        # ANALYZE INSIGHTS FOR PATTERNS
+        # =====================================================
 
-        # Build interpretation with recommendations
-        interpretation_parts = [
-            "**🎯 Anomalies and Areas for Improvement**\n",
-        ]
+        critical_insights = [i for i in insights if i.severity == "critical"]
+        warning_insights = [i for i in insights if i.severity == "warning"]
 
-        if top_stuck:
-            interpretation_parts.append(
-                "\n**Long Days in Stage:**\n"
-                f"Investigate the reasons behind stuck items: {', '.join(item.get('issue_key', '') for item in top_stuck[:3])}. "
-                "These items may have complex dependencies or systemic blockers."
-            )
+        # Determine overall health score (simplified)
+        health_score = 100
+        health_score -= len(critical_insights) * 15
+        health_score -= len(warning_insights) * 5
+        if flow_efficiency and flow_efficiency < 30:
+            health_score -= 10
+        if avg_leadtime and avg_leadtime > 150:
+            health_score -= 10
+        health_score = max(0, min(100, health_score))
 
+        # Determine health status
+        if health_score >= 70:
+            health_status = "🟢 GOOD"
+            health_color = "good"
+            health_bg = "#d4edda"
+            health_border = "#28a745"
+        elif health_score >= 50:
+            health_status = "🟡 NEEDS ATTENTION"
+            health_color = "warning"
+            health_bg = "#fff3cd"
+            health_border = "#ffc107"
+        else:
+            health_status = "🔴 CRITICAL"
+            health_color = "critical"
+            health_bg = "#f8d7da"
+            health_border = "#dc3545"
+
+        # =====================================================
+        # BUILD EXECUTIVE OBSERVATION (HTML formatted)
+        # =====================================================
+
+        observation_parts = []
+        
+        # Health Score Card
+        observation_parts.append(f'''
+<div style="background: {health_bg}; border-left: 4px solid {health_border}; padding: 12px 16px; margin-bottom: 16px; border-radius: 4px;">
+    <div style="font-size: 18px; font-weight: 700; margin-bottom: 4px;">🏥 Portfolio Health Score</div>
+    <div style="font-size: 32px; font-weight: 800; color: {health_border};">{health_score}/100 - {health_status}</div>
+    <div style="font-size: 12px; color: #666; margin-top: 4px;">📊 {scope_text}</div>
+</div>
+''')
+
+        # Key Metrics Dashboard - Build as HTML table
+        kpi_rows = []
+        
+        if avg_leadtime:
+            lt_status = "🔴" if avg_leadtime > 150 else ("🟡" if avg_leadtime > 110 else "🟢")
+            lt_color = "#dc3545" if avg_leadtime > 150 else ("#ffc107" if avg_leadtime > 110 else "#28a745")
+            kpi_rows.append(f'<tr><td>Avg Lead Time</td><td style="font-weight:600;">{avg_leadtime:.0f} days</td><td style="text-align:center;">{lt_status}</td></tr>')
+
+        if median_leadtime:
+            med_status = "🔴" if median_leadtime > 120 else ("🟡" if median_leadtime > 90 else "🟢")
+            kpi_rows.append(f'<tr><td>Median Lead Time</td><td style="font-weight:600;">{median_leadtime:.0f} days</td><td style="text-align:center;">{med_status}</td></tr>')
+
+        if flow_efficiency:
+            fe_status = "🔴" if flow_efficiency < 30 else ("🟡" if flow_efficiency < 40 else "🟢")
+            kpi_rows.append(f'<tr><td>Flow Efficiency</td><td style="font-weight:600;">{flow_efficiency:.1f}%</td><td style="text-align:center;">{fe_status}</td></tr>')
+
+        if planning_accuracy:
+            pa_status = "🔴" if planning_accuracy < 70 else ("🟡" if planning_accuracy < 75 else "🟢")
+            kpi_rows.append(f'<tr><td>Planning Accuracy</td><td style="font-weight:600;">{planning_accuracy:.1f}%</td><td style="text-align:center;">{pa_status}</td></tr>')
+
+        if features_completed:
+            kpi_rows.append(f'<tr><td>Features Completed</td><td style="font-weight:600;">{features_completed:,}</td><td style="text-align:center;">📊</td></tr>')
+
+        if kpi_rows:
+            observation_parts.append(f'''
+<div style="margin-bottom: 16px;">
+    <div style="font-weight: 700; margin-bottom: 8px; font-size: 14px;">📈 Key Performance Indicators</div>
+    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+        <thead>
+            <tr style="background: #f8f9fa; border-bottom: 2px solid #dee2e6;">
+                <th style="padding: 8px; text-align: left;">Metric</th>
+                <th style="padding: 8px; text-align: left;">Current</th>
+                <th style="padding: 8px; text-align: center;">Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {"".join(kpi_rows)}
+        </tbody>
+    </table>
+</div>
+''')
+
+        # Issue Summary Cards - in a flex grid
+        observation_parts.append(f'''
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 16px;">
+    <div style="background: #f8d7da; padding: 10px; border-radius: 6px; text-align: center;">
+        <div style="font-size: 24px; font-weight: 700; color: #dc3545;">{len(critical_insights)}</div>
+        <div style="font-size: 11px; color: #721c24;">Critical Issues</div>
+    </div>
+    <div style="background: #fff3cd; padding: 10px; border-radius: 6px; text-align: center;">
+        <div style="font-size: 24px; font-weight: 700; color: #856404;">{len(warning_insights)}</div>
+        <div style="font-size: 11px; color: #856404;">Warnings</div>
+    </div>
+    <div style="background: #e2e3e5; padding: 10px; border-radius: 6px; text-align: center;">
+        <div style="font-size: 24px; font-weight: 700; color: #383d41;">{len(stuck_items)}</div>
+        <div style="font-size: 11px; color: #383d41;">Stuck Items</div>
+    </div>
+    <div style="background: #cce5ff; padding: 10px; border-radius: 6px; text-align: center;">
+        <div style="font-size: 24px; font-weight: 700; color: #004085;">{len(multi_stage_stuck)}</div>
+        <div style="font-size: 11px; color: #004085;">Multi-Stage Blockers</div>
+    </div>
+</div>
+''')
+
+        # Additional stats row
+        additional_stats = []
+        if total_wip:
+            additional_stats.append(f'<span style="margin-right: 16px;">📦 <strong>Total WIP:</strong> {total_wip:,} items</span>')
+        if total_waste:
+            additional_stats.append(f'<span style="margin-right: 16px;">🗑️ <strong>Total Waste:</strong> {total_waste:,.0f} days</span>')
+        
+        if additional_stats:
+            observation_parts.append(f'''
+<div style="background: #f8f9fa; padding: 10px 14px; border-radius: 4px; margin-bottom: 16px; font-size: 13px; color: #495057;">
+    {"".join(additional_stats)}
+</div>
+''')
+
+
+        # Top Bottlenecks - HTML formatted
         if top_bottlenecks:
-            bottleneck_names = ", ".join(
-                b["stage"].replace("_", " ") for b in top_bottlenecks
-            )
-            interpretation_parts.append(
-                f"\n\n**High Bottleneck Scores:**\n"
-                f"Analyze causes of high bottleneck scores in: {bottleneck_names}. "
-                "These stages are impeding flow and may indicate resource constraints or process inefficiencies."
-            )
+            bottleneck_rows = []
+            for bottleneck in top_bottlenecks[:3]:
+                stage_name = bottleneck["stage"].replace("_", " ").title()
+                pct_exceeding = (bottleneck["exceeding"] / bottleneck["count"] * 100) if bottleneck["count"] > 0 else 0
+                score_color = "#dc3545" if bottleneck["score"] > 60 else ("#ffc107" if bottleneck["score"] > 40 else "#28a745")
+                bottleneck_rows.append(f'''
+                <tr>
+                    <td style="padding: 6px 8px;"><strong>{stage_name}</strong></td>
+                    <td style="padding: 6px 8px; text-align: center;"><span style="background: {score_color}; color: white; padding: 2px 8px; border-radius: 10px; font-weight: 600;">{bottleneck["score"]:.1f}</span></td>
+                    <td style="padding: 6px 8px; text-align: center;">{bottleneck["mean"]:.1f}d</td>
+                    <td style="padding: 6px 8px; text-align: center;">{pct_exceeding:.0f}%</td>
+                </tr>''')
+            
+            observation_parts.append(f'''
+<div style="margin-bottom: 16px;">
+    <div style="font-weight: 700; margin-bottom: 8px; font-size: 14px;">🚧 Critical Bottlenecks</div>
+    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+        <thead>
+            <tr style="background: #f8f9fa; border-bottom: 2px solid #dee2e6;">
+                <th style="padding: 6px 8px; text-align: left;">Stage</th>
+                <th style="padding: 6px 8px; text-align: center;">Score</th>
+                <th style="padding: 6px 8px; text-align: center;">Mean Time</th>
+                <th style="padding: 6px 8px; text-align: center;">Exceeding</th>
+            </tr>
+        </thead>
+        <tbody>
+            {"".join(bottleneck_rows)}
+        </tbody>
+    </table>
+</div>
+''')
 
-        if high_wip_stages:
-            interpretation_parts.append(
-                "\n\n**WIP Management:**\n"
-                "Review WIP statistics to identify where flow efficiency can be improved. "
-                "High WIP counts may indicate work is accumulating faster than it's being completed."
-            )
-
-        # Potential Risks
-        risk_parts = [
-            "\n\n**⚡ Potential Risks**\n",
-        ]
-
-        if any(
-            b["stage"] in ["ready_for_uat", "in_planned", "in_sit"]
-            for b in top_bottlenecks
-        ):
-            risk_parts.append(
-                "• **Delays in Deployment:** Bottlenecks in UAT, planning, and testing stages may delay feature delivery.\n"
-            )
-
-        if high_wip_stages:
-            risk_parts.append(
-                "• **Inefficient Flow:** High WIP in multiple stages suggests systemic flow inefficiencies.\n"
-            )
-
+        # Top Stuck Items - HTML formatted
         if top_stuck:
-            risk_parts.append(
-                "• **Hidden Dependencies:** Stuck items indicate potential blocked work or missing dependencies.\n"
+            stuck_rows = []
+            for item in top_stuck[:5]:
+                issue_key = item.get("issue_key", "Unknown")
+                days = item.get("days_in_stage", 0)
+                stage = item.get("current_stage", "unknown").replace("_", " ").title()
+                art = item.get("art", "Unknown")
+                days_color = "#dc3545" if days > 100 else ("#ffc107" if days > 30 else "#28a745")
+                stuck_rows.append(f'''
+                <tr>
+                    <td style="padding: 6px 8px;"><strong>{issue_key}</strong></td>
+                    <td style="padding: 6px 8px;">{art}</td>
+                    <td style="padding: 6px 8px;">{stage}</td>
+                    <td style="padding: 6px 8px; text-align: right;"><span style="color: {days_color}; font-weight: 600;">{days:.0f} days</span></td>
+                </tr>''')
+            
+            observation_parts.append(f'''
+<div style="margin-bottom: 16px;">
+    <div style="font-weight: 700; margin-bottom: 8px; font-size: 14px;">🔒 Highest Priority Stuck Items</div>
+    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+        <thead>
+            <tr style="background: #f8f9fa; border-bottom: 2px solid #dee2e6;">
+                <th style="padding: 6px 8px; text-align: left;">Issue</th>
+                <th style="padding: 6px 8px; text-align: left;">ART</th>
+                <th style="padding: 6px 8px; text-align: left;">Stage</th>
+                <th style="padding: 6px 8px; text-align: right;">Days Stuck</th>
+            </tr>
+        </thead>
+        <tbody>
+            {"".join(stuck_rows)}
+        </tbody>
+    </table>
+</div>
+''')
+
+        # =====================================================
+        # BUILD EXPERT INTERPRETATION (HTML formatted)
+        # =====================================================
+
+        interpretation_parts = []
+
+        # Overall Assessment - HTML Card
+        if health_color == "critical":
+            status_text = "The portfolio is experiencing significant delivery challenges that require immediate executive attention. Multiple systemic issues are compounding, creating a cascade effect that will worsen without intervention."
+            status_bg = "#f8d7da"
+            status_border = "#dc3545"
+            status_label = "CRITICAL"
+        elif health_color == "warning":
+            status_text = "The portfolio shows concerning patterns that, if left unaddressed, will likely escalate. Proactive intervention now can prevent more severe issues in coming PIs."
+            status_bg = "#fff3cd"
+            status_border = "#ffc107"
+            status_label = "ATTENTION NEEDED"
+        else:
+            status_text = "The portfolio is performing within acceptable parameters. Focus on continuous improvement and preventing regression."
+            status_bg = "#d4edda"
+            status_border = "#28a745"
+            status_label = "HEALTHY"
+
+        interpretation_parts.append(f'''
+<div style="background: {status_bg}; border-left: 4px solid {status_border}; padding: 12px 16px; margin-bottom: 16px; border-radius: 4px;">
+    <div style="font-weight: 700; font-size: 14px; margin-bottom: 6px;">🎯 Strategic Assessment: {status_label}</div>
+    <div style="color: #333; line-height: 1.5; font-size: 13px;">{status_text}</div>
+</div>
+''')
+
+        # Systemic Pattern Analysis
+        patterns_found = []
+        pattern_cards = []
+
+        # Pattern 1: Flow Blockage
+        if len(critical_bottlenecks) >= 2:
+            patterns_found.append("flow_blockage")
+            pattern_cards.append(f'''
+<div style="background: #fff; border: 1px solid #dee2e6; border-radius: 6px; padding: 14px; margin-bottom: 12px;">
+    <div style="font-weight: 700; color: #dc3545; margin-bottom: 8px;">⚠️ 1. Systemic Flow Blockage</div>
+    <p style="margin: 0 0 10px 0; color: #333; line-height: 1.5;">
+        With <strong>{len(critical_bottlenecks)} stages</strong> showing bottleneck scores above 50, this is not an isolated issue but a systemic flow problem. Work is entering the system faster than it can exit.
+    </p>
+    <div style="background: #f8f9fa; padding: 10px; border-radius: 4px; font-size: 12px;">
+        <strong>💡 Root System Dynamics:</strong> When WIP exceeds capacity, Little's Law predicts that lead times will increase proportionally. High WIP correlates with long cycle times.
+    </div>
+</div>
+''')
+
+        # Pattern 2: Hidden Dependencies
+        if len(multi_stage_stuck) >= 3:
+            patterns_found.append("hidden_deps")
+            pattern_cards.append(f'''
+<div style="background: #fff; border: 1px solid #dee2e6; border-radius: 6px; padding: 14px; margin-bottom: 12px;">
+    <div style="font-weight: 700; color: #fd7e14; margin-bottom: 8px;">🔗 2. Hidden Dependency Network</div>
+    <p style="margin: 0 0 10px 0; color: #333; line-height: 1.5;">
+        <strong>{len(multi_stage_stuck)} items</strong> are stuck across multiple stages, indicating undiscovered dependencies:
+    </p>
+    <ul style="margin: 0 0 10px 0; padding-left: 20px; color: #555; font-size: 13px; line-height: 1.6;">
+        <li>Cross-team technical dependencies not identified during planning</li>
+        <li>Shared infrastructure or platform constraints</li>
+        <li>Implicit knowledge dependencies (key person bottlenecks)</li>
+        <li>Upstream/downstream handoff failures</li>
+    </ul>
+    <div style="background: #fff3cd; padding: 10px; border-radius: 4px; font-size: 12px; color: #856404;">
+        <strong>⚠️ Expert Warning:</strong> Hidden dependencies are the #1 cause of PI objective misses. They're invisible in planning but dominate execution.
+    </div>
+</div>
+''')
+
+        # Pattern 3: Waste Dominance
+        if waiting_waste and total_waste and (waiting_waste / total_waste > 0.8):
+            patterns_found.append("wait_waste")
+            pct_waiting = waiting_waste / total_waste * 100
+            pattern_cards.append(f'''
+<div style="background: #fff; border: 1px solid #dee2e6; border-radius: 6px; padding: 14px; margin-bottom: 12px;">
+    <div style="font-weight: 700; color: #6f42c1; margin-bottom: 8px;">⏳ 3. Wait State Dominance</div>
+    <p style="margin: 0 0 10px 0; color: #333; line-height: 1.5;">
+        <strong>{pct_waiting:.0f}%</strong> of waste comes from waiting, not rework. This is characteristic of push-based systems where work sits in queues rather than flowing continuously.
+    </p>
+    <div style="background: #e2e3e5; padding: 10px; border-radius: 4px; font-size: 12px;">
+        <strong>📊 Industry Benchmark:</strong> Elite performers have &lt;30% wait waste.
+    </div>
+</div>
+''')
+
+        # Pattern 4: Predictability Crisis
+        if p85_leadtime and median_leadtime and (p85_leadtime / median_leadtime > 2.5):
+            patterns_found.append("variability")
+            ratio = p85_leadtime / median_leadtime
+            pattern_cards.append(f'''
+<div style="background: #fff; border: 1px solid #dee2e6; border-radius: 6px; padding: 14px; margin-bottom: 12px;">
+    <div style="font-weight: 700; color: #17a2b8; margin-bottom: 8px;">📉 4. Predictability Crisis</div>
+    <p style="margin: 0 0 10px 0; color: #333; line-height: 1.5;">
+        The 85th percentile lead time (<strong>{p85_leadtime:.0f}d</strong>) is <strong>{ratio:.1f}x</strong> the median (<strong>{median_leadtime:.0f}d</strong>). This extreme variability makes delivery forecasting nearly impossible.
+    </p>
+    <div style="background: #d1ecf1; padding: 10px; border-radius: 4px; font-size: 12px; color: #0c5460;">
+        <strong>💡 Expert Insight:</strong> High variability usually stems from a few 'outlier' features. Addressing the tail (worst performers) will improve predictability more than optimizing averages.
+    </div>
+</div>
+''')
+
+        # Add pattern section if patterns found
+        if pattern_cards:
+            interpretation_parts.append(f'''
+<div style="margin-bottom: 16px;">
+    <div style="font-weight: 700; margin-bottom: 10px; font-size: 14px;">🔬 Systemic Pattern Analysis</div>
+    {"".join(pattern_cards)}
+</div>
+''')
+
+        # Expert Coach Commentary - Styled Box
+        commentary_text = ""
+        if patterns_found:
+            commentary_text = "The patterns identified in this analysis are interconnected and mutually reinforcing. "
+            
+            if "flow_blockage" in patterns_found and "hidden_deps" in patterns_found:
+                commentary_text += "High WIP amplifies the impact of hidden dependencies - when work is plentiful, teams start new items rather than resolving blockers. This creates a negative feedback loop: more work → more delays → more frustration → more work started to 'keep busy'. "
+            
+            if "wait_waste" in patterns_found:
+                commentary_text += "The dominance of waiting waste indicates that optimizing individual team efficiency will have minimal impact. The constraint is in the system design - handoffs, approvals, and dependencies - not in how fast work is done. "
+            
+            blindspot_text = "Organizations often respond to slow delivery by adding resources or starting more work. Both approaches typically make things worse. The counter-intuitive truth: <em>doing less work and finishing what's started will deliver more value faster.</em>"
+        else:
+            commentary_text = "The portfolio shows healthy patterns overall. Focus on maintaining current practices while pursuing continuous improvement. Watch for early warning signs: creeping WIP, increasing variability, and growing dependency complexity."
+            blindspot_text = ""
+
+        interpretation_parts.append(f'''
+<div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 16px; border-radius: 8px; margin-bottom: 16px; color: white;">
+    <div style="font-weight: 700; margin-bottom: 8px; font-size: 14px;">💡 Expert Coach Commentary</div>
+    <p style="margin: 0 0 10px 0; line-height: 1.6; font-style: italic; opacity: 0.95;">"{commentary_text}"</p>
+    {f'<div style="background: rgba(255,255,255,0.15); padding: 10px; border-radius: 4px; font-size: 12px;"><strong>🎯 Key Leadership Blind Spot:</strong> {blindspot_text}</div>' if blindspot_text else ''}
+</div>
+''')
+
+        # Strategic Risks - Card Layout
+        risk_items = []
+        if len(critical_insights) >= 2:
+            risk_items.append(("🔴", "Delivery Confidence Erosion", "Multiple critical issues signal that PI objectives are at significant risk. Stakeholder trust may be impacted."))
+        if avg_leadtime and avg_leadtime > 140:
+            risk_items.append(("🟠", "Time-to-Market Gap", "Lead times significantly exceed industry benchmarks, potentially impacting competitive positioning."))
+        if flow_efficiency and flow_efficiency < 30:
+            risk_items.append(("🟡", "Hidden Cost of Delay", "Low flow efficiency means >70% of cycle time is non-value-adding. Massive opportunity cost."))
+        if len(multi_stage_stuck) >= 3:
+            risk_items.append(("🟣", "Technical Debt Accumulation", "Items stuck across multiple stages indicate architectural debt that will compound."))
+        if total_exceeding and total_wip and (total_exceeding / total_wip > 0.5):
+            risk_items.append(("⚫", "Process Breakdown", "More than half of work items exceed time thresholds, suggesting unsustainable processes."))
+
+        if risk_items:
+            risk_html = "".join([f'''
+            <div style="display: flex; align-items: flex-start; margin-bottom: 10px;">
+                <span style="font-size: 16px; margin-right: 10px;">{icon}</span>
+                <div>
+                    <div style="font-weight: 600; color: #333;">{title}</div>
+                    <div style="font-size: 12px; color: #666;">{desc}</div>
+                </div>
+            </div>
+            ''' for icon, title, desc in risk_items])
+            
+            interpretation_parts.append(f'''
+<div style="background: #fff; border: 1px solid #dee2e6; border-radius: 6px; padding: 14px; margin-bottom: 16px;">
+    <div style="font-weight: 700; margin-bottom: 10px; font-size: 14px;">⚡ Strategic Risks</div>
+    {risk_html}
+</div>
+''')
+        else:
+            interpretation_parts.append('''
+<div style="background: #d4edda; border: 1px solid #28a745; border-radius: 6px; padding: 14px; margin-bottom: 16px;">
+    <div style="font-weight: 700; margin-bottom: 6px; font-size: 14px; color: #155724;">✅ No Critical Strategic Risks</div>
+    <div style="font-size: 13px; color: #155724;">Portfolio is performing within acceptable risk parameters.</div>
+</div>
+''')
+
+        # Skip the old risks section that follows
+        risks = []
+        if len(multi_stage_stuck) >= 3:
+            risks.append(
+                "• **Technical Debt Accumulation:** Items stuck across multiple stages often indicate "
+                "architectural or technical debt that, if unaddressed, will compound over time."
+            )
+        if total_exceeding and total_wip and (total_exceeding / total_wip > 0.5):
+            risks.append(
+                "• **Process Breakdown:** More than half of work items exceed time thresholds, "
+                "suggesting that current processes are not sustainable."
             )
 
-        # Recommendations
-        recommendations = [
-            "\n\n**✅ Recommendations**\n",
-        ]
+        # Executive Recommendations - Card Layout
+        rec_cards = []
+        rec_num = 1
+        
+        if "flow_blockage" in patterns_found:
+            rec_cards.append(f'''
+            <div style="background: #f8f9fa; border-left: 4px solid #dc3545; padding: 12px; margin-bottom: 10px; border-radius: 0 4px 4px 0;">
+                <div style="font-weight: 700; color: #dc3545; margin-bottom: 6px;">{rec_num}. STOP Starting, START Finishing</div>
+                <ul style="margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.6; color: #333;">
+                    <li>Implement immediate WIP freeze until existing work clears bottlenecks</li>
+                    <li>Redirect capacity to unblocking stuck items</li>
+                    <li>Establish daily 'flow' standups focused on blocked work</li>
+                </ul>
+            </div>
+            ''')
+            rec_num += 1
 
-        if top_stuck:
-            recommendations.append(
-                f"1. **Investigate Stuck Items:** Analyze issue history for {', '.join(item.get('issue_key', '') for item in top_stuck[:2])} "
-                "to understand why they're blocked across multiple stages.\n"
-            )
+        if "hidden_deps" in patterns_found:
+            rec_cards.append(f'''
+            <div style="background: #f8f9fa; border-left: 4px solid #fd7e14; padding: 12px; margin-bottom: 10px; border-radius: 0 4px 4px 0;">
+                <div style="font-weight: 700; color: #fd7e14; margin-bottom: 6px;">{rec_num}. Dependency Illumination Program</div>
+                <ul style="margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.6; color: #333;">
+                    <li>Conduct dependency discovery workshops for all in-flight work</li>
+                    <li>Create a cross-ART dependency board with daily updates</li>
+                    <li>Add dependency validation to Definition of Ready</li>
+                </ul>
+            </div>
+            ''')
+            rec_num += 1
 
-        if top_bottlenecks:
-            recommendations.append(
-                "2. **Address Bottlenecks:** Review team capacity, resource allocation, and process efficiency "
-                f"in {', '.join(b['stage'].replace('_', ' ') for b in top_bottlenecks[:2])} stages.\n"
-            )
+        rec_cards.append(f'''
+        <div style="background: #f8f9fa; border-left: 4px solid #17a2b8; padding: 12px; margin-bottom: 10px; border-radius: 0 4px 4px 0;">
+            <div style="font-weight: 700; color: #17a2b8; margin-bottom: 6px;">{rec_num}. Metrics-Driven Improvement</div>
+            <ul style="margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.6; color: #333;">
+                <li>Track and visualize flow metrics weekly (not just velocity)</li>
+                <li>Establish SLAs for time-in-stage with escalation triggers</li>
+                <li>Create feedback loops: What unblocked stuck items?</li>
+            </ul>
+        </div>
+        ''')
+        rec_num += 1
 
-        if high_wip_stages:
-            recommendations.append(
-                "3. **Implement WIP Limits:** Consider implementing or adjusting WIP limits to improve flow efficiency "
-                "and reduce cycle time.\n"
-            )
+        rec_cards.append(f'''
+        <div style="background: #f8f9fa; border-left: 4px solid #28a745; padding: 12px; margin-bottom: 10px; border-radius: 0 4px 4px 0;">
+            <div style="font-weight: 700; color: #28a745; margin-bottom: 6px;">{rec_num}. Structural Changes</div>
+            <ul style="margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.6; color: #333;">
+                <li>Consider value stream reorganization to reduce handoffs</li>
+                <li>Invest in architectural runway to reduce dependencies</li>
+                <li>Empower teams to swarm on blockers</li>
+            </ul>
+        </div>
+        ''')
 
-        recommendations.append(
-            "4. **Examine Workflow Efficiency:** Review workflows and processes to identify inefficiencies "
-            "causing items to exceed threshold values.\n"
-        )
+        interpretation_parts.append(f'''
+<div style="margin-bottom: 16px;">
+    <div style="font-weight: 700; margin-bottom: 10px; font-size: 14px;">✅ Executive Recommendations</div>
+    {"".join(rec_cards)}
+</div>
+''')
 
-        if selected_pis:
-            recommendations.append(
-                f"5. **Expand Analysis:** Consider removing PI filters ({', '.join(selected_pis)}) "
-                "to get a more comprehensive historical view of patterns.\n"
-            )
+        # Success Criteria - HTML Table
+        target_rows = []
+        if avg_leadtime:
+            target_lt = max(110, avg_leadtime * 0.75)
+            stretch_lt = max(90, avg_leadtime * 0.6)
+            target_rows.append(f'<tr><td style="padding: 8px;">Avg Lead Time</td><td style="padding: 8px; text-align: center;"><strong>{avg_leadtime:.0f}d</strong></td><td style="padding: 8px; text-align: center; color: #28a745;">{target_lt:.0f}d</td><td style="padding: 8px; text-align: center; color: #17a2b8;">{stretch_lt:.0f}d</td></tr>')
 
-        # Build full observation
+        if flow_efficiency:
+            target_fe = min(45, flow_efficiency * 1.3)
+            stretch_fe = min(55, flow_efficiency * 1.5)
+            target_rows.append(f'<tr><td style="padding: 8px;">Flow Efficiency</td><td style="padding: 8px; text-align: center;"><strong>{flow_efficiency:.1f}%</strong></td><td style="padding: 8px; text-align: center; color: #28a745;">{target_fe:.0f}%</td><td style="padding: 8px; text-align: center; color: #17a2b8;">{stretch_fe:.0f}%</td></tr>')
+
+        target_stuck = max(0, len(stuck_items) - 5)
+        target_rows.append(f'<tr><td style="padding: 8px;">Stuck Items</td><td style="padding: 8px; text-align: center;"><strong>{len(stuck_items)}</strong></td><td style="padding: 8px; text-align: center; color: #28a745;">{target_stuck}</td><td style="padding: 8px; text-align: center; color: #17a2b8;">0</td></tr>')
+
+        target_bottlenecks = max(0, len(critical_bottlenecks) - 2)
+        target_rows.append(f'<tr><td style="padding: 8px;">Critical Bottlenecks</td><td style="padding: 8px; text-align: center;"><strong>{len(critical_bottlenecks)}</strong></td><td style="padding: 8px; text-align: center; color: #28a745;">{target_bottlenecks}</td><td style="padding: 8px; text-align: center; color: #17a2b8;">0</td></tr>')
+
+        interpretation_parts.append(f'''
+<div style="margin-bottom: 16px;">
+    <div style="font-weight: 700; margin-bottom: 10px; font-size: 14px;">🎯 Success Criteria (Next 2 PIs)</div>
+    <table style="width: 100%; border-collapse: collapse; font-size: 13px; border: 1px solid #dee2e6;">
+        <thead>
+            <tr style="background: #343a40; color: white;">
+                <th style="padding: 10px; text-align: left;">Metric</th>
+                <th style="padding: 10px; text-align: center;">Current</th>
+                <th style="padding: 10px; text-align: center;">Target</th>
+                <th style="padding: 10px; text-align: center;">Stretch</th>
+            </tr>
+        </thead>
+        <tbody style="background: #fff;">
+            {"".join(target_rows)}
+        </tbody>
+    </table>
+</div>
+''')
+
+        # Build full observation and interpretation
         observation = "".join(observation_parts)
-        interpretation = "".join(interpretation_parts + risk_parts + recommendations)
+        interpretation = "".join(interpretation_parts)
 
-        # Extract key recommendations as Action objects
+        # =====================================================
+        # BUILD ACTION ITEMS
+        # =====================================================
+
         actions = []
 
+        # Immediate actions
         if top_stuck:
             actions.append(
                 Action(
                     timeframe="immediate",
-                    description=f"Investigate root causes for stuck items: {', '.join(item.get('issue_key', '') for item in top_stuck[:2])}",
-                    owner="team_lead",
-                    effort="1-2 days",
+                    description=f"Executive escalation meeting for stuck items: {', '.join(item.get('issue_key', '') for item in top_stuck[:3])}. Identify blockers and assign owners with 48-hour resolution targets.",
+                    owner="delivery_manager",
+                    effort="2-4 hours",
                     dependencies=[],
-                    success_signal="Stuck items are unblocked and moving through workflow",
+                    success_signal="All escalated items have documented blockers and resolution plans",
                 )
             )
 
-        if top_bottlenecks:
+        if len(critical_bottlenecks) >= 2:
+            actions.append(
+                Action(
+                    timeframe="immediate",
+                    description="Implement portfolio-wide WIP freeze: No new features enter development until in-progress count drops by 30%",
+                    owner="rte",
+                    effort="1 day to communicate, ongoing enforcement",
+                    dependencies=[],
+                    success_signal="In-progress WIP reduced by 30% within 2 weeks",
+                )
+            )
+
+        # Short-term actions
+        if "hidden_deps" in patterns_found:
             actions.append(
                 Action(
                     timeframe="short_term",
-                    description=f"Analyze and address bottlenecks in {', '.join(b['stage'].replace('_', ' ') for b in top_bottlenecks[:2])}",
-                    owner="process_improvement_team",
-                    effort="2-4 weeks",
-                    dependencies=[],
-                    success_signal="Reduced mean time and fewer items exceeding threshold in bottleneck stages",
+                    description="Conduct cross-ART dependency mapping workshop. Create visual dependency board. Establish dependency resolution SLA of 3 days.",
+                    owner="solution_architect",
+                    effort="1 week",
+                    dependencies=["Identify all teams with blocked items"],
+                    success_signal="All dependencies documented, 50% reduction in multi-stage stuck items",
                 )
             )
 
-        if high_wip_stages:
-            actions.append(
-                Action(
-                    timeframe="short_term",
-                    description="Implement WIP limits and flow management practices",
-                    owner="agile_coach",
-                    effort="2-3 weeks",
-                    dependencies=[],
-                    success_signal="Reduced WIP counts and improved flow efficiency",
-                )
+        actions.append(
+            Action(
+                timeframe="short_term",
+                description="Establish 'Flow Friday' review: Weekly 30-min session reviewing aging items, bottleneck trends, and WIP compliance",
+                owner="agile_coach",
+                effort="30 min/week ongoing",
+                dependencies=[],
+                success_signal="Consistent downward trend in aged items and bottleneck scores",
             )
+        )
 
-        # Create summary insight
+        # Medium-term actions
+        actions.append(
+            Action(
+                timeframe="medium_term",
+                description="Value Stream Mapping: Map end-to-end flow for top 3 bottleneck stages. Identify and eliminate top 5 waste sources.",
+                owner="lean_coach",
+                effort="2-3 weeks",
+                dependencies=["Flow Friday established"],
+                success_signal="20% reduction in average time through mapped stages",
+            )
+        )
+
+        actions.append(
+            Action(
+                timeframe="medium_term",
+                description="Implement pull-based work system: Teams pull work when capacity available rather than push-assigning. Visualize WIP limits on all boards.",
+                owner="scrum_masters",
+                effort="4-6 weeks",
+                dependencies=["WIP freeze completed", "Flow metrics established"],
+                success_signal="Sustained flow efficiency improvement of 10+ percentage points",
+            )
+        )
+
+        # =====================================================
+        # CREATE INSIGHT RESPONSE
+        # =====================================================
+
+        # Determine severity based on health score
+        if health_score < 50:
+            severity = "critical"
+        elif health_score < 70:
+            severity = "warning"
+        else:
+            severity = "info"
+
         summary = InsightResponse(
-            id=999,  # Special ID for summary
-            title="📋 Executive Summary - Comprehensive Analysis",
-            severity="info",
+            id=999,
+            title="📋 Executive Summary - Comprehensive Portfolio Analysis",
+            severity=severity,
             confidence=0.95,
             scope=_format_scope(selected_arts, selected_pis),
             scope_id=None,
             observation=observation,
             interpretation=interpretation,
-            root_causes=[],  # Summary doesn't need individual root causes
+            root_causes=(
+                [
+                    RootCause(
+                        description=f"Systemic flow blockage across {len(critical_bottlenecks)} critical stages",
+                        evidence=[
+                            f"{b['stage'].replace('_', ' ').title()}: {b['score']:.1f} bottleneck score"
+                            for b in critical_bottlenecks[:3]
+                        ],
+                        confidence=0.9 if critical_bottlenecks else 0.5,
+                    ),
+                    RootCause(
+                        description=f"Hidden dependencies causing {len(multi_stage_stuck)} items to be stuck across multiple stages",
+                        evidence=[
+                            f"{k}: stuck in {len(v)} stages"
+                            for k, v in list(multi_stage_stuck.items())[:3]
+                        ],
+                        confidence=0.85 if multi_stage_stuck else 0.5,
+                    ),
+                    RootCause(
+                        description="Push-based workflow creating excessive WIP and wait states",
+                        evidence=[
+                            f"Total WIP: {total_wip:,} stage occurrences",
+                            f"Items exceeding threshold: {total_exceeding:,} ({(total_exceeding/total_wip*100) if total_wip else 0:.0f}%)",
+                            (
+                                f"Waiting waste: {waiting_waste:,.0f} days"
+                                if waiting_waste
+                                else "Waiting waste data unavailable"
+                            ),
+                        ],
+                        confidence=0.85,
+                    ),
+                ]
+                if critical_bottlenecks or multi_stage_stuck
+                else []
+            ),
             recommended_actions=actions,
             expected_outcomes=ExpectedOutcome(
                 metrics_to_watch=[
+                    "avg_lead_time",
+                    "median_lead_time",
                     "flow_efficiency",
-                    "average_lead_time",
                     "wip_by_stage",
                     "bottleneck_scores",
+                    "stuck_item_count",
+                    "planning_accuracy",
                 ],
                 leading_indicators=[
-                    "Reduced bottleneck scores",
-                    "Fewer stuck items",
-                    "Lower WIP counts",
+                    "WIP trending down in bottleneck stages",
+                    "Fewer items exceeding time thresholds",
+                    "Stuck items getting unblocked",
+                    "Dependencies being identified earlier",
                 ],
                 lagging_indicators=[
-                    "Improved flow efficiency",
-                    "Reduced cycle time",
-                    "Higher throughput",
+                    "Average lead time decreasing",
+                    "Flow efficiency improving",
+                    "More features delivered per PI",
+                    "Higher PI objective achievement",
                 ],
-                timeline="1-3 PIs",
+                timeline="2-3 PIs for measurable improvement, 4-6 PIs for sustained transformation",
                 risks=[
-                    "Addressing bottlenecks may require additional resources",
-                    "WIP limits may initially slow throughput before improving flow",
+                    "WIP freeze may temporarily reduce perceived productivity",
+                    "Dependency mapping may reveal uncomfortable organizational truths",
+                    "Cultural resistance to 'doing less to deliver more'",
+                    "Quick wins may be limited - systemic issues require sustained effort",
                 ],
             ),
             metric_references=[
                 "bottleneck_analysis.wip_statistics",
                 "bottleneck_analysis.stuck_items",
-                "flow_efficiency",
-                "average_lead_time",
+                "flow_metrics.flow_efficiency",
+                "leadtime_analysis.average_lead_time",
+                "waste_analysis.total_waste_days",
+                "planning_accuracy.accuracy_percentage",
             ],
             evidence=[
-                f"Analysis covers {len(wip_stats)} workflow stages",
-                f"Identified {len(stuck_items)} stuck items",
-                f"Top {len(top_bottlenecks)} bottlenecks identified",
+                f"Analysis scope: {num_arts if num_arts else 'All'} ARTs, {num_pis if num_pis else 'All'} PIs",
+                f"Portfolio health score: {health_score}/100 ({health_status})",
+                f"Critical insights: {len(critical_insights)}, Warnings: {len(warning_insights)}",
+                f"Workflow stages analyzed: {len(wip_stats)}",
+                f"Total stuck items: {len(stuck_items)} ({total_stuck_days:,.0f} total days)",
+                f"Multi-stage blockers: {len(multi_stage_stuck)} items",
             ],
             status="active",
             created_at=datetime.now(),
