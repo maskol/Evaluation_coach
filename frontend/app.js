@@ -15,7 +15,9 @@ const appState = {
     messages: [],
     sessionId: generateSessionId(),
     currentInsights: [],  // Store current insights for actions
-    isLoading: false  // Track loading state
+    isLoading: false,  // Track loading state
+    insightsAbortController: null,  // Track ongoing insights request
+    piReportAbortController: null   // Track ongoing PI report request
 };
 
 function getSavedDefaultFilters() {
@@ -1115,6 +1117,30 @@ function renderInsightsTab() {
                     <span id="generateBtnIcon">🚀</span>
                     <span id="generateBtnText">Generate AI Insights</span>
                 </button>
+                <button 
+                    id="cancelInsightsBtn"
+                    onclick="cancelInsightsGeneration()" 
+                    style="
+                        background: #FF3B30;
+                        color: white;
+                        border: none;
+                        padding: 16px 32px;
+                        font-size: 16px;
+                        font-weight: 600;
+                        border-radius: 8px;
+                        cursor: pointer;
+                        box-shadow: 0 4px 12px rgba(255, 59, 48, 0.4);
+                        transition: all 0.3s ease;
+                        display: none;
+                        align-items: center;
+                        gap: 8px;
+                        margin-left: 12px;
+                    "
+                    onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 16px rgba(255, 59, 48, 0.5)';"
+                    onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(255, 59, 48, 0.4)'"
+                >
+                    🛑 Cancel
+                </button>
                 <div style="margin-top: 16px; font-size: 12px; color: #8E8E93;">
                     ⚠️ This may take a while as the AI analyzes your data
                 </div>
@@ -1126,6 +1152,14 @@ function renderInsightsTab() {
 // Generate insights using AI analysis
 function generateInsights() {
     console.log('🤖 Generating AI insights...');
+
+    // Cancel any existing request
+    if (appState.insightsAbortController) {
+        appState.insightsAbortController.abort();
+    }
+
+    // Create new abort controller
+    appState.insightsAbortController = new AbortController();
 
     // Disable button and show spinner
     const btn = document.getElementById('generateInsightsBtn');
@@ -1140,6 +1174,12 @@ function generateInsights() {
             btnIcon.innerHTML = '<div style="width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top: 2px solid white; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>';
         }
         if (btnText) btnText.textContent = 'Generating...';
+    }
+
+    // Show cancel button
+    const cancelBtn = document.getElementById('cancelInsightsBtn');
+    if (cancelBtn) {
+        cancelBtn.style.display = 'inline-block';
     }
 
     showLoadingOverlay('🤔 AI Coach analyzing your data...');
@@ -1172,7 +1212,8 @@ function generateInsights() {
     }, 2000);
 
     fetch(`${API_BASE_URL}/v1/insights/generate?${params.toString()}`, {
-        method: 'POST'
+        method: 'POST',
+        signal: appState.insightsAbortController.signal
     })
         .then(response => response.json())
         .then(data => {
@@ -1180,12 +1221,68 @@ function generateInsights() {
             const insights = data.insights || [];
             displayGeneratedInsights(insights);
             hideLoadingOverlay();
+
+            // Hide cancel button on success
+            const cancelBtn = document.getElementById('cancelInsightsBtn');
+            if (cancelBtn) {
+                cancelBtn.style.display = 'none';
+            }
+
+            appState.insightsAbortController = null;
         })
         .catch(error => {
             clearTimeout(llmTimer);
-            console.error('❌ Error generating insights:', error);
 
-            // Re-enable button on error
+            // Check if request was cancelled
+            if (error.name === 'AbortError') {
+                console.log('🚫 Insights generation cancelled by user');
+                const insightsContent = document.getElementById('insightsContent');
+                if (insightsContent) {
+                    insightsContent.innerHTML = `
+                        <div class="messages">
+                            <div style="background: white; border-radius: 8px; padding: 40px; text-align: center; color: #666;">
+                                <div style="font-size: 48px; margin-bottom: 16px;">🚫</div>
+                                <div style="font-size: 18px; margin-bottom: 8px;">Request Cancelled</div>
+                                <div style="font-size: 14px; color: #666; margin-bottom: 24px;">Insight generation was cancelled</div>
+                                <button onclick="renderInsightsTab()" style="
+                                    background: #667eea;
+                                    color: white;
+                                    border: none;
+                                    padding: 12px 24px;
+                                    border-radius: 6px;
+                                    cursor: pointer;
+                                    font-weight: 600;
+                                ">Generate Insights</button>
+                            </div>
+                        </div>
+                    `;
+                }
+            } else {
+                console.error('❌ Error generating insights:', error);
+                const insightsContent = document.getElementById('insightsContent');
+                if (insightsContent) {
+                    insightsContent.innerHTML = `
+                        <div class="messages">
+                            <div style="background: white; border-radius: 8px; padding: 40px; text-align: center; color: #FF3B30;">
+                                <div style="font-size: 48px; margin-bottom: 16px;">⚠️</div>
+                                <div style="font-size: 18px; margin-bottom: 8px;">Error Generating Insights</div>
+                                <div style="font-size: 14px; color: #666; margin-bottom: 24px;">${error.message}</div>
+                                <button onclick="renderInsightsTab()" style="
+                                    background: #667eea;
+                                    color: white;
+                                    border: none;
+                                    padding: 12px 24px;
+                                    border-radius: 6px;
+                                    cursor: pointer;
+                                    font-weight: 600;
+                                ">Try Again</button>
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+
+            // Re-enable button
             if (btn) {
                 btn.disabled = false;
                 btn.style.opacity = '1';
@@ -1194,28 +1291,14 @@ function generateInsights() {
                 if (btnText) btnText.textContent = 'Generate AI Insights';
             }
 
-            const insightsContent = document.getElementById('insightsContent');
-            if (insightsContent) {
-                insightsContent.innerHTML = `
-                    <div class="messages">
-                        <div style="background: white; border-radius: 8px; padding: 40px; text-align: center; color: #FF3B30;">
-                            <div style="font-size: 48px; margin-bottom: 16px;">⚠️</div>
-                            <div style="font-size: 18px; margin-bottom: 8px;">Error Generating Insights</div>
-                            <div style="font-size: 14px; color: #666; margin-bottom: 24px;">${error.message}</div>
-                            <button onclick="renderInsightsTab()" style="
-                                background: #667eea;
-                                color: white;
-                                border: none;
-                                padding: 12px 24px;
-                                border-radius: 6px;
-                                cursor: pointer;
-                                font-weight: 600;
-                            ">Try Again</button>
-                        </div>
-                    </div>
-                `;
+            // Hide cancel button
+            const cancelBtn = document.getElementById('cancelInsightsBtn');
+            if (cancelBtn) {
+                cancelBtn.style.display = 'none';
             }
+
             hideLoadingOverlay();
+            appState.insightsAbortController = null;
         });
 }
 
@@ -1267,6 +1350,26 @@ function displayGeneratedInsights(insights) {
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                 <h2 style="margin: 0; color: #333;">AI Expert Insights (${insights.length})</h2>
                 <div style="display: flex; gap: 12px;">
+                    <button 
+                        onclick="exportExecutiveSummary()" 
+                        style="
+                            background: linear-gradient(135deg, #007AFF 0%, #0051D5 100%);
+                            color: white;
+                            border: none;
+                            padding: 10px 20px;
+                            font-size: 14px;
+                            font-weight: 600;
+                            border-radius: 6px;
+                            cursor: pointer;
+                            box-shadow: 0 2px 8px rgba(0, 122, 255, 0.3);
+                            display: inline-flex;
+                            align-items: center;
+                            gap: 6px;
+                        "
+                    >
+                        <span>📊</span>
+                        <span>Export to Excel</span>
+                    </button>
                     <button 
                         onclick="printAllInsights()" 
                         style="
@@ -2855,12 +2958,29 @@ function showTemplates() {
         - user_story_template.txt`, 'info');
 }
 
+// Cancel functions
+function cancelInsightsGeneration() {
+    if (appState.insightsAbortController) {
+        appState.insightsAbortController.abort();
+        console.log('🛑 Cancelling insights generation...');
+    }
+}
+
+function cancelPIReportGeneration() {
+    if (appState.piReportAbortController) {
+        appState.piReportAbortController.abort();
+        console.log('🛑 Cancelling PI report generation...');
+    }
+}
+
 // Expose all functions needed by onclick handlers to global scope
 window.switchMainTab = switchMainTab;
 window.selectScope = selectScope;
 window.setMetricFocus = setMetricFocus;
 window.generateScorecard = generateScorecard;
 window.generateInsights = generateInsights;
+window.cancelInsightsGeneration = cancelInsightsGeneration;
+window.cancelPIReportGeneration = cancelPIReportGeneration;
 window.exportReport = exportReport;
 window.acceptInsight = acceptInsight;
 window.viewDetails = viewDetails;
@@ -3010,6 +3130,14 @@ async function generatePIReport() {
         return;
     }
 
+    // Cancel any existing request
+    if (appState.piReportAbortController) {
+        appState.piReportAbortController.abort();
+    }
+
+    // Create new abort controller
+    appState.piReportAbortController = new AbortController();
+
     const compareWithPrevious = document.getElementById('comparePrevious').checked;
     const selectedModel = document.getElementById('piReportModel').value;
     const generateBtn = document.getElementById('generatePIReportBtn');
@@ -3018,6 +3146,12 @@ async function generatePIReport() {
     generateBtn.disabled = true;
     generateBtn.textContent = '⏳ Generating Report...';
     const piText = selectedPIs.length === 1 ? selectedPIs[0] : `${selectedPIs.length} PIs`;
+
+    // Show cancel button
+    const cancelBtn = document.getElementById('cancelPIReportBtn');
+    if (cancelBtn) {
+        cancelBtn.style.display = 'inline-block';
+    }
 
     // Show model info in status if non-default
     const modelInfo = selectedModel ? ` using ${selectedModel}` : '';
@@ -3040,6 +3174,7 @@ async function generatePIReport() {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify(requestBody),
+            signal: appState.piReportAbortController.signal
         });
 
         if (!response.ok) {
@@ -3054,28 +3189,50 @@ async function generatePIReport() {
         displayPIReport(reportData);
 
         updateStatusBar(`Report for ${piText} generated successfully`);
-    } catch (error) {
-        console.error('Error generating PI report:', error);
 
-        // Show more user-friendly error message
-        let errorMsg = `Failed to generate PI report: ${error.message}`;
-
-        if (error.message.includes('timeout') || error.message.includes('timed out')) {
-            errorMsg = `⏱️ The report generation timed out.\n\n` +
-                `Try these solutions:\n` +
-                `• Select "gpt-4o-mini" model for faster generation\n` +
-                `• Select fewer PIs (e.g., single quarter instead of full year)\n` +
-                `• Wait a moment and try again`;
-        } else if (error.message.includes('500')) {
-            errorMsg = `Server error occurred. Check the backend logs for details.\n` +
-                `Try: Select a faster model (gpt-4o-mini) or fewer PIs.`;
+        // Hide cancel button on success
+        const cancelBtn = document.getElementById('cancelPIReportBtn');
+        if (cancelBtn) {
+            cancelBtn.style.display = 'none';
         }
 
-        alert(errorMsg);
-        updateStatusBar('❌ Error generating PI report');
+        appState.piReportAbortController = null;
+    } catch (error) {
+        // Check if request was cancelled
+        if (error.name === 'AbortError') {
+            console.log('🚫 PI Report generation cancelled by user');
+            updateStatusBar('Report generation cancelled');
+        } else {
+            console.error('Error generating PI report:', error);
+
+            // Show more user-friendly error message
+            let errorMsg = `Failed to generate PI report: ${error.message}`;
+
+            if (error.message.includes('timeout') || error.message.includes('timed out')) {
+                errorMsg = `⏱️ The report generation timed out.\n\n` +
+                    `Try these solutions:\n` +
+                    `• Select "gpt-4o-mini" model for faster generation\n` +
+                    `• Select fewer PIs (e.g., single quarter instead of full year)\n` +
+                    `• Wait a moment and try again`;
+            } else if (error.message.includes('500')) {
+                errorMsg = `Server error occurred. Check the backend logs for details.\n` +
+                    `Try: Select a faster model (gpt-4o-mini) or fewer PIs.`;
+            }
+
+            alert(errorMsg);
+            updateStatusBar('❌ Error generating PI report');
+        }
     } finally {
         generateBtn.disabled = false;
         generateBtn.textContent = 'Generate Report';
+
+        // Hide cancel button
+        const cancelBtn = document.getElementById('cancelPIReportBtn');
+        if (cancelBtn) {
+            cancelBtn.style.display = 'none';
+        }
+
+        appState.piReportAbortController = null;
     }
 }
 
@@ -3269,6 +3426,67 @@ function selectYear2025() {
     updatePISelectionCount();
 }
 
+// Export Executive Summary to Excel
+async function exportExecutiveSummary() {
+    try {
+        showLoadingOverlay('Exporting executive summary to Excel...');
+
+        // Build query parameters based on current filters
+        const params = new URLSearchParams();
+
+        if (appState.selectedPIs && appState.selectedPIs.length > 0) {
+            params.append('pis', appState.selectedPIs.join(','));
+        }
+
+        if (appState.selectedARTs && appState.selectedARTs.length > 0) {
+            // Don't send ARTs filter if all ARTs are selected
+            if (!appState.allARTs || appState.selectedARTs.length < appState.allARTs.length) {
+                params.append('arts', appState.selectedARTs.join(','));
+            }
+        }
+
+        // Fetch Excel file
+        const response = await fetch(`${API_BASE_URL}/api/v1/insights/export-summary?${params.toString()}`);
+
+        if (!response.ok) {
+            throw new Error(`Export failed: ${response.statusText}`);
+        }
+
+        // Get the blob and download it
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+
+        // Extract filename from Content-Disposition header
+        const contentDisposition = response.headers.get('Content-Disposition');
+        let filename = 'executive_summary.xlsx';
+        if (contentDisposition) {
+            const matches = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(contentDisposition);
+            if (matches != null && matches[1]) {
+                filename = matches[1].replace(/['"]/g, '');
+            }
+        }
+
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+
+        hideLoadingOverlay();
+
+        // Show success message
+        alert('✅ Executive summary exported successfully!');
+    } catch (error) {
+        console.error('Error exporting executive summary:', error);
+        hideLoadingOverlay();
+        alert(`❌ Error exporting: ${error.message}`);
+    }
+}
+
+
 // Export functions to window
 window.openPIReportDialog = openPIReportDialog;
 window.closePIReportDialog = closePIReportDialog;
@@ -3279,5 +3497,6 @@ window.updatePISelectionCount = updatePISelectionCount;
 window.selectAllPIs = selectAllPIs;
 window.deselectAllPIs = deselectAllPIs;
 window.selectYear2025 = selectYear2025;
+window.exportExecutiveSummary = exportExecutiveSummary;
 
 console.log('📊 Evaluation Coach app.js loaded successfully');

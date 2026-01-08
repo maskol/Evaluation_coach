@@ -21,6 +21,18 @@ from config.settings import Settings
 class InsightsService:
     """Service for generating coaching insights"""
 
+    def __init__(self):
+        self._cancel_requested = False
+
+    def cancel(self):
+        """Request cancellation of ongoing insight generation"""
+        self._cancel_requested = True
+        print("🛑 Insights generation cancellation requested")
+
+    def reset_cancel(self):
+        """Reset cancel flag for new generation"""
+        self._cancel_requested = False
+
     def _generate_strategic_target_insights(
         self,
         settings: Settings,
@@ -295,6 +307,14 @@ class InsightsService:
         Returns:
             List of generated insights
         """
+
+        # Reset cancel flag at start of new generation
+        self.reset_cancel()
+
+        # Check for cancellation
+        if self._cancel_requested:
+            print("🛑 Insights generation cancelled by user")
+            return []
 
         # Load strategic targets from settings
         settings = Settings()

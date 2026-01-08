@@ -15,6 +15,16 @@ class PIReportService:
         self.llm_service = llm_service
         self.leadtime_service = leadtime_service
         self.rag_service = rag_service
+        self._cancel_requested = False
+
+    def cancel(self):
+        """Request cancellation of ongoing PI report generation"""
+        self._cancel_requested = True
+        print("🛑 PI report generation cancellation requested")
+
+    def reset_cancel(self):
+        """Reset cancel flag for new generation"""
+        self._cancel_requested = False
 
     def get_previous_pi(self, pi: str) -> str:
         """Calculate the previous PI name

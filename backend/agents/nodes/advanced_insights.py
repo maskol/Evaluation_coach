@@ -95,11 +95,18 @@ def generate_advanced_insights(
         _analyze_strategic_targets(leadtime, planning, selected_arts, selected_pis)
     )
 
+    # 12. Add comprehensive executive summary (like DL Webb App AI Summary)
+    summary_insight = _generate_executive_summary(
+        analysis_summary, insights, selected_arts, selected_pis
+    )
+    if summary_insight:
+        insights.append(summary_insight)
+
     # Enhance insights with expert LLM commentary
     if _llm_service:
         _enhance_insights_with_expert_analysis(insights)
 
-    return insights[:15]  # Limit to top 15 insights
+    return insights[:20]  # Increased limit to include summary
 
 
 def _enhance_insights_with_expert_analysis(insights: List[InsightResponse]):
@@ -1792,3 +1799,312 @@ def _analyze_strategic_targets(
         )
 
     return insights
+
+
+def _generate_executive_summary(
+    analysis_summary: Dict[str, Any],
+    insights: List[InsightResponse],
+    selected_arts: Optional[List[str]],
+    selected_pis: Optional[List[str]],
+) -> Optional[InsightResponse]:
+    """
+    Generate comprehensive executive summary (similar to DL Webb App AI Summary)
+
+    This provides an overview of all key findings, bottlenecks, stuck items, risks,
+    and recommendations in a structured format.
+    """
+    try:
+        # Extract data sections
+        bottleneck_data = analysis_summary.get("bottleneck_analysis", {})
+        wip_stats = bottleneck_data.get("wip_statistics", {})
+        stuck_items = bottleneck_data.get("stuck_items", [])
+        leadtime_data = analysis_summary.get("leadtime_analysis", {})
+        waste_data = analysis_summary.get("waste_analysis", {})
+        planning_data = analysis_summary.get("planning_accuracy", {})
+
+        # Build scope description
+        scope_desc = []
+        if selected_arts:
+            if len(selected_arts) == 1:
+                scope_desc.append(f"ART: {selected_arts[0]}")
+            else:
+                scope_desc.append(
+                    f"ARTs: {', '.join(selected_arts[:3])}"
+                    + (
+                        f" +{len(selected_arts)-3} more"
+                        if len(selected_arts) > 3
+                        else ""
+                    )
+                )
+        else:
+            scope_desc.append("ART: All ARTs")
+
+        if selected_pis:
+            scope_desc.append(f"Program Increment: {', '.join(selected_pis)}")
+
+        scope_text = " | ".join(scope_desc)
+
+        # Extract top bottlenecks
+        bottleneck_stages = []
+        for stage, metrics in wip_stats.items():
+            if isinstance(metrics, dict):
+                mean_time = metrics.get("mean", 0)
+                count = metrics.get("count", 0)
+                exceeding = metrics.get("exceeding_threshold", 0)
+                if mean_time > 0 and count > 0:
+                    # Calculate bottleneck score
+                    score = (
+                        (mean_time / 10) + (exceeding / count * 100) if count > 0 else 0
+                    )
+                    bottleneck_stages.append(
+                        {
+                            "stage": stage,
+                            "score": score,
+                            "mean": mean_time,
+                            "exceeding": exceeding,
+                        }
+                    )
+
+        bottleneck_stages.sort(key=lambda x: x["score"], reverse=True)
+        top_bottlenecks = bottleneck_stages[:4]
+
+        # Extract top stuck items
+        top_stuck = sorted(
+            stuck_items, key=lambda x: x.get("days_in_stage", 0), reverse=True
+        )[:3]
+
+        # Build observation sections
+        observation_parts = [
+            f"**📊 Analysis Scope**\n{scope_text}\n",
+            "\n**🔍 Key Findings**\n",
+        ]
+
+        # Flow Efficiency / Bottlenecks
+        if top_bottlenecks:
+            observation_parts.append("\n**Flow Efficiency - Top Bottlenecks:**")
+            for bottleneck in top_bottlenecks:
+                stage_name = bottleneck["stage"].replace("_", " ").title()
+                observation_parts.append(
+                    f"• {stage_name} - Score: {bottleneck['score']:.1f}% "
+                    f"(Mean: {bottleneck['mean']:.1f} days, {bottleneck['exceeding']} items exceeding threshold)"
+                )
+            observation_parts.append(
+                "\nThese stages have high mean times and significant items exceeding threshold."
+            )
+
+        # Stuck Items
+        if top_stuck:
+            observation_parts.append("\n\n**⚠️ Stuck Items:**")
+            for item in top_stuck:
+                issue_key = item.get("issue_key", "Unknown")
+                days = item.get("days_in_stage", 0)
+                stage = item.get("current_stage", "unknown").replace("_", " ")
+                observation_parts.append(f"• {issue_key}: {days:.1f} days in {stage}")
+
+        # WIP Statistics
+        high_wip_stages = []
+        for stage, metrics in wip_stats.items():
+            if isinstance(metrics, dict):
+                count = metrics.get("count", 0)
+                if count > 1000:  # High WIP threshold
+                    high_wip_stages.append(
+                        {"stage": stage, "count": count, "mean": metrics.get("mean", 0)}
+                    )
+
+        if high_wip_stages:
+            observation_parts.append("\n\n**📈 WIP Statistics:**")
+            for wip in sorted(high_wip_stages, key=lambda x: x["count"], reverse=True)[
+                :3
+            ]:
+                stage_name = wip["stage"].replace("_", " ").title()
+                observation_parts.append(
+                    f"• {stage_name}: {wip['count']:,} items (Mean: {wip['mean']:.1f} days)"
+                )
+
+        # Build interpretation with recommendations
+        interpretation_parts = [
+            "**🎯 Anomalies and Areas for Improvement**\n",
+        ]
+
+        if top_stuck:
+            interpretation_parts.append(
+                "\n**Long Days in Stage:**\n"
+                f"Investigate the reasons behind stuck items: {', '.join(item.get('issue_key', '') for item in top_stuck[:3])}. "
+                "These items may have complex dependencies or systemic blockers."
+            )
+
+        if top_bottlenecks:
+            bottleneck_names = ", ".join(
+                b["stage"].replace("_", " ") for b in top_bottlenecks
+            )
+            interpretation_parts.append(
+                f"\n\n**High Bottleneck Scores:**\n"
+                f"Analyze causes of high bottleneck scores in: {bottleneck_names}. "
+                "These stages are impeding flow and may indicate resource constraints or process inefficiencies."
+            )
+
+        if high_wip_stages:
+            interpretation_parts.append(
+                "\n\n**WIP Management:**\n"
+                "Review WIP statistics to identify where flow efficiency can be improved. "
+                "High WIP counts may indicate work is accumulating faster than it's being completed."
+            )
+
+        # Potential Risks
+        risk_parts = [
+            "\n\n**⚡ Potential Risks**\n",
+        ]
+
+        if any(
+            b["stage"] in ["ready_for_uat", "in_planned", "in_sit"]
+            for b in top_bottlenecks
+        ):
+            risk_parts.append(
+                "• **Delays in Deployment:** Bottlenecks in UAT, planning, and testing stages may delay feature delivery.\n"
+            )
+
+        if high_wip_stages:
+            risk_parts.append(
+                "• **Inefficient Flow:** High WIP in multiple stages suggests systemic flow inefficiencies.\n"
+            )
+
+        if top_stuck:
+            risk_parts.append(
+                "• **Hidden Dependencies:** Stuck items indicate potential blocked work or missing dependencies.\n"
+            )
+
+        # Recommendations
+        recommendations = [
+            "\n\n**✅ Recommendations**\n",
+        ]
+
+        if top_stuck:
+            recommendations.append(
+                f"1. **Investigate Stuck Items:** Analyze issue history for {', '.join(item.get('issue_key', '') for item in top_stuck[:2])} "
+                "to understand why they're blocked across multiple stages.\n"
+            )
+
+        if top_bottlenecks:
+            recommendations.append(
+                "2. **Address Bottlenecks:** Review team capacity, resource allocation, and process efficiency "
+                f"in {', '.join(b['stage'].replace('_', ' ') for b in top_bottlenecks[:2])} stages.\n"
+            )
+
+        if high_wip_stages:
+            recommendations.append(
+                "3. **Implement WIP Limits:** Consider implementing or adjusting WIP limits to improve flow efficiency "
+                "and reduce cycle time.\n"
+            )
+
+        recommendations.append(
+            "4. **Examine Workflow Efficiency:** Review workflows and processes to identify inefficiencies "
+            "causing items to exceed threshold values.\n"
+        )
+
+        if selected_pis:
+            recommendations.append(
+                f"5. **Expand Analysis:** Consider removing PI filters ({', '.join(selected_pis)}) "
+                "to get a more comprehensive historical view of patterns.\n"
+            )
+
+        # Build full observation
+        observation = "".join(observation_parts)
+        interpretation = "".join(interpretation_parts + risk_parts + recommendations)
+
+        # Extract key recommendations as Action objects
+        actions = []
+
+        if top_stuck:
+            actions.append(
+                Action(
+                    timeframe="immediate",
+                    description=f"Investigate root causes for stuck items: {', '.join(item.get('issue_key', '') for item in top_stuck[:2])}",
+                    owner="team_lead",
+                    effort="1-2 days",
+                    dependencies=[],
+                    success_signal="Stuck items are unblocked and moving through workflow",
+                )
+            )
+
+        if top_bottlenecks:
+            actions.append(
+                Action(
+                    timeframe="short_term",
+                    description=f"Analyze and address bottlenecks in {', '.join(b['stage'].replace('_', ' ') for b in top_bottlenecks[:2])}",
+                    owner="process_improvement_team",
+                    effort="2-4 weeks",
+                    dependencies=[],
+                    success_signal="Reduced mean time and fewer items exceeding threshold in bottleneck stages",
+                )
+            )
+
+        if high_wip_stages:
+            actions.append(
+                Action(
+                    timeframe="short_term",
+                    description="Implement WIP limits and flow management practices",
+                    owner="agile_coach",
+                    effort="2-3 weeks",
+                    dependencies=[],
+                    success_signal="Reduced WIP counts and improved flow efficiency",
+                )
+            )
+
+        # Create summary insight
+        summary = InsightResponse(
+            id=999,  # Special ID for summary
+            title="📋 Executive Summary - Comprehensive Analysis",
+            severity="info",
+            confidence=0.95,
+            scope=_format_scope(selected_arts, selected_pis),
+            scope_id=None,
+            observation=observation,
+            interpretation=interpretation,
+            root_causes=[],  # Summary doesn't need individual root causes
+            recommended_actions=actions,
+            expected_outcomes=ExpectedOutcome(
+                metrics_to_watch=[
+                    "flow_efficiency",
+                    "average_lead_time",
+                    "wip_by_stage",
+                    "bottleneck_scores",
+                ],
+                leading_indicators=[
+                    "Reduced bottleneck scores",
+                    "Fewer stuck items",
+                    "Lower WIP counts",
+                ],
+                lagging_indicators=[
+                    "Improved flow efficiency",
+                    "Reduced cycle time",
+                    "Higher throughput",
+                ],
+                timeline="1-3 PIs",
+                risks=[
+                    "Addressing bottlenecks may require additional resources",
+                    "WIP limits may initially slow throughput before improving flow",
+                ],
+            ),
+            metric_references=[
+                "bottleneck_analysis.wip_statistics",
+                "bottleneck_analysis.stuck_items",
+                "flow_efficiency",
+                "average_lead_time",
+            ],
+            evidence=[
+                f"Analysis covers {len(wip_stats)} workflow stages",
+                f"Identified {len(stuck_items)} stuck items",
+                f"Top {len(top_bottlenecks)} bottlenecks identified",
+            ],
+            status="active",
+            created_at=datetime.now(),
+        )
+
+        return summary
+
+    except Exception as e:
+        print(f"⚠️ Failed to generate executive summary: {e}")
+        import traceback
+
+        traceback.print_exc()
+        return None

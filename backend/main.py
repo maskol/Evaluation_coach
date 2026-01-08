@@ -843,6 +843,217 @@ async def generate_insights_endpoint(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Export Executive Summary to Excel
+@app.get("/api/v1/insights/export-summary")
+async def export_executive_summary(
+    pis: Optional[str] = None,
+    arts: Optional[str] = None,
+):
+    """Export executive summary data (stuck items, bottlenecks, WIP) to Excel file"""
+    try:
+        import pandas as pd
+        from io import BytesIO
+        from fastapi.responses import StreamingResponse
+
+        # Parse filter parameters
+        selected_pis = (
+            [pi.strip() for pi in pis.split(",") if pi.strip()] if pis else []
+        )
+        selected_arts = (
+            [art.strip() for art in arts.split(",") if art.strip()] if arts else []
+        )
+
+        if leadtime_service and leadtime_service.is_available():
+            try:
+                params = {}
+                if selected_arts:
+                    params["arts"] = selected_arts
+                if selected_pis:
+                    params["pis"] = selected_pis
+                params["threshold_days"] = settings.bottleneck_threshold_days
+
+                # Get analysis summary
+                analysis_summary = leadtime_service.client.get_analysis_summary(
+                    **params
+                )
+
+                bottleneck_data = analysis_summary.get("bottleneck_analysis", {})
+                wip_stats = bottleneck_data.get("wip_statistics", {})
+                stuck_items = bottleneck_data.get("stuck_items", [])
+
+                # Create Excel workbook with multiple sheets
+                output = BytesIO()
+                with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                    # Sheet 1: Stuck Items (ALL items, sorted by days in stage)
+                    if stuck_items:
+                        stuck_df = pd.DataFrame(stuck_items)
+                        # Sort by days_in_stage descending to show worst first
+                        stuck_df = stuck_df.sort_values(
+                            "days_in_stage", ascending=False
+                        )
+                        # Reorder columns for better readability
+                        column_order = [
+                            "issue_key",
+                            "art",
+                            "current_stage",
+                            "days_in_stage",
+                            "summary",
+                            "status",
+                            "pi",
+                        ]
+                        # Only include columns that exist
+                        column_order = [
+                            col for col in column_order if col in stuck_df.columns
+                        ]
+                        stuck_df = stuck_df[column_order]
+                        stuck_df.to_excel(writer, sheet_name="Stuck Items", index=False)
+
+                    # Sheet 2: Bottleneck Analysis (ALL stages with scores)
+                    bottleneck_list = []
+                    for stage, metrics in wip_stats.items():
+                        if isinstance(metrics, dict):
+                            mean_time = metrics.get("mean", 0)
+                            count = metrics.get("count", 0)
+                            exceeding = metrics.get("exceeding_threshold", 0)
+                            if mean_time > 0 and count > 0:
+                                score = (
+                                    (mean_time / 10) + (exceeding / count * 100)
+                                    if count > 0
+                                    else 0
+                                )
+                                bottleneck_list.append(
+                                    {
+                                        "Stage": stage.replace("_", " ").title(),
+                                        "Bottleneck Score": round(score, 1),
+                                        "Mean Time (days)": round(mean_time, 1),
+                                        "Total Items": count,
+                                        "Items Exceeding Threshold": exceeding,
+                                        "Exceeding %": round(
+                                            (
+                                                (exceeding / count * 100)
+                                                if count > 0
+                                                else 0
+                                            ),
+                                            1,
+                                        ),
+                                    }
+                                )
+
+                    if bottleneck_list:
+                        bottleneck_df = pd.DataFrame(bottleneck_list)
+                        bottleneck_df = bottleneck_df.sort_values(
+                            "Bottleneck Score", ascending=False
+                        )
+                        bottleneck_df.to_excel(
+                            writer, sheet_name="Bottleneck Analysis", index=False
+                        )
+
+                    # Sheet 3: WIP Statistics (ALL stages with high WIP)
+                    wip_list = []
+                    for stage, metrics in wip_stats.items():
+                        if isinstance(metrics, dict):
+                            count = metrics.get("count", 0)
+                            mean_time = metrics.get("mean", 0)
+                            exceeding = metrics.get("exceeding_threshold", 0)
+                            if count > 0:
+                                wip_list.append(
+                                    {
+                                        "Stage": stage.replace("_", " ").title(),
+                                        "Total Items (WIP)": count,
+                                        "Mean Time (days)": round(mean_time, 1),
+                                        "Items Exceeding Threshold": exceeding,
+                                        "Exceeding %": round(
+                                            (
+                                                (exceeding / count * 100)
+                                                if count > 0
+                                                else 0
+                                            ),
+                                            1,
+                                        ),
+                                    }
+                                )
+
+                    if wip_list:
+                        wip_df = pd.DataFrame(wip_list)
+                        wip_df = wip_df.sort_values(
+                            "Total Items (WIP)", ascending=False
+                        )
+                        wip_df.to_excel(
+                            writer, sheet_name="WIP Statistics", index=False
+                        )
+
+                    # Sheet 4: Summary Statistics
+                    summary_stats = {
+                        "Metric": [
+                            "Total Stuck Items",
+                            "Total Workflow Stages",
+                            "Stages with High WIP (>1000)",
+                            "Highest Bottleneck Score",
+                            "Analysis Scope - ARTs",
+                            "Analysis Scope - PIs",
+                        ],
+                        "Value": [
+                            len(stuck_items),
+                            len(wip_stats),
+                            (
+                                len(
+                                    [
+                                        w
+                                        for w in wip_list
+                                        if w["Total Items (WIP)"] > 1000
+                                    ]
+                                )
+                                if wip_list
+                                else 0
+                            ),
+                            (
+                                max([b["Bottleneck Score"] for b in bottleneck_list])
+                                if bottleneck_list
+                                else 0
+                            ),
+                            ", ".join(selected_arts) if selected_arts else "All ARTs",
+                            ", ".join(selected_pis) if selected_pis else "All PIs",
+                        ],
+                    }
+                    summary_df = pd.DataFrame(summary_stats)
+                    summary_df.to_excel(writer, sheet_name="Summary", index=False)
+
+                output.seek(0)
+
+                # Generate filename with timestamp and filters
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                art_filter = (
+                    f"_{selected_arts[0]}" if len(selected_arts) == 1 else "_MultiART"
+                )
+                pi_filter = (
+                    f"_{selected_pis[0]}" if len(selected_pis) == 1 else "_MultiPI"
+                )
+                filename = f"executive_summary{art_filter}{pi_filter}_{timestamp}.xlsx"
+
+                return StreamingResponse(
+                    output,
+                    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f"attachment; filename={filename}"},
+                )
+
+            except Exception as e:
+                print(f"❌ Error exporting executive summary: {e}")
+                import traceback
+
+                traceback.print_exc()
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to export executive summary: {str(e)}",
+                )
+        else:
+            raise HTTPException(
+                status_code=503, detail="Lead-time service not available"
+            )
+    except Exception as e:
+        print(f"❌ Error in export summary endpoint: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # Dashboard Endpoints
 @app.get("/api/v1/dashboard", response_model=DashboardData)
 async def get_dashboard(
