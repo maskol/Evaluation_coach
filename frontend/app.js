@@ -1721,10 +1721,10 @@ function printAllInsights() {
         return;
     }
 
-    const printWindow = window.open('', '', 'width=800,height=600');
+    const printWindow = window.open('', '', 'width=1024,height=768');
     const insightsHTML = insights.map((insight, index) =>
-        generateInsightHTML(insight, index + 1)
-    ).join('<div style="page-break-after: always;"></div>');
+        generateEnhancedInsightHTML(insight, index + 1)
+    ).join('<div style="page-break-after: always; margin: 30px 0;"></div>');
 
     printWindow.document.write(`
         <!DOCTYPE html>
@@ -1732,21 +1732,54 @@ function printAllInsights() {
         <head>
             <title>AI Expert Insights Report - ${new Date().toLocaleDateString()}</title>
             <style>
-                ${getPrintStyles()}
+                ${getEnhancedPrintStyles()}
             </style>
         </head>
         <body>
-            ${generateReportHeader()}
+            ${generateEnhancedReportHeader()}
             <div class="summary-section">
-                <h2>Executive Summary</h2>
-                <p><strong>Total Insights:</strong> ${insights.length}</p>
-                <p><strong>Critical Issues:</strong> ${insights.filter(i => i.severity === 'critical').length}</p>
-                <p><strong>Warnings:</strong> ${insights.filter(i => i.severity === 'warning').length}</p>
-                <p><strong>Information:</strong> ${insights.filter(i => i.severity === 'info').length}</p>
-                <p><strong>Scope:</strong> ${appState.scope.charAt(0).toUpperCase() + appState.scope.slice(1)}</p>
-                <p><strong>PI(s):</strong> ${appState.selectedPIs.length > 0 ? appState.selectedPIs.join(', ') : 'All PIs'}</p>
-                ${appState.selectedARTs && appState.selectedARTs.length > 0 ?
-            `<p><strong>ART(s):</strong> ${appState.selectedARTs.join(', ')}</p>` : ''}
+                <h2 style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 28px;">📊</span>
+                    <span>Executive Summary</span>
+                </h2>
+                <div class="summary-grid">
+                    <div class="summary-card">
+                        <div class="summary-value">${insights.length}</div>
+                        <div class="summary-label">Total Insights</div>
+                    </div>
+                    <div class="summary-card critical">
+                        <div class="summary-value">${insights.filter(i => i.severity === 'critical').length}</div>
+                        <div class="summary-label">Critical Issues</div>
+                    </div>
+                    <div class="summary-card warning">
+                        <div class="summary-value">${insights.filter(i => i.severity === 'warning').length}</div>
+                        <div class="summary-label">Warnings</div>
+                    </div>
+                    <div class="summary-card info">
+                        <div class="summary-value">${insights.filter(i => i.severity === 'info').length}</div>
+                        <div class="summary-label">Information</div>
+                    </div>
+                </div>
+                <div class="context-info">
+                    <div class="context-row">
+                        <span class="context-label">📊 Scope:</span>
+                        <span class="context-value">${appState.scope.charAt(0).toUpperCase() + appState.scope.slice(1)}</span>
+                    </div>
+                    <div class="context-row">
+                        <span class="context-label">📅 PI(s):</span>
+                        <span class="context-value">${appState.selectedPIs.length > 0 ? appState.selectedPIs.join(', ') : 'All PIs'}</span>
+                    </div>
+                    ${appState.selectedARTs && appState.selectedARTs.length > 0 ? `
+                        <div class="context-row">
+                            <span class="context-label">🔄 ART(s):</span>
+                            <span class="context-value">${appState.selectedARTs.join(', ')}</span>
+                        </div>
+                    ` : ''}
+                    <div class="context-row">
+                        <span class="context-label">🕐 Generated:</span>
+                        <span class="context-value">${new Date().toLocaleString()}</span>
+                    </div>
+                </div>
             </div>
             <div style="page-break-after: always;"></div>
             ${insightsHTML}
@@ -1765,58 +1798,86 @@ function printAllInsights() {
     updateStatusBar(`Complete insights report prepared for printing (${insights.length} insights)`);
 }
 
-// Generate HTML for a single insight
+// Generate HTML for a single insight (legacy version)
 function generateInsightHTML(insight, number) {
+    return generateEnhancedInsightHTML(insight, number);
+}
+
+// Generate enhanced HTML for a single insight with View Full Details styling
+function generateEnhancedInsightHTML(insight, number) {
     const severityColors = {
         'critical': '#FF3B30',
         'warning': '#FF9500',
         'info': '#34C759'
     };
-    const color = severityColors[insight.severity] || '#666';
+    const color = severityColors[insight.severity] || '#667eea';
     const confidence = Math.round((insight.confidence || 0) * 100);
     const actions = insight.recommended_actions || [];
     const rootCauses = insight.root_causes || [];
     const expectedOutcomes = insight.expected_outcomes || {};
+    const evidence = insight.evidence || [];
+    const metricRefs = insight.metric_references || [];
 
     return `
         <div class="insight-section">
-            <div class="insight-header" style="border-color: ${color};">
-                <h2 style="color: ${color};">${number}. ${insight.title}</h2>
+            <div class="insight-header" style="border-left-color: ${color};">
+                <div class="insight-title-group">
+                    <div class="insight-number">#${number}</div>
+                    <h2 style="color: ${color};">${insight.title}</h2>
+                </div>
                 <span class="severity-badge" style="background: ${color};">${insight.severity.toUpperCase()}</span>
             </div>
             
             <div class="metadata">
-                <span>🎯 Confidence: <strong>${confidence}%</strong></span> | 
-                <span>📊 Scope: <strong>${insight.scope || 'Portfolio'}</strong></span>
+                <div class="meta-item">
+                    <span class="meta-icon">🎯</span>
+                    <span class="meta-label">Confidence:</span>
+                    <span class="meta-value">${confidence}%</span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-icon">📊</span>
+                    <span class="meta-label">Scope:</span>
+                    <span class="meta-value">${insight.scope || 'Portfolio'}</span>
+                </div>
+                ${insight.scope_id ? `
+                    <div class="meta-item">
+                        <span class="meta-icon">🔖</span>
+                        <span class="meta-label">ID:</span>
+                        <span class="meta-value">${insight.scope_id}</span>
+                    </div>
+                ` : ''}
             </div>
             
             ${insight.observation ? `
-                <div class="section">
-                    <h3>📋 Observation</h3>
-                    <p>${insight.observation}</p>
+                <div class="section observation-section">
+                    <h3><span class="section-icon">📋</span> Observation</h3>
+                    <div class="section-content">${insight.observation}</div>
                 </div>
             ` : ''}
             
             ${insight.interpretation ? `
-                <div class="section">
-                    <h3>💭 Interpretation</h3>
-                    <p>${insight.interpretation}</p>
+                <div class="section interpretation-section">
+                    <h3><span class="section-icon">💭</span> Interpretation</h3>
+                    <div class="section-content">${insight.interpretation}</div>
                 </div>
             ` : ''}
             
             ${rootCauses.length > 0 ? `
-                <div class="section">
-                    <h3>🔍 Root Causes</h3>
-                    <ul>
+                <div class="section root-causes-section">
+                    <h3><span class="section-icon">🔍</span> Root Causes</h3>
+                    <ul class="fancy-list">
                         ${rootCauses.map(rc => `
-                            <li>
-                                <strong>${rc.description}</strong>
-                                ${rc.confidence ? ` (${Math.round(rc.confidence * 100)}% confidence)` : ''}
+                            <li class="fancy-list-item">
+                                <div class="cause-header">
+                                    <strong>${rc.description}</strong>
+                                    ${rc.confidence ? `<span class="confidence-badge">${Math.round(rc.confidence * 100)}% confidence</span>` : ''}
+                                </div>
                                 ${rc.evidence && rc.evidence.length > 0 ? `
                                     <ul class="evidence-list">
-                                        ${rc.evidence.map(e => `<li>${e}</li>`).join('')}
+                                        ${rc.evidence.map(e => `<li class="evidence-item">${e}</li>`).join('')}
                                     </ul>
                                 ` : ''}
+                                ${rc.reference ? `<div class="reference">📎 Reference: ${rc.reference}</div>` : ''}
                             </li>
                         `).join('')}
                     </ul>
@@ -1825,15 +1886,41 @@ function generateInsightHTML(insight, number) {
             
             ${actions.length > 0 ? `
                 <div class="section actions-section">
-                    <h3>✅ Recommended Actions</h3>
-                    <ol>
+                    <h3><span class="section-icon">✅</span> Recommended Actions</h3>
+                    <ol class="actions-list">
                         ${actions.map(action => `
-                            <li>
-                                <strong>[${action.timeframe.replace('_', ' ').toUpperCase()}]</strong> ${action.description}
+                            <li class="action-item">
+                                <div class="action-header">
+                                    <span class="timeframe-badge timeframe-${action.timeframe}">[${action.timeframe.replace('_', ' ').toUpperCase()}]</span>
+                                    <span class="action-description">${action.description}</span>
+                                </div>
                                 <div class="action-details">
-                                    <div>👤 <strong>Owner:</strong> ${action.owner || 'TBD'}</div>
-                                    <div>⏱️ <strong>Effort:</strong> ${action.effort || 'TBD'}</div>
-                                    ${action.success_signal ? `<div>🎯 <strong>Success Signal:</strong> ${action.success_signal}</div>` : ''}
+                                    <div class="action-detail">
+                                        <span class="detail-icon">👤</span>
+                                        <span class="detail-label">Owner:</span>
+                                        <span class="detail-value">${action.owner || 'TBD'}</span>
+                                    </div>
+                                    ${action.effort ? `
+                                        <div class="action-detail">
+                                            <span class="detail-icon">⏱️</span>
+                                            <span class="detail-label">Effort:</span>
+                                            <span class="detail-value">${action.effort}</span>
+                                        </div>
+                                    ` : ''}
+                                    ${action.success_signal ? `
+                                        <div class="action-detail">
+                                            <span class="detail-icon">🎯</span>
+                                            <span class="detail-label">Success Signal:</span>
+                                            <span class="detail-value">${action.success_signal}</span>
+                                        </div>
+                                    ` : ''}
+                                    ${action.dependencies && action.dependencies.length ? `
+                                        <div class="action-detail">
+                                            <span class="detail-icon">🔗</span>
+                                            <span class="detail-label">Dependencies:</span>
+                                            <span class="detail-value">${action.dependencies.join(', ')}</span>
+                                        </div>
+                                    ` : ''}
                                 </div>
                             </li>
                         `).join('')}
@@ -1841,34 +1928,111 @@ function generateInsightHTML(insight, number) {
                 </div>
             ` : ''}
             
-            ${expectedOutcomes.timeline || expectedOutcomes.metrics_to_watch ? `
+            ${(expectedOutcomes.timeline || (expectedOutcomes.metrics_to_watch && expectedOutcomes.metrics_to_watch.length)) ? `
                 <div class="section outcomes-section">
-                    <h3>📊 Expected Outcomes</h3>
-                    ${expectedOutcomes.timeline ? `<p><strong>⏱️ Timeline:</strong> ${expectedOutcomes.timeline}</p>` : ''}
-                    ${expectedOutcomes.metrics_to_watch && expectedOutcomes.metrics_to_watch.length > 0 ? `
-                        <p><strong>📈 Metrics to Watch:</strong> ${expectedOutcomes.metrics_to_watch.join(', ')}</p>
-                    ` : ''}
-                    ${expectedOutcomes.leading_indicators && expectedOutcomes.leading_indicators.length > 0 ? `
-                        <p><strong>⚡ Leading Indicators:</strong> ${expectedOutcomes.leading_indicators.join(', ')}</p>
-                    ` : ''}
+                    <h3><span class="section-icon">📊</span> Expected Outcomes</h3>
+                    <div class="outcomes-grid">
+                        ${expectedOutcomes.timeline ? `
+                            <div class="outcome-item">
+                                <div class="outcome-icon">⏱️</div>
+                                <div class="outcome-content">
+                                    <div class="outcome-label">Timeline</div>
+                                    <div class="outcome-value">${expectedOutcomes.timeline}</div>
+                                </div>
+                            </div>
+                        ` : ''}
+                        ${expectedOutcomes.metrics_to_watch && expectedOutcomes.metrics_to_watch.length > 0 ? `
+                            <div class="outcome-item">
+                                <div class="outcome-icon">📈</div>
+                                <div class="outcome-content">
+                                    <div class="outcome-label">Metrics to Watch</div>
+                                    <div class="outcome-value">${expectedOutcomes.metrics_to_watch.join(', ')}</div>
+                                </div>
+                            </div>
+                        ` : ''}
+                        ${expectedOutcomes.leading_indicators && expectedOutcomes.leading_indicators.length > 0 ? `
+                            <div class="outcome-item">
+                                <div class="outcome-icon">⚡</div>
+                                <div class="outcome-content">
+                                    <div class="outcome-label">Leading Indicators</div>
+                                    <div class="outcome-value">${expectedOutcomes.leading_indicators.join(', ')}</div>
+                                </div>
+                            </div>
+                        ` : ''}
+                        ${expectedOutcomes.lagging_indicators && expectedOutcomes.lagging_indicators.length > 0 ? `
+                            <div class="outcome-item">
+                                <div class="outcome-icon">📉</div>
+                                <div class="outcome-content">
+                                    <div class="outcome-label">Lagging Indicators</div>
+                                    <div class="outcome-value">${expectedOutcomes.lagging_indicators.join(', ')}</div>
+                                </div>
+                            </div>
+                        ` : ''}
+                        ${expectedOutcomes.risks && expectedOutcomes.risks.length > 0 ? `
+                            <div class="outcome-item">
+                                <div class="outcome-icon">⚠️</div>
+                                <div class="outcome-content">
+                                    <div class="outcome-label">Risks</div>
+                                    <div class="outcome-value">${expectedOutcomes.risks.join(', ')}</div>
+                                </div>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            ` : ''}
+
+            ${metricRefs.length > 0 ? `
+                <div class="section references-section">
+                    <h3><span class="section-icon">🔗</span> Metric References</h3>
+                    <div class="references-list">
+                        ${metricRefs.map(ref => `<div class="reference-item">${ref}</div>`).join('')}
+                    </div>
+                </div>
+            ` : ''}
+
+            ${evidence.length > 0 ? `
+                <div class="section evidence-section">
+                    <h3><span class="section-icon">🧾</span> Evidence</h3>
+                    <ul class="evidence-main-list">
+                        ${evidence.map(ev => `<li class="evidence-main-item">${ev}</li>`).join('')}
+                    </ul>
                 </div>
             ` : ''}
         </div>
     `;
 }
 
-// Generate report header
-function generateReportHeader() {
+// Generate enhanced report header with modern styling
+function generateEnhancedReportHeader() {
     const now = new Date();
     return `
         <div class="report-header">
-            <h1>🎯 AI Expert Insights Report</h1>
-            <div class="report-meta">
-                <div>Generated: ${now.toLocaleString()}</div>
-                <div>Evaluation Coach v1.0</div>
+            <div class="header-content">
+                <div class="header-logo">
+                    <div class="logo-icon">🎯</div>
+                    <div class="logo-text">
+                        <h1>AI Expert Insights Report</h1>
+                        <div class="subtitle">Evaluation Coach - Agile & SAFe Analytics Platform</div>
+                    </div>
+                </div>
+                <div class="header-meta">
+                    <div class="meta-badge">
+                        <span class="badge-icon">📅</span>
+                        <span class="badge-text">${now.toLocaleDateString()}</span>
+                    </div>
+                    <div class="meta-badge">
+                        <span class="badge-icon">🕐</span>
+                        <span class="badge-text">${now.toLocaleTimeString()}</span>
+                    </div>
+                </div>
             </div>
         </div>
     `;
+}
+
+// Generate report header (legacy version)
+function generateReportHeader() {
+    return generateEnhancedReportHeader();
 }
 
 // Generate report footer
@@ -1881,166 +2045,759 @@ function generateReportFooter() {
     `;
 }
 
-// Get print-specific CSS styles
-function getPrintStyles() {
+// Get enhanced print-specific CSS styles with View Full Details look
+function getEnhancedPrintStyles() {
     return `
         @media print {
             @page {
                 size: A4;
                 margin: 15mm;
             }
+            .insight-section {
+                page-break-inside: avoid;
+            }
+        }
+        
+        * {
+            box-sizing: border-box;
         }
         
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
             line-height: 1.6;
             color: #333;
             max-width: 210mm;
             margin: 0 auto;
             padding: 20px;
-            background: white;
+            background: #f5f5f7;
         }
         
         .report-header {
-            border-bottom: 3px solid #667eea;
-            padding-bottom: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 12px;
+            padding: 30px;
             margin-bottom: 30px;
+            box-shadow: 0 4px 20px rgba(102, 126, 234, 0.3);
         }
         
-        .report-header h1 {
-            color: #667eea;
-            margin: 0 0 10px 0;
-            font-size: 28px;
-        }
-        
-        .report-meta {
+        .header-content {
             display: flex;
             justify-content: space-between;
-            font-size: 12px;
-            color: #666;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+        
+        .header-logo {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .logo-icon {
+            font-size: 48px;
+            line-height: 1;
+        }
+        
+        .logo-text h1 {
+            margin: 0;
+            font-size: 32px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+        
+        .subtitle {
+            font-size: 14px;
+            opacity: 0.9;
+            margin-top: 4px;
+        }
+        
+        .header-meta {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        
+        .meta-badge {
+            background: rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(10px);
+            padding: 8px 16px;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            font-weight: 500;
+        }
+        
+        .badge-icon {
+            font-size: 16px;
         }
         
         .summary-section {
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 8px;
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
             margin-bottom: 30px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
         }
         
         .summary-section h2 {
-            margin-top: 0;
+            margin: 0 0 24px 0;
             color: #667eea;
+            font-size: 24px;
+            font-weight: 700;
         }
         
-        .summary-section p {
-            margin: 8px 0;
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        
+        .summary-card {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            border: 2px solid #e0e0e0;
+        }
+        
+        .summary-card.critical {
+            background: linear-gradient(135deg, #FFE5E5 0%, #FFCCCC 100%);
+            border-color: #FF3B30;
+        }
+        
+        .summary-card.warning {
+            background: linear-gradient(135deg, #FFF4E5 0%, #FFE5CC 100%);
+            border-color: #FF9500;
+        }
+        
+        .summary-card.info {
+            background: linear-gradient(135deg, #E5F9F0 0%, #CCF2E0 100%);
+            border-color: #34C759;
+        }
+        
+        .summary-value {
+            font-size: 36px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            line-height: 1;
+        }
+        
+        .summary-label {
+            font-size: 13px;
+            color: #666;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .context-info {
+            background: #f8f9fa;
+            padding: 16px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .context-row {
+            display: flex;
+            align-items: center;
+            padding: 6px 0;
+            gap: 10px;
+        }
+        
+        .context-label {
+            font-weight: 600;
+            color: #666;
+            min-width: 100px;
+        }
+        
+        .context-value {
+            color: #333;
         }
         
         .insight-section {
-            margin-bottom: 40px;
-            page-break-inside: avoid;
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+            border: 2px solid #e0e0e0;
         }
         
         .insight-header {
-            border-left: 4px solid;
-            padding-left: 16px;
-            margin-bottom: 16px;
+            border-left: 6px solid;
+            padding-left: 20px;
+            margin-bottom: 24px;
             display: flex;
             justify-content: space-between;
             align-items: start;
+            gap: 16px;
+        }
+        
+        .insight-title-group {
+            display: flex;
+            align-items: baseline;
+            gap: 12px;
+            flex: 1;
+        }
+        
+        .insight-number {
+            background: #667eea;
+            color: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 18px;
+            flex-shrink: 0;
         }
         
         .insight-header h2 {
             margin: 0;
-            font-size: 20px;
+            font-size: 22px;
+            font-weight: 700;
+            line-height: 1.3;
         }
         
         .severity-badge {
             color: white;
-            padding: 4px 12px;
-            border-radius: 4px;
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        
+        .metadata {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+        
+        .meta-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 14px;
+        }
+        
+        .meta-icon {
+            font-size: 16px;
+        }
+        
+        .meta-label {
+            color: #888;
+        }
+        
+        .meta-value {
+            color: #333;
+            font-weight: 600;
+        }
+        
+        .section {
+            margin-bottom: 28px;
+        }
+        
+        .section h3 {
+            color: #667eea;
+            font-size: 18px;
+            font-weight: 700;
+            margin: 0 0 16px 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .section-icon {
+            font-size: 20px;
+        }
+        
+        .section-content {
+            color: #333;
+            line-height: 1.7;
+            white-space: pre-wrap;
+            background: #f8f9fa;
+            padding: 16px;
+            border-radius: 8px;
+            border-left: 3px solid #667eea;
+        }
+        
+        .observation-section .section-content {
+            background: #E3F2FD;
+            border-left-color: #2196F3;
+        }
+        
+        .interpretation-section .section-content {
+            background: #F3E5F5;
+            border-left-color: #9C27B0;
+        }
+        
+        .fancy-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        
+        .fancy-list-item {
+            background: #f8f9fa;
+            padding: 16px;
+            margin-bottom: 12px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .cause-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 8px;
+            gap: 12px;
+        }
+        
+        .confidence-badge {
+            background: #667eea;
+            color: white;
+            padding: 3px 10px;
+            border-radius: 12px;
             font-size: 11px;
             font-weight: 600;
             white-space: nowrap;
         }
         
-        .metadata {
-            color: #666;
-            font-size: 13px;
-            margin-bottom: 20px;
-            padding-bottom: 10px;
-            border-bottom: 1px solid #eee;
-        }
-        
-        .section {
-            margin-bottom: 20px;
-        }
-        
-        .section h3 {
-            color: #667eea;
-            font-size: 16px;
-            margin: 0 0 10px 0;
-        }
-        
-        .section p {
-            margin: 8px 0;
-        }
-        
-        .section ul, .section ol {
-            padding-left: 24px;
-            margin: 8px 0;
-        }
-        
-        .section li {
-            margin-bottom: 12px;
-        }
-        
         .evidence-list {
-            margin-top: 8px;
-            font-size: 13px;
-            color: #666;
+            list-style: none;
+            padding: 0;
+            margin: 12px 0 0 0;
         }
         
-        .evidence-list li {
-            margin-bottom: 4px;
+        .evidence-item {
+            color: #666;
+            font-size: 14px;
+            padding: 8px 12px;
+            background: white;
+            margin: 6px 0;
+            border-radius: 4px;
+            border-left: 2px solid #ccc;
+        }
+        
+        .evidence-item:before {
+            content: "▸";
+            color: #667eea;
+            margin-right: 8px;
+            font-weight: bold;
+        }
+        
+        .reference {
+            color: #888;
+            font-size: 12px;
+            margin-top: 8px;
+            font-style: italic;
         }
         
         .actions-section {
-            background: #e8f5e9;
-            padding: 15px;
-            border-radius: 6px;
+            background: linear-gradient(135deg, #E8F5E9 0%, #C8E6C9 100%);
+            padding: 20px;
+            border-radius: 10px;
+            border: 2px solid #4CAF50;
+        }
+        
+        .actions-section h3 {
+            color: #2E7D32;
+        }
+        
+        .actions-list {
+            list-style: none;
+            counter-reset: action-counter;
+            padding: 0;
+            margin: 0;
+        }
+        
+        .action-item {
+            counter-increment: action-counter;
+            background: white;
+            padding: 16px;
+            margin-bottom: 14px;
+            border-radius: 8px;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+        }
+        
+        .action-item:before {
+            content: counter(action-counter);
+            background: #4CAF50;
+            color: white;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            margin-right: 12px;
+            font-size: 14px;
+            float: left;
+        }
+        
+        .action-header {
+            display: flex;
+            align-items: start;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+        
+        .timeframe-badge {
+            background: #FFC107;
+            color: #000;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 700;
+            white-space: nowrap;
+            text-transform: uppercase;
+            flex-shrink: 0;
+        }
+        
+        .timeframe-immediate {
+            background: #F44336;
+            color: white;
+        }
+        
+        .timeframe-short_term {
+            background: #FF9800;
+            color: white;
+        }
+        
+        .timeframe-long_term {
+            background: #2196F3;
+            color: white;
+        }
+        
+        .action-description {
+            flex: 1;
+            line-height: 1.5;
         }
         
         .action-details {
-            margin-top: 8px;
-            padding-left: 16px;
-            font-size: 13px;
-            color: #666;
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 6px;
+            margin-left: 40px;
         }
         
-        .action-details div {
-            margin: 4px 0;
+        .action-detail {
+            display: flex;
+            align-items: start;
+            gap: 6px;
+            margin: 6px 0;
+            font-size: 13px;
+        }
+        
+        .detail-icon {
+            font-size: 14px;
+            margin-top: 2px;
+        }
+        
+        .detail-label {
+            color: #666;
+            font-weight: 600;
+            min-width: 80px;
+        }
+        
+        .detail-value {
+            color: #333;
+            flex: 1;
         }
         
         .outcomes-section {
-            background: #fff9e6;
-            padding: 15px;
+            background: linear-gradient(135deg, #FFF9C4 0%, #FFF59D 100%);
+            padding: 20px;
+            border-radius: 10px;
+            border: 2px solid #FBC02D;
+        }
+        
+        .outcomes-section h3 {
+            color: #F57F17;
+        }
+        
+        .outcomes-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 14px;
+        }
+        
+        .outcome-item {
+            background: white;
+            padding: 16px;
+            border-radius: 8px;
+            display: flex;
+            align-items: start;
+            gap: 12px;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+        }
+        
+        .outcome-icon {
+            font-size: 24px;
+            flex-shrink: 0;
+        }
+        
+        .outcome-content {
+            flex: 1;
+        }
+        
+        .outcome-label {
+            font-size: 12px;
+            color: #666;
+            font-weight: 600;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .outcome-value {
+            color: #333;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+        
+        .references-section, .evidence-section {
+            background: #F5F5F5;
+            padding: 16px;
+            border-radius: 8px;
+        }
+        
+        .references-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        .reference-item {
+            background: white;
+            padding: 10px 14px;
             border-radius: 6px;
+            font-size: 13px;
+            color: #666;
+            border-left: 3px solid #667eea;
+        }
+        
+        .evidence-main-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        
+        .evidence-main-item {
+            background: white;
+            padding: 12px 16px;
+            margin: 8px 0;
+            border-radius: 6px;
+            border-left: 3px solid #667eea;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        
+        .evidence-main-item:before {
+            content: "✓";
+            color: #4CAF50;
+            margin-right: 10px;
+            font-weight: bold;
         }
         
         .report-footer {
-            margin-top: 40px;
-            padding-top: 20px;
-            border-top: 2px solid #eee;
+            margin-top: 50px;
+            padding: 30px 20px;
+            border-top: 3px solid #667eea;
             text-align: center;
-            font-size: 11px;
-            color: #999;
+            background: white;
+            border-radius: 12px;
         }
         
         .report-footer p {
-            margin: 4px 0;
+            margin: 8px 0;
+            color: #666;
+            font-size: 13px;
+        }
+        
+        .report-footer p:first-child {
+            font-weight: 600;
+            color: #333;
+            font-size: 14px;
         }
     `;
+}
+
+// Get print-specific CSS styles (legacy version)
+function getPrintStyles() {
+    return getEnhancedPrintStyles();
+}
+@media print {
+    @page {
+        size: A4;
+        margin: 15mm;
+    }
+}
+        
+        body {
+    font - family: -apple - system, BlinkMacSystemFont, 'Segoe UI', system - ui, sans - serif;
+    line - height: 1.6;
+    color: #333;
+    max - width: 210mm;
+    margin: 0 auto;
+    padding: 20px;
+    background: white;
+}
+        
+        .report - header {
+    border - bottom: 3px solid #667eea;
+    padding - bottom: 20px;
+    margin - bottom: 30px;
+}
+        
+        .report - header h1 {
+    color: #667eea;
+    margin: 0 0 10px 0;
+    font - size: 28px;
+}
+        
+        .report - meta {
+    display: flex;
+    justify - content: space - between;
+    font - size: 12px;
+    color: #666;
+}
+        
+        .summary - section {
+    background: #f8f9fa;
+    padding: 20px;
+    border - radius: 8px;
+    margin - bottom: 30px;
+}
+        
+        .summary - section h2 {
+    margin - top: 0;
+    color: #667eea;
+}
+        
+        .summary - section p {
+    margin: 8px 0;
+}
+        
+        .insight - section {
+    margin - bottom: 40px;
+    page -break-inside: avoid;
+}
+        
+        .insight - header {
+    border - left: 4px solid;
+    padding - left: 16px;
+    margin - bottom: 16px;
+    display: flex;
+    justify - content: space - between;
+    align - items: start;
+}
+        
+        .insight - header h2 {
+    margin: 0;
+    font - size: 20px;
+}
+        
+        .severity - badge {
+    color: white;
+    padding: 4px 12px;
+    border - radius: 4px;
+    font - size: 11px;
+    font - weight: 600;
+    white - space: nowrap;
+}
+        
+        .metadata {
+    color: #666;
+    font - size: 13px;
+    margin - bottom: 20px;
+    padding - bottom: 10px;
+    border - bottom: 1px solid #eee;
+}
+        
+        .section {
+    margin - bottom: 20px;
+}
+        
+        .section h3 {
+    color: #667eea;
+    font - size: 16px;
+    margin: 0 0 10px 0;
+}
+        
+        .section p {
+    margin: 8px 0;
+}
+        
+        .section ul, .section ol {
+    padding - left: 24px;
+    margin: 8px 0;
+}
+        
+        .section li {
+    margin - bottom: 12px;
+}
+        
+        .evidence - list {
+    margin - top: 8px;
+    font - size: 13px;
+    color: #666;
+}
+        
+        .evidence - list li {
+    margin - bottom: 4px;
+}
+        
+        .actions - section {
+    background: #e8f5e9;
+    padding: 15px;
+    border - radius: 6px;
+}
+        
+        .action - details {
+    margin - top: 8px;
+    padding - left: 16px;
+    font - size: 13px;
+    color: #666;
+}
+        
+        .action - details div {
+    margin: 4px 0;
+}
+        
+        .outcomes - section {
+    background: #fff9e6;
+    padding: 15px;
+    border - radius: 6px;
+}
+        
+        .report - footer {
+    margin - top: 40px;
+    padding - top: 20px;
+    border - top: 2px solid #eee;
+    text - align: center;
+    font - size: 11px;
+    color: #999;
+}
+        
+        .report - footer p {
+    margin: 4px 0;
+}
+`;
 }
 
 // Add message to chat
@@ -2048,7 +2805,7 @@ function addMessage(message) {
     const messagesContainer = document.getElementById('chatMessages');
 
     const messageDiv = document.createElement('div');
-    messageDiv.className = `message ${message.type}`;
+    messageDiv.className = `message ${ message.type } `;
 
     const contentDiv = document.createElement('div');
     contentDiv.className = 'message-content';

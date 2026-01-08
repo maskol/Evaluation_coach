@@ -373,7 +373,7 @@ class AdminConfigResponse(BaseModel):
     leadtime_server_enabled: bool
     show_inactive_arts: bool = True  # Show ARTs with 0 features delivered
     excluded_feature_statuses: List[str] = []  # Statuses to exclude from analysis
-    llm_model: str = "claude-3-7-sonnet-20250219"  # AI model for insights
+    llm_model: str = "llama3.1:latest"  # AI model for insights (default: Ollama)
     llm_temperature: float = 0.3  # Temperature for AI responses
 
 

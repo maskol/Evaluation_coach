@@ -909,12 +909,17 @@ async def generate_insights_endpoint(
 async def export_executive_summary(
     pis: Optional[str] = None,
     arts: Optional[str] = None,
+    db: Session = Depends(get_db),
 ):
     """Export executive summary data (stuck items, bottlenecks, WIP) to Excel file"""
     try:
         import pandas as pd
         from io import BytesIO
         from fastapi.responses import StreamingResponse
+
+        # Get excluded feature statuses from database
+        excluded_statuses = get_excluded_feature_statuses(db)
+        print(f"🔍 Excel Export: Excluding feature statuses: {excluded_statuses}")
 
         # Parse filter parameters
         selected_pis = (
@@ -959,6 +964,17 @@ async def export_executive_summary(
                 if selected_pis:
                     flow_data = [f for f in flow_data if f.get("pi") in selected_pis]
 
+                # Filter by excluded statuses
+                if excluded_statuses:
+                    original_count = len(flow_data)
+                    flow_data = [
+                        f for f in flow_data if f.get("status") not in excluded_statuses
+                    ]
+                    filtered_count = original_count - len(flow_data)
+                    print(
+                        f"🔍 Excel Export: Filtered {filtered_count} features with excluded statuses (showing {len(flow_data)})"
+                    )
+
                 # Calculate stuck items from flow_leadtime data
                 # A feature is "stuck" if it's currently in a stage for longer than threshold
                 stage_columns = [
@@ -974,9 +990,18 @@ async def export_executive_summary(
                 ]
 
                 stuck_items = []
+                seen_issue_keys = set()  # Track seen issue keys to prevent duplicates
+
                 for feature in flow_data:
-                    # Only check non-completed features (status != 'DONE')
-                    if feature.get("status") == "DONE":
+                    issue_key = feature.get("issue_key", "Unknown")
+
+                    # Skip if we've already processed this issue
+                    if issue_key in seen_issue_keys:
+                        continue
+
+                    # Only check non-completed features (case-insensitive check)
+                    status = feature.get("status", "").upper()
+                    if status in ["DONE", "CLOSED", "RESOLVED"]:
                         continue
 
                     # Find the current stage (last stage with time > 0)
@@ -991,9 +1016,19 @@ async def export_executive_summary(
 
                     # If stuck longer than threshold, add to stuck items
                     if current_stage and current_stage_days > threshold_days:
+                        seen_issue_keys.add(issue_key)  # Mark as processed
+
+                        # Determine insight category based on days stuck
+                        insight_category = "Stuck Item"
+                        if current_stage_days > 100:
+                            insight_category = "Critical - Severely Stuck"
+                        elif current_stage_days > 60:
+                            insight_category = "Warning - Long Duration"
+
                         stuck_items.append(
                             {
-                                "issue_key": feature.get("issue_key", "Unknown"),
+                                "issue_key": issue_key,
+                                "insight_category": insight_category,
                                 "art": feature.get("art", "Unknown"),
                                 "team": feature.get("development_team", "Unknown"),
                                 "current_stage": current_stage,
@@ -1023,6 +1058,7 @@ async def export_executive_summary(
                         # Reorder columns for better readability
                         column_order = [
                             "issue_key",
+                            "insight_category",
                             "art",
                             "team",
                             "current_stage",
@@ -1043,6 +1079,7 @@ async def export_executive_summary(
                         empty_df = pd.DataFrame(
                             columns=[
                                 "issue_key",
+                                "insight_category",
                                 "art",
                                 "team",
                                 "current_stage",
@@ -3665,7 +3702,7 @@ async def get_admin_config(db: Session = Depends(get_db)):
         print(f"⚠️ Could not load excluded_feature_statuses config: {e}")
 
     # Get LLM configuration from database
-    llm_model = "claude-3-7-sonnet-20250219"  # Default
+    llm_model = "llama3.1:latest"  # Default (Ollama - free and local)
     llm_temperature = 0.3  # Default
     try:
         model_entry = (
