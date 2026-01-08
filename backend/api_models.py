@@ -371,3 +371,4 @@ class AdminConfigResponse(BaseModel):
     thresholds: ThresholdConfig
     leadtime_server_url: str
     leadtime_server_enabled: bool
+    show_inactive_arts: bool = True  # Show ARTs with 0 features delivered

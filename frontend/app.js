@@ -9,6 +9,7 @@ const appState = {
     selectedTeam: '',
     selectedPIs: [],  // Array of selected PIs
     selectedARTs: [],  // Array of selected ARTs for filtering
+    allARTs: [],  // Full list of all ARTs (unfiltered) for admin panel
     metricFocus: 'flow',
     activeTab: 'dashboard',
     messages: [],
@@ -324,6 +325,9 @@ async function loadARTsAndTeams() {
                     artSelector.appendChild(option);
                 });
                 console.log(`✅ Loaded ${artsData.count} ARTs`);
+
+                // Store full list of ARTs for admin panel (unfiltered)
+                appState.allARTs = artsData.arts;
             }
         }
 
@@ -368,8 +372,18 @@ async function loadDashboardData() {
             // ART View - use the selected ART from dropdown
             url += `&arts=${appState.selectedART}`;
         } else if (appState.selectedARTs && appState.selectedARTs.length > 0) {
-            // Portfolio View - use default ARTs filter from Admin
-            url += `&arts=${appState.selectedARTs.join(',')}`;
+            // Portfolio View - only apply ARTs filter if not all ARTs are selected
+            // Note: Some ARTs exist in data but not in /api/analysis/filters (42 vs 28 ARTs)
+            // If all available ARTs from the filter list are selected, don't send the filter
+            // to ensure we capture all data including ARTs not in the filter list
+            if (appState.allARTs && appState.selectedARTs.length >= appState.allARTs.length) {
+                // All ARTs selected - don't filter to include ARTs not in the filter list
+                console.log('📊 All ARTs selected - no ART filter applied to capture all data');
+            } else {
+                // Subset of ARTs selected - apply filter
+                url += `&arts=${appState.selectedARTs.join(',')}`;
+                console.log(`📊 Filtering to ${appState.selectedARTs.length} ARTs`);
+            }
         }
 
         console.log('📊 Loading dashboard data from:', url);
@@ -414,11 +428,16 @@ function updateDashboardUI(data) {
             // ART View - show the selected ART
             filters.push(`ART: ${appState.selectedART}`);
         } else if (appState.selectedARTs && appState.selectedARTs.length > 0) {
-            // Portfolio View - show default ARTs filter
-            const artText = appState.selectedARTs.length <= 5
-                ? appState.selectedARTs.join(', ')
-                : `${appState.selectedARTs.slice(0, 5).join(', ')} +${appState.selectedARTs.length - 5} more`;
-            filters.push(`ARTs: ${artText}`);
+            // Portfolio View - show ARTs filter
+            // If all ARTs are selected, show "All ARTs" instead of listing them
+            if (appState.allARTs && appState.selectedARTs.length >= appState.allARTs.length) {
+                filters.push(`ARTs: All (${appState.allARTs.length} from filter + others in data)`);
+            } else {
+                const artText = appState.selectedARTs.length <= 5
+                    ? appState.selectedARTs.join(', ')
+                    : `${appState.selectedARTs.slice(0, 5).join(', ')} +${appState.selectedARTs.length - 5} more`;
+                filters.push(`ARTs: ${artText}`);
+            }
         }
 
         if (filters.length > 0) {
@@ -533,9 +552,9 @@ function updateDashboardUI(data) {
     }
 
     // Populate admin panel default filters
-    if (data.available_pis && data.art_comparison) {
-        const availableARTs = data.art_comparison.map(art => art.art_name);
-        populateAdminDefaultFilters(data.available_pis, availableARTs);
+    // Use the full list of ARTs (unfiltered) instead of the filtered art_comparison
+    if (data.available_pis && appState.allARTs && appState.allARTs.length > 0) {
+        populateAdminDefaultFilters(data.available_pis, appState.allARTs);
     }
 
     updateStatusBar('Dashboard updated with real data');
@@ -1040,10 +1059,15 @@ function renderInsightsTab() {
     if (appState.scope === 'art' && appState.selectedART) {
         filterParts.push(`ART: ${appState.selectedART}`);
     } else if (appState.selectedARTs && appState.selectedARTs.length > 0) {
-        const artText = appState.selectedARTs.length <= 5
-            ? appState.selectedARTs.join(', ')
-            : `${appState.selectedARTs.slice(0, 5).join(', ')} +${appState.selectedARTs.length - 5} more`;
-        filterParts.push(`ARTs: ${artText}`);
+        // If all ARTs are selected, show "All ARTs"
+        if (appState.allARTs && appState.selectedARTs.length >= appState.allARTs.length) {
+            filterParts.push('All ARTs');
+        } else {
+            const artText = appState.selectedARTs.length <= 5
+                ? appState.selectedARTs.join(', ')
+                : `${appState.selectedARTs.slice(0, 5).join(', ')} +${appState.selectedARTs.length - 5} more`;
+            filterParts.push(`ARTs: ${artText}`);
+        }
     } else {
         filterParts.push('All ARTs');
     }
@@ -1216,10 +1240,15 @@ function displayGeneratedInsights(insights) {
     if (appState.scope === 'art' && appState.selectedART) {
         filterParts.push(`ART: ${appState.selectedART}`);
     } else if (appState.selectedARTs && appState.selectedARTs.length > 0) {
-        const artText = appState.selectedARTs.length <= 5
-            ? appState.selectedARTs.join(', ')
-            : `${appState.selectedARTs.slice(0, 5).join(', ')} +${appState.selectedARTs.length - 5} more`;
-        filterParts.push(`ARTs: ${artText}`);
+        // If all ARTs are selected, show "All ARTs"
+        if (appState.allARTs && appState.selectedARTs.length >= appState.allARTs.length) {
+            filterParts.push('All ARTs');
+        } else {
+            const artText = appState.selectedARTs.length <= 5
+                ? appState.selectedARTs.join(', ')
+                : `${appState.selectedARTs.slice(0, 5).join(', ')} +${appState.selectedARTs.length - 5} more`;
+            filterParts.push(`ARTs: ${artText}`);
+        }
     } else {
         filterParts.push('All ARTs');
     }

@@ -351,6 +351,25 @@
             </form>
         </div>
 
+        <!-- Display Options -->
+        <div class="config-section">
+            <h2>📊 Display Options</h2>
+
+            <div class="form-group">
+                <label style="display: flex; align-items: center; cursor: pointer;">
+                    <input type="checkbox" id="showInactiveArts"
+                        style="margin-right: 10px; cursor: pointer; width: 20px; height: 20px;">
+                    <span>Show Inactive ARTs (ARTs with 0 features delivered)</span>
+                </label>
+                <small style="margin-left: 30px;">When unchecked, ARTs with no delivered features will be hidden from
+                    the dashboard and ART comparison table.</small>
+            </div>
+
+            <div class="button-group">
+                <button type="button" class="btn-save" onclick="saveDisplayOptions()">💾 Save Display Options</button>
+            </div>
+        </div>
+
         <!-- Connection Info -->
         <div class="config-section">
             <h2>🔌 Lead-Time Data Server</h2>
@@ -399,6 +418,11 @@
                 document.getElementById('serverStatus').textContent = config.leadtime_server_enabled ? '✅ Enabled' : '❌ Disabled';
                 document.getElementById('serverStatus').style.color = config.leadtime_server_enabled ? 'green' : 'red';
 
+                // Update display options
+                const showInactiveArts = config.show_inactive_arts !== undefined ? config.show_inactive_arts : true;
+                document.getElementById('showInactiveArts').checked = showInactiveArts;
+                console.log(`✅ Show inactive ARTs: ${showInactiveArts}`);
+
             } catch (error) {
                 console.error('❌ Error loading configuration:', error);
                 showAlert('Error loading configuration: ' + error.message, 'error');
@@ -437,6 +461,40 @@
 
                 const result = await response.json();
                 showAlert('✅ ' + result.message, 'success');
+
+                async function saveDisplayOptions() {
+                    const showInactiveArts = document.getElementById('showInactiveArts').checked;
+
+                    try {
+                        const response = await fetch(`${API_BASE_URL}/api/admin/config/display`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                                show_inactive_arts: showInactiveArts
+                            }),
+                        });
+
+                        if (!response.ok) {
+                            const error = await response.json();
+                            throw new Error(error.detail || 'Failed to update display options');
+                        }
+
+                        const result = await response.json();
+                        showAlert('✅ ' + result.message, 'success');
+
+                        // Suggest refreshing the dashboard
+                        setTimeout(() => {
+                            if (confirm('Display options saved! Would you like to refresh the dashboard now?')) {
+                                window.location.href = 'index.html';
+                            }
+                        }, 1000);
+
+                    } catch (error) {
+                        showAlert('❌ Error: ' + error.message, 'error');
+                    }
+                }
 
             } catch (error) {
                 showAlert('❌ Error: ' + error.message, 'error');

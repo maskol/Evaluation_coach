@@ -5,7 +5,7 @@ Provides REST API endpoints for frontend and LLM integration
 
 import os
 import shutil
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -1268,6 +1268,32 @@ async def get_dashboard(
                 import traceback
 
                 traceback.print_exc()
+
+        # Filter inactive ARTs based on configuration
+        show_inactive_arts = True  # Default
+        try:
+            config_entry = (
+                db.query(RuntimeConfiguration)
+                .filter(RuntimeConfiguration.config_key == "show_inactive_arts")
+                .first()
+            )
+            if config_entry and config_entry.config_value:
+                show_inactive_arts = config_entry.config_value.lower() == "true"
+                print(f"📊 show_inactive_arts config: {show_inactive_arts}")
+        except Exception as e:
+            print(f"⚠️ Could not load show_inactive_arts config: {e}")
+
+        # Apply filtering if configured to hide inactive ARTs
+        if not show_inactive_arts and art_comparison:
+            original_count = len(art_comparison)
+            art_comparison = [
+                art for art in art_comparison if art.get("features_delivered", 0) > 0
+            ]
+            filtered_count = len(art_comparison)
+            if filtered_count < original_count:
+                print(
+                    f"🔍 Filtered out {original_count - filtered_count} inactive ARTs (showing {filtered_count})"
+                )
 
         # Fallback to sample data if lead-time service not available
         if not art_comparison:
@@ -3202,7 +3228,7 @@ async def get_metrics_catalog(
 
 
 @app.get("/api/admin/config", response_model=AdminConfigResponse)
-async def get_admin_config():
+async def get_admin_config(db: Session = Depends(get_db)):
     """
     Get current admin configuration including thresholds and settings.
 
@@ -3230,10 +3256,24 @@ async def get_admin_config():
         threshold_ready_for_deployment=settings.threshold_ready_for_deployment,
     )
 
+    # Get show_inactive_arts from database
+    show_inactive_arts = True  # Default
+    try:
+        config_entry = (
+            db.query(RuntimeConfiguration)
+            .filter(RuntimeConfiguration.config_key == "show_inactive_arts")
+            .first()
+        )
+        if config_entry and config_entry.config_value:
+            show_inactive_arts = config_entry.config_value.lower() == "true"
+    except Exception as e:
+        print(f"⚠️ Could not load show_inactive_arts config: {e}")
+
     return AdminConfigResponse(
         thresholds=thresholds,
         leadtime_server_url=settings.leadtime_server_url,
         leadtime_server_enabled=settings.leadtime_server_enabled,
+        show_inactive_arts=show_inactive_arts,
     )
 
 
@@ -3289,6 +3329,58 @@ async def update_thresholds(thresholds: ThresholdConfig, db: Session = Depends(g
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to save configuration: {str(e)}",
+        )
+
+
+@app.post("/api/admin/config/display")
+async def update_display_options(
+    options: Dict[str, Any], db: Session = Depends(get_db)
+):
+    """
+    Update display options configuration.
+
+    Args:
+        options: Display options (e.g., show_inactive_arts)
+        db: Database session
+
+    Returns:
+        Success message
+    """
+    try:
+        show_inactive_arts = options.get("show_inactive_arts", True)
+
+        # Save to database
+        config_entry = (
+            db.query(RuntimeConfiguration)
+            .filter(RuntimeConfiguration.config_key == "show_inactive_arts")
+            .first()
+        )
+
+        if config_entry:
+            config_entry.config_value = "true" if show_inactive_arts else "false"
+            config_entry.updated_at = datetime.now(timezone.utc)
+        else:
+            config_entry = RuntimeConfiguration(
+                config_key="show_inactive_arts",
+                config_value="true" if show_inactive_arts else "false",
+                config_type="bool",
+            )
+            db.add(config_entry)
+
+        db.commit()
+
+        print(f"✅ Display options saved: show_inactive_arts={show_inactive_arts}")
+
+        return {
+            "status": "success",
+            "message": "Display options saved successfully. Dashboard will update on next load.",
+            "show_inactive_arts": show_inactive_arts,
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save display options: {str(e)}",
         )
 
 

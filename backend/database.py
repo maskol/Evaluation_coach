@@ -210,7 +210,9 @@ class RuntimeConfiguration(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     config_key = Column(String, unique=True, index=True, nullable=False)
-    config_value = Column(Float, nullable=True)
+    config_value = Column(
+        Text, nullable=True
+    )  # Stored as string, cast based on config_type
     config_type = Column(String, default="float")  # float, string, int, bool, json
 
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
