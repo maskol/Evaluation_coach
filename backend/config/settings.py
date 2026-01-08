@@ -103,6 +103,10 @@ class Settings(BaseSettings):
     threshold_in_uat: Optional[float] = None
     threshold_ready_for_deployment: Optional[float] = None
 
+    # Feature Status Filtering
+    # List of feature statuses to exclude from analysis (e.g., ['Cancelled', 'On Hold'])
+    excluded_feature_statuses: str = ""  # Comma-separated list
+
     @property
     def custom_field_mapping(self) -> Dict[str, str]:
         """Get custom field mapping dictionary."""

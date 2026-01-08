@@ -2145,7 +2145,12 @@ def _generate_executive_summary(
             for item in top_stuck[:5]:
                 issue_key = item.get("issue_key", "Unknown")
                 days = item.get("days_in_stage", 0)
-                stage = item.get("current_stage", "unknown").replace("_", " ").title()
+                # API returns "stage" field, not "current_stage"
+                stage = (
+                    item.get("stage", item.get("current_stage", "unknown"))
+                    .replace("_", " ")
+                    .title()
+                )
                 art = item.get("art", "Unknown")
                 days_color = (
                     "#dc3545" if days > 100 else ("#ffc107" if days > 30 else "#28a745")

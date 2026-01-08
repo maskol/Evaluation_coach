@@ -372,3 +372,15 @@ class AdminConfigResponse(BaseModel):
     leadtime_server_url: str
     leadtime_server_enabled: bool
     show_inactive_arts: bool = True  # Show ARTs with 0 features delivered
+    excluded_feature_statuses: List[str] = []  # Statuses to exclude from analysis
+    llm_model: str = "claude-3-7-sonnet-20250219"  # AI model for insights
+    llm_temperature: float = 0.3  # Temperature for AI responses
+
+
+class LLMConfigUpdate(BaseModel):
+    """Model for updating LLM configuration."""
+
+    model: str = Field(..., description="AI model to use for insights")
+    temperature: float = Field(
+        0.3, ge=0.0, le=1.0, description="Temperature for AI responses"
+    )

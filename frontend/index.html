@@ -438,354 +438,53 @@
                 <div class="main-tab-content" id="adminContent" style="display: none;">
                     <div class="messages">
                         <h2 style="margin-bottom: 20px; color: #333;">⚙️ Administration & Configuration</h2>
+                        <p style="color: #666; margin-bottom: 32px; font-size: 15px;">Access all configuration and
+                            administration tools from the links below.</p>
 
-                        <!-- Prompt Management Link -->
                         <div
-                            style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 24px; border-radius: 12px; margin-bottom: 24px; color: white; box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);">
-                            <div style="display: flex; align-items: center; justify-content: space-between;">
-                                <div>
-                                    <h3 style="margin: 0 0 8px 0; color: white;">🎯 LLM Prompt Management</h3>
-                                    <p style="margin: 0; opacity: 0.9; font-size: 14px;">View, edit, and version control
-                                        all AI Coach prompts with full history tracking</p>
-                                </div>
+                            style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px;">
+                            <!-- System Configuration Card -->
+                            <div
+                                style="background: linear-gradient(135deg, #34C759 0%, #30B050 100%); padding: 24px; border-radius: 12px; color: white; box-shadow: 0 4px 12px rgba(52, 199, 89, 0.3);">
+                                <h3 style="margin: 0 0 8px 0; color: white;">⚙️ System Configuration</h3>
+                                <p style="margin: 0 0 16px 0; opacity: 0.9; font-size: 14px;">Thresholds, strategic
+                                    targets, display options, filters, and AI model settings</p>
+                                <a href="admin.html"
+                                    style="padding: 12px 24px; background: white; color: #34C759; border: none; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); transition: transform 0.2s; width: fit-content;"
+                                    onmouseover="this.style.transform='translateY(-2px)'"
+                                    onmouseout="this.style.transform='translateY(0)'">
+                                    ⚙️ Open Configuration
+                                </a>
+                            </div>
+
+                            <!-- Prompt Management Card -->
+                            <div
+                                style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 24px; border-radius: 12px; color: white; box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);">
+                                <h3 style="margin: 0 0 8px 0; color: white;">🎯 LLM Prompt Management</h3>
+                                <p style="margin: 0 0 16px 0; opacity: 0.9; font-size: 14px;">View, edit, and version
+                                    control all AI Coach prompts with history tracking</p>
                                 <a href="prompt_admin.html"
-                                    style="padding: 12px 24px; background: white; color: #667eea; border: none; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); transition: transform 0.2s;"
+                                    style="padding: 12px 24px; background: white; color: #667eea; border: none; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); transition: transform 0.2s; width: fit-content;"
                                     onmouseover="this.style.transform='translateY(-2px)'"
                                     onmouseout="this.style.transform='translateY(0)'">
                                     🎯 Manage Prompts
                                 </a>
                             </div>
-                        </div>
 
-                        <!-- RAG Knowledge Base Link -->
-                        <div
-                            style="background: linear-gradient(135deg, #FF6B6B 0%, #FF8E53 100%); padding: 24px; border-radius: 12px; margin-bottom: 24px; color: white; box-shadow: 0 4px 12px rgba(255, 107, 107, 0.3);">
-                            <div style="display: flex; align-items: center; justify-content: space-between;">
-                                <div>
-                                    <h3 style="margin: 0 0 8px 0; color: white;">📚 RAG Knowledge Base Management</h3>
-                                    <p style="margin: 0; opacity: 0.9; font-size: 14px;">Configure and manage the AI
-                                        Coach's knowledge base, view indexed documents, and re-index content</p>
-                                </div>
+                            <!-- RAG Knowledge Base Card -->
+                            <div
+                                style="background: linear-gradient(135deg, #FF6B6B 0%, #FF8E53 100%); padding: 24px; border-radius: 12px; color: white; box-shadow: 0 4px 12px rgba(255, 107, 107, 0.3);">
+                                <h3 style="margin: 0 0 8px 0; color: white;">📚 RAG Knowledge Base</h3>
+                                <p style="margin: 0 0 16px 0; opacity: 0.9; font-size: 14px;">Manage the AI Coach's
+                                    knowledge base, view documents, and re-index content</p>
                                 <a href="rag_admin.html"
-                                    style="padding: 12px 24px; background: white; color: #FF6B6B; border: none; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); transition: transform 0.2s;"
+                                    style="padding: 12px 24px; background: white; color: #FF6B6B; border: none; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); transition: transform 0.2s; width: fit-content;"
                                     onmouseover="this.style.transform='translateY(-2px)'"
                                     onmouseout="this.style.transform='translateY(0)'">
                                     📚 Manage RAG
                                 </a>
                             </div>
                         </div>
-
-                        <!-- Threshold Configuration Link -->
-                        <div
-                            style="background: linear-gradient(135deg, #34C759 0%, #30B050 100%); padding: 24px; border-radius: 12px; margin-bottom: 24px; color: white; box-shadow: 0 4px 12px rgba(52, 199, 89, 0.3);">
-                            <div style="display: flex; align-items: center; justify-content: space-between;">
-                                <div>
-                                    <h3 style="margin: 0 0 8px 0; color: white;">🎯 Bottleneck Threshold Configuration
-                                    </h3>
-                                    <p style="margin: 0; opacity: 0.9; font-size: 14px;">Configure thresholds for
-                                        bottleneck analysis and stage-specific overrides</p>
-                                </div>
-                                <a href="admin.html" target="_blank"
-                                    style="padding: 12px 24px; background: white; color: #34C759; border: none; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); transition: transform 0.2s;"
-                                    onmouseover="this.style.transform='translateY(-2px)'"
-                                    onmouseout="this.style.transform='translateY(0)'">
-                                    ⚙️ Open Threshold Settings
-                                </a>
-                            </div>
-                        </div>
-
-                        <!-- Strategic Targets Configuration -->
-                        <div
-                            style="background: linear-gradient(135deg, #5856D6 0%, #4A48B4 100%); padding: 24px; border-radius: 12px; margin-bottom: 24px; color: white; box-shadow: 0 4px 12px rgba(88, 86, 214, 0.3);">
-                            <h3 style="margin: 0 0 16px 0; color: white;">🎯 Strategic Targets</h3>
-                            <p style="margin: 0 0 20px 0; opacity: 0.9; font-size: 14px;">Set targets for 2026, 2027,
-                                and True North (long-term goals). AI Insights will analyze metrics against these
-                                targets.</p>
-
-                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
-                                <!-- Feature Lead-Time Targets -->
-                                <div style="background: rgba(255,255,255,0.1); padding: 16px; border-radius: 8px;">
-                                    <h4 style="margin: 0 0 12px 0; color: white;">⏱️ Feature Lead-Time (days)</h4>
-                                    <div style="display: flex; flex-direction: column; gap: 12px;">
-                                        <div>
-                                            <label
-                                                style="display: block; font-size: 13px; margin-bottom: 4px; opacity: 0.9;">2026
-                                                Target:</label>
-                                            <input type="number" id="leadtime2026Target" placeholder="e.g., 45" min="1"
-                                                max="365"
-                                                style="width: 100%; padding: 8px; border: none; border-radius: 6px; font-size: 14px;">
-                                        </div>
-                                        <div>
-                                            <label
-                                                style="display: block; font-size: 13px; margin-bottom: 4px; opacity: 0.9;">2027
-                                                Target:</label>
-                                            <input type="number" id="leadtime2027Target" placeholder="e.g., 30" min="1"
-                                                max="365"
-                                                style="width: 100%; padding: 8px; border: none; border-radius: 6px; font-size: 14px;">
-                                        </div>
-                                        <div>
-                                            <label
-                                                style="display: block; font-size: 13px; margin-bottom: 4px; opacity: 0.9;">True
-                                                North:</label>
-                                            <input type="number" id="leadtimeTrueNorthTarget" placeholder="e.g., 15"
-                                                min="1" max="365"
-                                                style="width: 100%; padding: 8px; border: none; border-radius: 6px; font-size: 14px;">
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- Planning Accuracy Targets -->
-                                <div style="background: rgba(255,255,255,0.1); padding: 16px; border-radius: 8px;">
-                                    <h4 style="margin: 0 0 12px 0; color: white;">📊 Planning Accuracy (%)</h4>
-                                    <div style="display: flex; flex-direction: column; gap: 12px;">
-                                        <div>
-                                            <label
-                                                style="display: block; font-size: 13px; margin-bottom: 4px; opacity: 0.9;">2026
-                                                Target:</label>
-                                            <input type="number" id="planningAccuracy2026Target" placeholder="e.g., 75"
-                                                min="0" max="100"
-                                                style="width: 100%; padding: 8px; border: none; border-radius: 6px; font-size: 14px;">
-                                        </div>
-                                        <div>
-                                            <label
-                                                style="display: block; font-size: 13px; margin-bottom: 4px; opacity: 0.9;">2027
-                                                Target:</label>
-                                            <input type="number" id="planningAccuracy2027Target" placeholder="e.g., 85"
-                                                min="0" max="100"
-                                                style="width: 100%; padding: 8px; border: none; border-radius: 6px; font-size: 14px;">
-                                        </div>
-                                        <div>
-                                            <label
-                                                style="display: block; font-size: 13px; margin-bottom: 4px; opacity: 0.9;">True
-                                                North:</label>
-                                            <input type="number" id="planningAccuracyTrueNorthTarget"
-                                                placeholder="e.g., 95" min="0" max="100"
-                                                style="width: 100%; padding: 8px; border: none; border-radius: 6px; font-size: 14px;">
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <button onclick="saveStrategicTargets()"
-                                style="margin-top: 16px; padding: 12px 24px; background: white; color: #34C759; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                                💾 Save Strategic Targets
-                            </button>
-                        </div>
-
-                        <!-- Import Status -->
-                        <div id="importStatus"
-                            style="display: none; padding: 16px; margin-bottom: 20px; border-radius: 8px;"></div>
-
-                        <!-- Two-column layout -->
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px;">
-
-                            <!-- Left Column: LLM Configuration -->
-                            <div>
-                                <!-- LLM Configuration Section -->
-                                <div
-                                    style="background: #f0f4ff; padding: 24px; border-radius: 12px; margin-bottom: 24px; border: 2px solid #667eea;">
-                                    <h3 style="margin-bottom: 16px; color: #667eea;">🤖 AI Model Configuration</h3>
-                                    <p style="color: #666; margin-bottom: 16px; font-size: 14px;">Configure the LLM used
-                                        for generating insights and coaching responses.</p>
-
-                                    <!-- Model Selection -->
-                                    <div style="margin-bottom: 20px;">
-                                        <label
-                                            style="display: block; font-weight: 600; margin-bottom: 8px;">Model:</label>
-                                        <select id="llmModelSelect"
-                                            style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; background: white; cursor: pointer;">
-                                            <optgroup label="OpenAI Models">
-                                                <option value="gpt-4o">GPT-4o (Latest, Most Capable)</option>
-                                                <option value="gpt-4o-mini" selected>GPT-4o Mini (Fast & Cost-effective)
-                                                </option>
-                                                <option value="gpt-4-turbo-preview">GPT-4 Turbo (Preview)</option>
-                                                <option value="gpt-4">GPT-4 (Legacy)</option>
-                                                <option value="gpt-3.5-turbo">GPT-3.5 Turbo (Budget)</option>
-                                            </optgroup>
-                                            <optgroup label="Ollama Models (Local)">
-                                                <option value="llama3.1:latest">Llama 3.1 (Latest)</option>
-                                                <option value="llama3.1:8b">Llama 3.1 8B</option>
-                                                <option value="ministral-3:8b">Ministral 3 8B</option>
-                                                <option value="ministral-3:14b">Ministral 3 14B</option>
-                                                <option value="mistral:latest">Mistral (Latest)</option>
-                                            </optgroup>
-                                        </select>
-                                        <small style="color: #666; display: block; margin-top: 4px;">OpenAI models
-                                            require API key, Ollama models run locally</small>
-                                    </div>
-
-                                    <!-- Temperature Slider -->
-                                    <div style="margin-bottom: 20px;">
-                                        <label
-                                            style="display: block; font-weight: 600; margin-bottom: 8px;">Temperature:
-                                            <span id="tempValue" style="color: #667eea;">0.7</span></label>
-                                        <input type="range" id="llmTemperature" min="0" max="2" step="0.1" value="0.7"
-                                            style="width: 100%; cursor: pointer;"
-                                            oninput="document.getElementById('tempValue').textContent = this.value">
-                                        <div
-                                            style="display: flex; justify-content: space-between; font-size: 12px; color: #666; margin-top: 4px;">
-                                            <span>0.0 (Focused)</span>
-                                            <span>1.0 (Balanced)</span>
-                                            <span>2.0 (Creative)</span>
-                                        </div>
-                                        <small style="color: #666; display: block; margin-top: 8px;">Lower = more
-                                            deterministic, Higher = more creative</small>
-                                    </div>
-
-                                    <!-- Current Status -->
-                                    <div
-                                        style="background: white; padding: 12px; border-radius: 8px; margin-bottom: 16px;">
-                                        <div style="font-size: 13px; color: #666; margin-bottom: 8px;">Current
-                                            Configuration:</div>
-                                        <div id="llmStatus" style="font-size: 14px; font-family: monospace;">
-                                            Model: gpt-4o-mini | Temp: 0.7
-                                        </div>
-                                    </div>
-
-                                    <button onclick="saveLLMConfig()"
-                                        style="width: 100%; padding: 12px 24px; background: #667eea; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
-                                        💾 Save LLM Configuration
-                                    </button>
-                                </div>
-
-                                <div style="background: #f8f9fa; padding: 24px; border-radius: 12px;">
-                                    <h3 style="margin-bottom: 16px;">📊 Default Dashboard Filters</h3>
-                                    <p style="color: #666; margin-bottom: 16px; font-size: 14px;">Set default Program
-                                        Increments and ARTs to
-                                        display when the dashboard loads.</p>
-
-                                    <!-- Default PIs -->
-                                    <div style="margin-bottom: 20px;">
-                                        <label style="display: block; font-weight: 600; margin-bottom: 8px;">Program
-                                            Increments:</label>
-                                        <div id="defaultPISelector"
-                                            style="background: white; padding: 12px; border-radius: 8px; border: 1px solid #ddd; max-height: 150px; overflow-y: auto;">
-                                            <!-- PI checkboxes will be loaded dynamically -->
-                                            <div style="padding: 8px; color: #666; text-align: center;">Loading PIs...
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <!-- Default ARTs -->
-                                    <div style="margin-bottom: 20px;">
-                                        <label
-                                            style="display: block; font-weight: 600; margin-bottom: 8px;">ARTs:</label>
-                                        <div id="defaultARTSelector"
-                                            style="background: white; padding: 12px; border-radius: 8px; border: 1px solid #ddd; max-height: 180px; overflow-y: auto;">
-                                            <!-- ART checkboxes will be loaded dynamically -->
-                                            <div style="padding: 8px; color: #666; text-align: center;">Loading ARTs...
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div style="display: flex; gap: 12px;">
-                                        <button onclick="saveDefaultFilters()"
-                                            style="flex: 1; padding: 12px; background: #34C759; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
-                                            💾 Save
-                                        </button>
-                                        <button onclick="clearDefaultFilters()"
-                                            style="flex: 1; padding: 12px; background: #FF9500; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
-                                            🔄 Reset
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Right Column: Data Import -->
-                            <div>
-
-                                <!-- Upload Section -->
-                                <div
-                                    style="background: #fff5f5; padding: 24px; border-radius: 12px; margin-bottom: 24px; border: 2px solid #FF9500;">
-                                    <h3 style="margin-bottom: 16px; color: #FF9500;">📁 Import Excel Data</h3>
-                                    <p style="color: #666; margin-bottom: 16px; font-size: 14px;">Upload an Excel file
-                                        containing Epics,
-                                        Features, or User Stories. Data will be staged for review before saving.</p>
-
-                                    <div style="margin-bottom: 16px;">
-                                        <input type="file" id="excelFileInput" accept=".xlsx,.xls"
-                                            style="width: 100%; padding: 10px; border: 2px dashed #FF9500; border-radius: 8px; background: white;">
-                                    </div>
-
-                                    <button onclick="uploadExcelFile()"
-                                        style="width: 100%; padding: 12px 24px; background: #FF9500; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; margin-bottom: 12px;">
-                                        📤 Upload & Preview
-                                    </button>
-
-                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                                        <button onclick="downloadTemplate()"
-                                            style="padding: 10px 20px; background: white; border: 2px solid #FF9500; color: #FF9500; border-radius: 8px; cursor: pointer; font-weight: 600;">
-                                            📥 Template
-                                        </button>
-                                        <button onclick="showTemplates()"
-                                            style="padding: 10px 20px; background: white; border: 2px solid #34C759; color: #34C759; border-radius: 8px; cursor: pointer; font-weight: 600;">
-                                            📋 View
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Staged Data Preview -->
-                        <div id="stagedDataSection" style="display: none;">
-                            <div
-                                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                                <h3>Staged Issues for Review</h3>
-                                <div>
-                                    <button onclick="commitAllIssues()"
-                                        style="padding: 10px 20px; background: #34C759; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; margin-right: 8px;">
-                                        ✅ Commit All Valid
-                                    </button>
-                                    <button onclick="clearStaging()"
-                                        style="padding: 10px 20px; background: #FF3B30; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
-                                        ❌ Clear Staging
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div id="stagedDataStats"
-                                style="background: #e3f2fd; padding: 16px; border-radius: 8px; margin-bottom: 16px;">
-                            </div>
-
-                            <!-- Staged Issues Table -->
-                            <div
-                                style="background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                                <table style="width: 100%; border-collapse: collapse;">
-                                    <thead style="background: #990AE3; color: white;">
-                                        <tr>
-                                            <th style="padding: 12px; text-align: left;">Row</th>
-                                            <th style="padding: 12px; text-align: left;">Issue Key</th>
-                                            <th style="padding: 12px; text-align: left;">Type</th>
-                                            <th style="padding: 12px; text-align: left;">Summary</th>
-                                            <th style="padding: 12px; text-align: left;">Status</th>
-                                            <th style="padding: 12px; text-align: left;">Validation</th>
-                                            <th style="padding: 12px; text-align: center;">Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="stagedIssuesTable">
-                                        <!-- Dynamically populated -->
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-
-                        <!-- Issue Editor Modal (hidden by default) -->
-                        <div id="issueEditorModal"
-                            style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; padding: 40px;">
-                            <div
-                                style="background: white; max-width: 1200px; width: 95%; margin: 0 auto; border-radius: 12px; padding: 24px; max-height: 90vh; overflow-y: auto; resize: both;">
-                                <div
-                                    style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                                    <h3>Edit Staged Issue</h3>
-                                    <button onclick="closeIssueEditor()"
-                                        style="font-size: 24px; background: none; border: none; cursor: pointer;">×</button>
-                                </div>
-                                <div id="issueEditorContent">
-                                    <!-- Dynamically populated -->
-                                </div>
-                            </div>
-                        </div>
-
                     </div>
                 </div>
             </div>

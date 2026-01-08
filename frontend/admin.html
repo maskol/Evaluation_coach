@@ -5,6 +5,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Configuration - Evaluation Coach</title>
+    <link rel="icon"
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>⚙️</text></svg>">
     <link rel="stylesheet" href="styles.css">
     <style>
         .admin-container {
@@ -166,24 +168,11 @@
     <div class="admin-container">
         <a href="index.html" class="back-link">← Back to Dashboard</a>
 
-        <h1>⚙️ Admin Configuration</h1>
+        <h1>⚙️ System Configuration</h1>
+        <p style="color: #666; margin-bottom: 24px;">Configure thresholds, strategic targets, display options, and
+            system settings</p>
 
         <div id="alertBox" class="alert"></div>
-
-        <!-- Quick Links -->
-        <div class="config-section">
-            <h2>🔗 Quick Links</h2>
-            <div class="button-group">
-                <a href="rag_admin.html" style="text-decoration: none;">
-                    <button type="button" class="btn-save">
-                        📚 Manage RAG Knowledge Base
-                    </button>
-                </a>
-            </div>
-            <p style="margin-top: 12px; color: var(--text-secondary);">
-                Configure and manage the AI Coach's knowledge base, view indexed documents, and re-index content.
-            </p>
-        </div>
 
         <!-- Bottleneck Threshold Configuration -->
         <div class="config-section">
@@ -365,8 +354,56 @@
                     the dashboard and ART comparison table.</small>
             </div>
 
+            <div class="form-group" style="margin-top: 24px;">
+                <label for="excludedStatuses">
+                    Exclude Feature Statuses from Analysis
+                </label>
+                <input type="text" id="excludedStatuses" placeholder="e.g., Cancelled, On Hold"
+                    style="width: 100%; max-width: 600px; padding: 10px; border: 1px solid var(--border-color); border-radius: 4px; font-size: 14px;">
+                <small>Enter comma-separated list of feature statuses to exclude from analysis (e.g., "Cancelled, On
+                    Hold"). Features with these statuses will be filtered out from metrics, charts, and
+                    insights.</small>
+            </div>
+
             <div class="button-group">
                 <button type="button" class="btn-save" onclick="saveDisplayOptions()">💾 Save Display Options</button>
+            </div>
+        </div>
+
+        <!-- LLM Configuration -->
+        <div class="config-section">
+            <h2>🤖 AI Model Configuration</h2>
+            <p style="color: #666; margin-bottom: 16px;">Configure the AI model used for generating insights and
+                recommendations.</p>
+
+            <div class="form-group">
+                <label for="llmModel">
+                    LLM Model
+                </label>
+                <select id="llmModel"
+                    style="width: 100%; max-width: 600px; padding: 10px; border: 1px solid var(--border-color); border-radius: 4px; font-size: 14px;">
+                    <option value="claude-3-7-sonnet-20250219">Claude 3.7 Sonnet (Recommended)</option>
+                    <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
+                    <option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku (Faster, Lower Cost)</option>
+                    <option value="gpt-4o">GPT-4o (OpenAI)</option>
+                    <option value="gpt-4o-mini">GPT-4o Mini (OpenAI, Lower Cost)</option>
+                </select>
+                <small>Select the AI model for insight generation. Different models offer different trade-offs between
+                    quality, speed, and cost.</small>
+            </div>
+
+            <div class="form-group" style="margin-top: 20px;">
+                <label for="llmTemperature">
+                    Temperature (0.0 - 1.0)
+                </label>
+                <input type="number" id="llmTemperature" min="0" max="1" step="0.1" value="0.3"
+                    style="width: 100%; max-width: 200px; padding: 10px; border: 1px solid var(--border-color); border-radius: 4px; font-size: 14px;">
+                <small>Controls randomness in AI responses. Lower = more focused and deterministic, Higher = more
+                    creative. Recommended: 0.3 for insights.</small>
+            </div>
+
+            <div class="button-group">
+                <button type="button" class="btn-save" onclick="saveLLMConfig()">💾 Save AI Configuration</button>
             </div>
         </div>
 
@@ -423,6 +460,18 @@
                 document.getElementById('showInactiveArts').checked = showInactiveArts;
                 console.log(`✅ Show inactive ARTs: ${showInactiveArts}`);
 
+                // Update excluded feature statuses
+                const excludedStatuses = config.excluded_feature_statuses || [];
+                document.getElementById('excludedStatuses').value = excludedStatuses.join(', ');
+                console.log(`✅ Excluded feature statuses: ${excludedStatuses.join(', ')}`);
+
+                // Update LLM configuration
+                const llmModel = config.llm_model || 'claude-3-7-sonnet-20250219';
+                const llmTemperature = config.llm_temperature !== undefined ? config.llm_temperature : 0.3;
+                document.getElementById('llmModel').value = llmModel;
+                document.getElementById('llmTemperature').value = llmTemperature;
+                console.log(`✅ LLM Model: ${llmModel}, Temperature: ${llmTemperature}`);
+
             } catch (error) {
                 console.error('❌ Error loading configuration:', error);
                 showAlert('Error loading configuration: ' + error.message, 'error');
@@ -462,44 +511,83 @@
                 const result = await response.json();
                 showAlert('✅ ' + result.message, 'success');
 
-                async function saveDisplayOptions() {
-                    const showInactiveArts = document.getElementById('showInactiveArts').checked;
-
-                    try {
-                        const response = await fetch(`${API_BASE_URL}/api/admin/config/display`, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                            },
-                            body: JSON.stringify({
-                                show_inactive_arts: showInactiveArts
-                            }),
-                        });
-
-                        if (!response.ok) {
-                            const error = await response.json();
-                            throw new Error(error.detail || 'Failed to update display options');
-                        }
-
-                        const result = await response.json();
-                        showAlert('✅ ' + result.message, 'success');
-
-                        // Suggest refreshing the dashboard
-                        setTimeout(() => {
-                            if (confirm('Display options saved! Would you like to refresh the dashboard now?')) {
-                                window.location.href = 'index.html';
-                            }
-                        }, 1000);
-
-                    } catch (error) {
-                        showAlert('❌ Error: ' + error.message, 'error');
-                    }
-                }
-
             } catch (error) {
                 showAlert('❌ Error: ' + error.message, 'error');
             }
         });
+
+        // Handle display options save
+        async function saveDisplayOptions() {
+            const showInactiveArts = document.getElementById('showInactiveArts').checked;
+            const excludedStatusesInput = document.getElementById('excludedStatuses').value;
+
+            // Parse comma-separated list and trim whitespace
+            const excludedStatuses = excludedStatusesInput
+                .split(',')
+                .map(s => s.trim())
+                .filter(s => s.length > 0);
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/admin/config/display`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        show_inactive_arts: showInactiveArts,
+                        excluded_feature_statuses: excludedStatuses
+                    }),
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Failed to update display options');
+                }
+
+                const result = await response.json();
+                showAlert('✅ ' + result.message, 'success');
+
+                // Suggest refreshing the dashboard
+                setTimeout(() => {
+                    if (confirm('Display options saved! Would you like to refresh the dashboard now?')) {
+                        window.location.href = 'index.html';
+                    }
+                }, 1000);
+
+            } catch (error) {
+                showAlert('❌ Error: ' + error.message, 'error');
+            }
+        }
+
+        // Handle LLM configuration save
+        async function saveLLMConfig() {
+            const model = document.getElementById('llmModel').value;
+            const temperature = parseFloat(document.getElementById('llmTemperature').value);
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/admin/config/llm`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        model: model,
+                        temperature: temperature
+                    }),
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Failed to update LLM configuration');
+                }
+
+                const result = await response.json();
+                showAlert('✅ ' + result.message, 'success');
+
+            } catch (error) {
+                showAlert('❌ Error: ' + error.message, 'error');
+            }
+        }
 
         function showAlert(message, type) {
             const alertBox = document.getElementById('alertBox');

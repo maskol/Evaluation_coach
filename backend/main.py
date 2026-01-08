@@ -24,6 +24,7 @@ from api_models import (
     InsightResponse,
     JiraIssueCreate,
     JiraIssueResponse,
+    LLMConfigUpdate,
     MetricValue,
     PIReportRequest,
     ReportRequest,
@@ -183,6 +184,66 @@ def save_config_to_db(db: Session, config_key: str, config_value: Optional[float
     except Exception as e:
         db.rollback()
         raise e
+
+
+def get_excluded_feature_statuses(db: Session) -> List[str]:
+    """
+    Get list of feature statuses to exclude from analysis.
+
+    Args:
+        db: Database session
+
+    Returns:
+        List of status strings to exclude (e.g., ['Cancelled', 'On Hold'])
+    """
+    try:
+        config_entry = (
+            db.query(RuntimeConfiguration)
+            .filter(RuntimeConfiguration.config_key == "excluded_feature_statuses")
+            .first()
+        )
+        if config_entry and config_entry.config_value:
+            # Parse comma-separated list
+            excluded = [
+                s.strip() for s in config_entry.config_value.split(",") if s.strip()
+            ]
+            if excluded:
+                print(f"🔍 Excluding feature statuses: {excluded}")
+            return excluded
+        return []
+    except Exception as e:
+        print(f"⚠️ Could not load excluded_feature_statuses config: {e}")
+        return []
+
+
+def filter_features_by_status(
+    features: List[Dict[str, Any]], excluded_statuses: List[str]
+) -> List[Dict[str, Any]]:
+    """
+    Filter out features with excluded statuses.
+
+    Args:
+        features: List of feature dictionaries
+        excluded_statuses: List of status strings to exclude
+
+    Returns:
+        Filtered list of features
+    """
+    if not excluded_statuses:
+        return features
+
+    original_count = len(features)
+    filtered_features = [
+        f for f in features if f.get("status") not in excluded_statuses
+    ]
+    filtered_count = len(filtered_features)
+
+    if filtered_count < original_count:
+        print(
+            f"🔍 Filtered {original_count - filtered_count} features with excluded statuses (showing {filtered_count})"
+        )
+
+    return filtered_features
 
 
 # Get available AI models endpoint
@@ -1243,6 +1304,9 @@ async def get_dashboard(
 
                 # Get lead-time statistics for Flow Efficiency
                 # Fetch features - if ARTs are specified, fetch per-ART to avoid missing data
+                # Get excluded statuses from configuration
+                excluded_statuses = get_excluded_feature_statuses(db)
+
                 if selected_arts:
                     # Fetch per ART to ensure we get all features
                     all_features = []
@@ -1256,6 +1320,11 @@ async def get_dashboard(
                     all_features = leadtime_service.client.get_flow_leadtime(
                         limit=10000
                     )
+
+                # Apply status filter
+                all_features = filter_features_by_status(
+                    all_features, excluded_statuses
+                )
 
                 # Filter by selected PIs if specified
                 filtered_features = all_features
@@ -1306,6 +1375,11 @@ async def get_dashboard(
                     all_throughput_features = (
                         leadtime_service.client.get_throughput_data(limit=10000)
                     )
+
+                # Apply status filter to throughput data
+                all_throughput_features = filter_features_by_status(
+                    all_throughput_features, excluded_statuses
+                )
 
                 # Filter by selected PIs
                 filtered_throughput = all_throughput_features
@@ -1400,6 +1474,11 @@ async def get_dashboard(
                             art=art_name, limit=10000
                         )
 
+                        # Apply status filter
+                        features = filter_features_by_status(
+                            features, excluded_statuses
+                        )
+
                         # Filter by selected PIs if specified
                         if selected_pis:
                             features = [
@@ -1442,6 +1521,10 @@ async def get_dashboard(
                                 leadtime_service.client.get_throughput_data(
                                     art=art_name, limit=10000
                                 )
+                            )
+                            # Apply status filter
+                            throughput_features = filter_features_by_status(
+                                throughput_features, excluded_statuses
                             )
                             # Filter by selected PIs if specified
                             if selected_pis:
@@ -3565,11 +3648,52 @@ async def get_admin_config(db: Session = Depends(get_db)):
     except Exception as e:
         print(f"⚠️ Could not load show_inactive_arts config: {e}")
 
+    # Get excluded_feature_statuses from database
+    excluded_feature_statuses = []  # Default
+    try:
+        config_entry = (
+            db.query(RuntimeConfiguration)
+            .filter(RuntimeConfiguration.config_key == "excluded_feature_statuses")
+            .first()
+        )
+        if config_entry and config_entry.config_value:
+            # Parse comma-separated list
+            excluded_feature_statuses = [
+                s.strip() for s in config_entry.config_value.split(",") if s.strip()
+            ]
+    except Exception as e:
+        print(f"⚠️ Could not load excluded_feature_statuses config: {e}")
+
+    # Get LLM configuration from database
+    llm_model = "claude-3-7-sonnet-20250219"  # Default
+    llm_temperature = 0.3  # Default
+    try:
+        model_entry = (
+            db.query(RuntimeConfiguration)
+            .filter(RuntimeConfiguration.config_key == "llm_model")
+            .first()
+        )
+        if model_entry and model_entry.config_value:
+            llm_model = model_entry.config_value
+
+        temp_entry = (
+            db.query(RuntimeConfiguration)
+            .filter(RuntimeConfiguration.config_key == "llm_temperature")
+            .first()
+        )
+        if temp_entry and temp_entry.config_value:
+            llm_temperature = float(temp_entry.config_value)
+    except Exception as e:
+        print(f"⚠️ Could not load LLM config: {e}")
+
     return AdminConfigResponse(
         thresholds=thresholds,
         leadtime_server_url=settings.leadtime_server_url,
         leadtime_server_enabled=settings.leadtime_server_enabled,
         show_inactive_arts=show_inactive_arts,
+        excluded_feature_statuses=excluded_feature_statuses,
+        llm_model=llm_model,
+        llm_temperature=llm_temperature,
     )
 
 
@@ -3644,8 +3768,9 @@ async def update_display_options(
     """
     try:
         show_inactive_arts = options.get("show_inactive_arts", True)
+        excluded_feature_statuses = options.get("excluded_feature_statuses", [])
 
-        # Save to database
+        # Save show_inactive_arts to database
         config_entry = (
             db.query(RuntimeConfiguration)
             .filter(RuntimeConfiguration.config_key == "show_inactive_arts")
@@ -3663,20 +3788,113 @@ async def update_display_options(
             )
             db.add(config_entry)
 
+        # Save excluded_feature_statuses to database
+        excluded_statuses_str = (
+            ",".join(excluded_feature_statuses) if excluded_feature_statuses else ""
+        )
+        config_entry_statuses = (
+            db.query(RuntimeConfiguration)
+            .filter(RuntimeConfiguration.config_key == "excluded_feature_statuses")
+            .first()
+        )
+
+        if config_entry_statuses:
+            config_entry_statuses.config_value = excluded_statuses_str
+            config_entry_statuses.updated_at = datetime.now(timezone.utc)
+        else:
+            config_entry_statuses = RuntimeConfiguration(
+                config_key="excluded_feature_statuses",
+                config_value=excluded_statuses_str,
+                config_type="string",
+            )
+            db.add(config_entry_statuses)
+
         db.commit()
 
-        print(f"✅ Display options saved: show_inactive_arts={show_inactive_arts}")
+        print(
+            f"✅ Display options saved: show_inactive_arts={show_inactive_arts}, excluded_feature_statuses={excluded_feature_statuses}"
+        )
 
         return {
             "status": "success",
             "message": "Display options saved successfully. Dashboard will update on next load.",
             "show_inactive_arts": show_inactive_arts,
+            "excluded_feature_statuses": excluded_feature_statuses,
         }
     except Exception as e:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to save display options: {str(e)}",
+        )
+
+
+@app.post("/api/admin/config/llm")
+async def update_llm_config(config: LLMConfigUpdate, db: Session = Depends(get_db)):
+    """
+    Update LLM configuration.
+
+    Args:
+        config: LLM configuration (model, temperature)
+        db: Database session
+
+    Returns:
+        Success message
+    """
+    try:
+        # Save LLM model to database
+        model_entry = (
+            db.query(RuntimeConfiguration)
+            .filter(RuntimeConfiguration.config_key == "llm_model")
+            .first()
+        )
+
+        if model_entry:
+            model_entry.config_value = config.model
+            model_entry.updated_at = datetime.now(timezone.utc)
+        else:
+            model_entry = RuntimeConfiguration(
+                config_key="llm_model",
+                config_value=config.model,
+                config_type="string",
+            )
+            db.add(model_entry)
+
+        # Save LLM temperature to database
+        temp_entry = (
+            db.query(RuntimeConfiguration)
+            .filter(RuntimeConfiguration.config_key == "llm_temperature")
+            .first()
+        )
+
+        if temp_entry:
+            temp_entry.config_value = str(config.temperature)
+            temp_entry.updated_at = datetime.now(timezone.utc)
+        else:
+            temp_entry = RuntimeConfiguration(
+                config_key="llm_temperature",
+                config_value=str(config.temperature),
+                config_type="float",
+            )
+            db.add(temp_entry)
+
+        db.commit()
+
+        print(
+            f"✅ LLM config saved: model={config.model}, temperature={config.temperature}"
+        )
+
+        return {
+            "status": "success",
+            "message": "LLM configuration saved successfully.",
+            "model": config.model,
+            "temperature": config.temperature,
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save LLM configuration: {str(e)}",
         )
 
 
