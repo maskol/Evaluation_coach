@@ -1965,41 +1965,72 @@ def _generate_executive_summary(
         # =====================================================
 
         observation_parts = []
-        
+
         # Health Score Card
-        observation_parts.append(f'''
+        observation_parts.append(
+            f"""
 <div style="background: {health_bg}; border-left: 4px solid {health_border}; padding: 12px 16px; margin-bottom: 16px; border-radius: 4px;">
     <div style="font-size: 18px; font-weight: 700; margin-bottom: 4px;">🏥 Portfolio Health Score</div>
     <div style="font-size: 32px; font-weight: 800; color: {health_border};">{health_score}/100 - {health_status}</div>
     <div style="font-size: 12px; color: #666; margin-top: 4px;">📊 {scope_text}</div>
 </div>
-''')
+"""
+        )
 
         # Key Metrics Dashboard - Build as HTML table
         kpi_rows = []
-        
+
         if avg_leadtime:
-            lt_status = "🔴" if avg_leadtime > 150 else ("🟡" if avg_leadtime > 110 else "🟢")
-            lt_color = "#dc3545" if avg_leadtime > 150 else ("#ffc107" if avg_leadtime > 110 else "#28a745")
-            kpi_rows.append(f'<tr><td>Avg Lead Time</td><td style="font-weight:600;">{avg_leadtime:.0f} days</td><td style="text-align:center;">{lt_status}</td></tr>')
+            lt_status = (
+                "🔴" if avg_leadtime > 150 else ("🟡" if avg_leadtime > 110 else "🟢")
+            )
+            lt_color = (
+                "#dc3545"
+                if avg_leadtime > 150
+                else ("#ffc107" if avg_leadtime > 110 else "#28a745")
+            )
+            kpi_rows.append(
+                f'<tr><td>Avg Lead Time</td><td style="font-weight:600;">{avg_leadtime:.0f} days</td><td style="text-align:center;">{lt_status}</td></tr>'
+            )
 
         if median_leadtime:
-            med_status = "🔴" if median_leadtime > 120 else ("🟡" if median_leadtime > 90 else "🟢")
-            kpi_rows.append(f'<tr><td>Median Lead Time</td><td style="font-weight:600;">{median_leadtime:.0f} days</td><td style="text-align:center;">{med_status}</td></tr>')
+            med_status = (
+                "🔴"
+                if median_leadtime > 120
+                else ("🟡" if median_leadtime > 90 else "🟢")
+            )
+            kpi_rows.append(
+                f'<tr><td>Median Lead Time</td><td style="font-weight:600;">{median_leadtime:.0f} days</td><td style="text-align:center;">{med_status}</td></tr>'
+            )
 
         if flow_efficiency:
-            fe_status = "🔴" if flow_efficiency < 30 else ("🟡" if flow_efficiency < 40 else "🟢")
-            kpi_rows.append(f'<tr><td>Flow Efficiency</td><td style="font-weight:600;">{flow_efficiency:.1f}%</td><td style="text-align:center;">{fe_status}</td></tr>')
+            fe_status = (
+                "🔴"
+                if flow_efficiency < 30
+                else ("🟡" if flow_efficiency < 40 else "🟢")
+            )
+            kpi_rows.append(
+                f'<tr><td>Flow Efficiency</td><td style="font-weight:600;">{flow_efficiency:.1f}%</td><td style="text-align:center;">{fe_status}</td></tr>'
+            )
 
         if planning_accuracy:
-            pa_status = "🔴" if planning_accuracy < 70 else ("🟡" if planning_accuracy < 75 else "🟢")
-            kpi_rows.append(f'<tr><td>Planning Accuracy</td><td style="font-weight:600;">{planning_accuracy:.1f}%</td><td style="text-align:center;">{pa_status}</td></tr>')
+            pa_status = (
+                "🔴"
+                if planning_accuracy < 70
+                else ("🟡" if planning_accuracy < 75 else "🟢")
+            )
+            kpi_rows.append(
+                f'<tr><td>Planning Accuracy</td><td style="font-weight:600;">{planning_accuracy:.1f}%</td><td style="text-align:center;">{pa_status}</td></tr>'
+            )
 
         if features_completed:
-            kpi_rows.append(f'<tr><td>Features Completed</td><td style="font-weight:600;">{features_completed:,}</td><td style="text-align:center;">📊</td></tr>')
+            kpi_rows.append(
+                f'<tr><td>Features Completed</td><td style="font-weight:600;">{features_completed:,}</td><td style="text-align:center;">📊</td></tr>'
+            )
 
         if kpi_rows:
-            observation_parts.append(f'''
+            observation_parts.append(
+                f"""
 <div style="margin-bottom: 16px;">
     <div style="font-weight: 700; margin-bottom: 8px; font-size: 14px;">📈 Key Performance Indicators</div>
     <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
@@ -2015,10 +2046,12 @@ def _generate_executive_summary(
         </tbody>
     </table>
 </div>
-''')
+"""
+            )
 
         # Issue Summary Cards - in a flex grid
-        observation_parts.append(f'''
+        observation_parts.append(
+            f"""
 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 16px;">
     <div style="background: #f8d7da; padding: 10px; border-radius: 6px; text-align: center;">
         <div style="font-size: 24px; font-weight: 700; color: #dc3545;">{len(critical_insights)}</div>
@@ -2037,39 +2070,56 @@ def _generate_executive_summary(
         <div style="font-size: 11px; color: #004085;">Multi-Stage Blockers</div>
     </div>
 </div>
-''')
+"""
+        )
 
         # Additional stats row
         additional_stats = []
         if total_wip:
-            additional_stats.append(f'<span style="margin-right: 16px;">📦 <strong>Total WIP:</strong> {total_wip:,} items</span>')
+            additional_stats.append(
+                f'<span style="margin-right: 16px;">📦 <strong>Total WIP:</strong> {total_wip:,} items</span>'
+            )
         if total_waste:
-            additional_stats.append(f'<span style="margin-right: 16px;">🗑️ <strong>Total Waste:</strong> {total_waste:,.0f} days</span>')
-        
+            additional_stats.append(
+                f'<span style="margin-right: 16px;">🗑️ <strong>Total Waste:</strong> {total_waste:,.0f} days</span>'
+            )
+
         if additional_stats:
-            observation_parts.append(f'''
+            observation_parts.append(
+                f"""
 <div style="background: #f8f9fa; padding: 10px 14px; border-radius: 4px; margin-bottom: 16px; font-size: 13px; color: #495057;">
     {"".join(additional_stats)}
 </div>
-''')
-
+"""
+            )
 
         # Top Bottlenecks - HTML formatted
         if top_bottlenecks:
             bottleneck_rows = []
             for bottleneck in top_bottlenecks[:3]:
                 stage_name = bottleneck["stage"].replace("_", " ").title()
-                pct_exceeding = (bottleneck["exceeding"] / bottleneck["count"] * 100) if bottleneck["count"] > 0 else 0
-                score_color = "#dc3545" if bottleneck["score"] > 60 else ("#ffc107" if bottleneck["score"] > 40 else "#28a745")
-                bottleneck_rows.append(f'''
+                pct_exceeding = (
+                    (bottleneck["exceeding"] / bottleneck["count"] * 100)
+                    if bottleneck["count"] > 0
+                    else 0
+                )
+                score_color = (
+                    "#dc3545"
+                    if bottleneck["score"] > 60
+                    else ("#ffc107" if bottleneck["score"] > 40 else "#28a745")
+                )
+                bottleneck_rows.append(
+                    f"""
                 <tr>
                     <td style="padding: 6px 8px;"><strong>{stage_name}</strong></td>
                     <td style="padding: 6px 8px; text-align: center;"><span style="background: {score_color}; color: white; padding: 2px 8px; border-radius: 10px; font-weight: 600;">{bottleneck["score"]:.1f}</span></td>
                     <td style="padding: 6px 8px; text-align: center;">{bottleneck["mean"]:.1f}d</td>
                     <td style="padding: 6px 8px; text-align: center;">{pct_exceeding:.0f}%</td>
-                </tr>''')
-            
-            observation_parts.append(f'''
+                </tr>"""
+                )
+
+            observation_parts.append(
+                f"""
 <div style="margin-bottom: 16px;">
     <div style="font-weight: 700; margin-bottom: 8px; font-size: 14px;">🚧 Critical Bottlenecks</div>
     <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
@@ -2086,7 +2136,8 @@ def _generate_executive_summary(
         </tbody>
     </table>
 </div>
-''')
+"""
+            )
 
         # Top Stuck Items - HTML formatted
         if top_stuck:
@@ -2096,16 +2147,21 @@ def _generate_executive_summary(
                 days = item.get("days_in_stage", 0)
                 stage = item.get("current_stage", "unknown").replace("_", " ").title()
                 art = item.get("art", "Unknown")
-                days_color = "#dc3545" if days > 100 else ("#ffc107" if days > 30 else "#28a745")
-                stuck_rows.append(f'''
+                days_color = (
+                    "#dc3545" if days > 100 else ("#ffc107" if days > 30 else "#28a745")
+                )
+                stuck_rows.append(
+                    f"""
                 <tr>
                     <td style="padding: 6px 8px;"><strong>{issue_key}</strong></td>
                     <td style="padding: 6px 8px;">{art}</td>
                     <td style="padding: 6px 8px;">{stage}</td>
                     <td style="padding: 6px 8px; text-align: right;"><span style="color: {days_color}; font-weight: 600;">{days:.0f} days</span></td>
-                </tr>''')
-            
-            observation_parts.append(f'''
+                </tr>"""
+                )
+
+            observation_parts.append(
+                f"""
 <div style="margin-bottom: 16px;">
     <div style="font-weight: 700; margin-bottom: 8px; font-size: 14px;">🔒 Highest Priority Stuck Items</div>
     <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
@@ -2122,7 +2178,8 @@ def _generate_executive_summary(
         </tbody>
     </table>
 </div>
-''')
+"""
+            )
 
         # =====================================================
         # BUILD EXPERT INTERPRETATION (HTML formatted)
@@ -2147,12 +2204,14 @@ def _generate_executive_summary(
             status_border = "#28a745"
             status_label = "HEALTHY"
 
-        interpretation_parts.append(f'''
+        interpretation_parts.append(
+            f"""
 <div style="background: {status_bg}; border-left: 4px solid {status_border}; padding: 12px 16px; margin-bottom: 16px; border-radius: 4px;">
     <div style="font-weight: 700; font-size: 14px; margin-bottom: 6px;">🎯 Strategic Assessment: {status_label}</div>
     <div style="color: #333; line-height: 1.5; font-size: 13px;">{status_text}</div>
 </div>
-''')
+"""
+        )
 
         # Systemic Pattern Analysis
         patterns_found = []
@@ -2161,7 +2220,8 @@ def _generate_executive_summary(
         # Pattern 1: Flow Blockage
         if len(critical_bottlenecks) >= 2:
             patterns_found.append("flow_blockage")
-            pattern_cards.append(f'''
+            pattern_cards.append(
+                f"""
 <div style="background: #fff; border: 1px solid #dee2e6; border-radius: 6px; padding: 14px; margin-bottom: 12px;">
     <div style="font-weight: 700; color: #dc3545; margin-bottom: 8px;">⚠️ 1. Systemic Flow Blockage</div>
     <p style="margin: 0 0 10px 0; color: #333; line-height: 1.5;">
@@ -2171,12 +2231,14 @@ def _generate_executive_summary(
         <strong>💡 Root System Dynamics:</strong> When WIP exceeds capacity, Little's Law predicts that lead times will increase proportionally. High WIP correlates with long cycle times.
     </div>
 </div>
-''')
+"""
+            )
 
         # Pattern 2: Hidden Dependencies
         if len(multi_stage_stuck) >= 3:
             patterns_found.append("hidden_deps")
-            pattern_cards.append(f'''
+            pattern_cards.append(
+                f"""
 <div style="background: #fff; border: 1px solid #dee2e6; border-radius: 6px; padding: 14px; margin-bottom: 12px;">
     <div style="font-weight: 700; color: #fd7e14; margin-bottom: 8px;">🔗 2. Hidden Dependency Network</div>
     <p style="margin: 0 0 10px 0; color: #333; line-height: 1.5;">
@@ -2192,13 +2254,15 @@ def _generate_executive_summary(
         <strong>⚠️ Expert Warning:</strong> Hidden dependencies are the #1 cause of PI objective misses. They're invisible in planning but dominate execution.
     </div>
 </div>
-''')
+"""
+            )
 
         # Pattern 3: Waste Dominance
         if waiting_waste and total_waste and (waiting_waste / total_waste > 0.8):
             patterns_found.append("wait_waste")
             pct_waiting = waiting_waste / total_waste * 100
-            pattern_cards.append(f'''
+            pattern_cards.append(
+                f"""
 <div style="background: #fff; border: 1px solid #dee2e6; border-radius: 6px; padding: 14px; margin-bottom: 12px;">
     <div style="font-weight: 700; color: #6f42c1; margin-bottom: 8px;">⏳ 3. Wait State Dominance</div>
     <p style="margin: 0 0 10px 0; color: #333; line-height: 1.5;">
@@ -2208,13 +2272,15 @@ def _generate_executive_summary(
         <strong>📊 Industry Benchmark:</strong> Elite performers have &lt;30% wait waste.
     </div>
 </div>
-''')
+"""
+            )
 
         # Pattern 4: Predictability Crisis
         if p85_leadtime and median_leadtime and (p85_leadtime / median_leadtime > 2.5):
             patterns_found.append("variability")
             ratio = p85_leadtime / median_leadtime
-            pattern_cards.append(f'''
+            pattern_cards.append(
+                f"""
 <div style="background: #fff; border: 1px solid #dee2e6; border-radius: 6px; padding: 14px; margin-bottom: 12px;">
     <div style="font-weight: 700; color: #17a2b8; margin-bottom: 8px;">📉 4. Predictability Crisis</div>
     <p style="margin: 0 0 10px 0; color: #333; line-height: 1.5;">
@@ -2224,56 +2290,93 @@ def _generate_executive_summary(
         <strong>💡 Expert Insight:</strong> High variability usually stems from a few 'outlier' features. Addressing the tail (worst performers) will improve predictability more than optimizing averages.
     </div>
 </div>
-''')
+"""
+            )
 
         # Add pattern section if patterns found
         if pattern_cards:
-            interpretation_parts.append(f'''
+            interpretation_parts.append(
+                f"""
 <div style="margin-bottom: 16px;">
     <div style="font-weight: 700; margin-bottom: 10px; font-size: 14px;">🔬 Systemic Pattern Analysis</div>
     {"".join(pattern_cards)}
 </div>
-''')
+"""
+            )
 
         # Expert Coach Commentary - Styled Box
         commentary_text = ""
         if patterns_found:
             commentary_text = "The patterns identified in this analysis are interconnected and mutually reinforcing. "
-            
+
             if "flow_blockage" in patterns_found and "hidden_deps" in patterns_found:
                 commentary_text += "High WIP amplifies the impact of hidden dependencies - when work is plentiful, teams start new items rather than resolving blockers. This creates a negative feedback loop: more work → more delays → more frustration → more work started to 'keep busy'. "
-            
+
             if "wait_waste" in patterns_found:
                 commentary_text += "The dominance of waiting waste indicates that optimizing individual team efficiency will have minimal impact. The constraint is in the system design - handoffs, approvals, and dependencies - not in how fast work is done. "
-            
+
             blindspot_text = "Organizations often respond to slow delivery by adding resources or starting more work. Both approaches typically make things worse. The counter-intuitive truth: <em>doing less work and finishing what's started will deliver more value faster.</em>"
         else:
             commentary_text = "The portfolio shows healthy patterns overall. Focus on maintaining current practices while pursuing continuous improvement. Watch for early warning signs: creeping WIP, increasing variability, and growing dependency complexity."
             blindspot_text = ""
 
-        interpretation_parts.append(f'''
+        interpretation_parts.append(
+            f"""
 <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 16px; border-radius: 8px; margin-bottom: 16px; color: white;">
     <div style="font-weight: 700; margin-bottom: 8px; font-size: 14px;">💡 Expert Coach Commentary</div>
     <p style="margin: 0 0 10px 0; line-height: 1.6; font-style: italic; opacity: 0.95;">"{commentary_text}"</p>
     {f'<div style="background: rgba(255,255,255,0.15); padding: 10px; border-radius: 4px; font-size: 12px;"><strong>🎯 Key Leadership Blind Spot:</strong> {blindspot_text}</div>' if blindspot_text else ''}
 </div>
-''')
+"""
+        )
 
         # Strategic Risks - Card Layout
         risk_items = []
         if len(critical_insights) >= 2:
-            risk_items.append(("🔴", "Delivery Confidence Erosion", "Multiple critical issues signal that PI objectives are at significant risk. Stakeholder trust may be impacted."))
+            risk_items.append(
+                (
+                    "🔴",
+                    "Delivery Confidence Erosion",
+                    "Multiple critical issues signal that PI objectives are at significant risk. Stakeholder trust may be impacted.",
+                )
+            )
         if avg_leadtime and avg_leadtime > 140:
-            risk_items.append(("🟠", "Time-to-Market Gap", "Lead times significantly exceed industry benchmarks, potentially impacting competitive positioning."))
+            risk_items.append(
+                (
+                    "🟠",
+                    "Time-to-Market Gap",
+                    "Lead times significantly exceed industry benchmarks, potentially impacting competitive positioning.",
+                )
+            )
         if flow_efficiency and flow_efficiency < 30:
-            risk_items.append(("🟡", "Hidden Cost of Delay", "Low flow efficiency means >70% of cycle time is non-value-adding. Massive opportunity cost."))
+            risk_items.append(
+                (
+                    "🟡",
+                    "Hidden Cost of Delay",
+                    "Low flow efficiency means >70% of cycle time is non-value-adding. Massive opportunity cost.",
+                )
+            )
         if len(multi_stage_stuck) >= 3:
-            risk_items.append(("🟣", "Technical Debt Accumulation", "Items stuck across multiple stages indicate architectural debt that will compound."))
+            risk_items.append(
+                (
+                    "🟣",
+                    "Technical Debt Accumulation",
+                    "Items stuck across multiple stages indicate architectural debt that will compound.",
+                )
+            )
         if total_exceeding and total_wip and (total_exceeding / total_wip > 0.5):
-            risk_items.append(("⚫", "Process Breakdown", "More than half of work items exceed time thresholds, suggesting unsustainable processes."))
+            risk_items.append(
+                (
+                    "⚫",
+                    "Process Breakdown",
+                    "More than half of work items exceed time thresholds, suggesting unsustainable processes.",
+                )
+            )
 
         if risk_items:
-            risk_html = "".join([f'''
+            risk_html = "".join(
+                [
+                    f"""
             <div style="display: flex; align-items: flex-start; margin-bottom: 10px;">
                 <span style="font-size: 16px; margin-right: 10px;">{icon}</span>
                 <div>
@@ -2281,21 +2384,28 @@ def _generate_executive_summary(
                     <div style="font-size: 12px; color: #666;">{desc}</div>
                 </div>
             </div>
-            ''' for icon, title, desc in risk_items])
-            
-            interpretation_parts.append(f'''
+            """
+                    for icon, title, desc in risk_items
+                ]
+            )
+
+            interpretation_parts.append(
+                f"""
 <div style="background: #fff; border: 1px solid #dee2e6; border-radius: 6px; padding: 14px; margin-bottom: 16px;">
     <div style="font-weight: 700; margin-bottom: 10px; font-size: 14px;">⚡ Strategic Risks</div>
     {risk_html}
 </div>
-''')
+"""
+            )
         else:
-            interpretation_parts.append('''
+            interpretation_parts.append(
+                """
 <div style="background: #d4edda; border: 1px solid #28a745; border-radius: 6px; padding: 14px; margin-bottom: 16px;">
     <div style="font-weight: 700; margin-bottom: 6px; font-size: 14px; color: #155724;">✅ No Critical Strategic Risks</div>
     <div style="font-size: 13px; color: #155724;">Portfolio is performing within acceptable risk parameters.</div>
 </div>
-''')
+"""
+            )
 
         # Skip the old risks section that follows
         risks = []
@@ -2313,9 +2423,10 @@ def _generate_executive_summary(
         # Executive Recommendations - Card Layout
         rec_cards = []
         rec_num = 1
-        
+
         if "flow_blockage" in patterns_found:
-            rec_cards.append(f'''
+            rec_cards.append(
+                f"""
             <div style="background: #f8f9fa; border-left: 4px solid #dc3545; padding: 12px; margin-bottom: 10px; border-radius: 0 4px 4px 0;">
                 <div style="font-weight: 700; color: #dc3545; margin-bottom: 6px;">{rec_num}. STOP Starting, START Finishing</div>
                 <ul style="margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.6; color: #333;">
@@ -2324,11 +2435,13 @@ def _generate_executive_summary(
                     <li>Establish daily 'flow' standups focused on blocked work</li>
                 </ul>
             </div>
-            ''')
+            """
+            )
             rec_num += 1
 
         if "hidden_deps" in patterns_found:
-            rec_cards.append(f'''
+            rec_cards.append(
+                f"""
             <div style="background: #f8f9fa; border-left: 4px solid #fd7e14; padding: 12px; margin-bottom: 10px; border-radius: 0 4px 4px 0;">
                 <div style="font-weight: 700; color: #fd7e14; margin-bottom: 6px;">{rec_num}. Dependency Illumination Program</div>
                 <ul style="margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.6; color: #333;">
@@ -2337,10 +2450,12 @@ def _generate_executive_summary(
                     <li>Add dependency validation to Definition of Ready</li>
                 </ul>
             </div>
-            ''')
+            """
+            )
             rec_num += 1
 
-        rec_cards.append(f'''
+        rec_cards.append(
+            f"""
         <div style="background: #f8f9fa; border-left: 4px solid #17a2b8; padding: 12px; margin-bottom: 10px; border-radius: 0 4px 4px 0;">
             <div style="font-weight: 700; color: #17a2b8; margin-bottom: 6px;">{rec_num}. Metrics-Driven Improvement</div>
             <ul style="margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.6; color: #333;">
@@ -2349,10 +2464,12 @@ def _generate_executive_summary(
                 <li>Create feedback loops: What unblocked stuck items?</li>
             </ul>
         </div>
-        ''')
+        """
+        )
         rec_num += 1
 
-        rec_cards.append(f'''
+        rec_cards.append(
+            f"""
         <div style="background: #f8f9fa; border-left: 4px solid #28a745; padding: 12px; margin-bottom: 10px; border-radius: 0 4px 4px 0;">
             <div style="font-weight: 700; color: #28a745; margin-bottom: 6px;">{rec_num}. Structural Changes</div>
             <ul style="margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.6; color: #333;">
@@ -2361,34 +2478,46 @@ def _generate_executive_summary(
                 <li>Empower teams to swarm on blockers</li>
             </ul>
         </div>
-        ''')
+        """
+        )
 
-        interpretation_parts.append(f'''
+        interpretation_parts.append(
+            f"""
 <div style="margin-bottom: 16px;">
     <div style="font-weight: 700; margin-bottom: 10px; font-size: 14px;">✅ Executive Recommendations</div>
     {"".join(rec_cards)}
 </div>
-''')
+"""
+        )
 
         # Success Criteria - HTML Table
         target_rows = []
         if avg_leadtime:
             target_lt = max(110, avg_leadtime * 0.75)
             stretch_lt = max(90, avg_leadtime * 0.6)
-            target_rows.append(f'<tr><td style="padding: 8px;">Avg Lead Time</td><td style="padding: 8px; text-align: center;"><strong>{avg_leadtime:.0f}d</strong></td><td style="padding: 8px; text-align: center; color: #28a745;">{target_lt:.0f}d</td><td style="padding: 8px; text-align: center; color: #17a2b8;">{stretch_lt:.0f}d</td></tr>')
+            target_rows.append(
+                f'<tr><td style="padding: 8px;">Avg Lead Time</td><td style="padding: 8px; text-align: center;"><strong>{avg_leadtime:.0f}d</strong></td><td style="padding: 8px; text-align: center; color: #28a745;">{target_lt:.0f}d</td><td style="padding: 8px; text-align: center; color: #17a2b8;">{stretch_lt:.0f}d</td></tr>'
+            )
 
         if flow_efficiency:
             target_fe = min(45, flow_efficiency * 1.3)
             stretch_fe = min(55, flow_efficiency * 1.5)
-            target_rows.append(f'<tr><td style="padding: 8px;">Flow Efficiency</td><td style="padding: 8px; text-align: center;"><strong>{flow_efficiency:.1f}%</strong></td><td style="padding: 8px; text-align: center; color: #28a745;">{target_fe:.0f}%</td><td style="padding: 8px; text-align: center; color: #17a2b8;">{stretch_fe:.0f}%</td></tr>')
+            target_rows.append(
+                f'<tr><td style="padding: 8px;">Flow Efficiency</td><td style="padding: 8px; text-align: center;"><strong>{flow_efficiency:.1f}%</strong></td><td style="padding: 8px; text-align: center; color: #28a745;">{target_fe:.0f}%</td><td style="padding: 8px; text-align: center; color: #17a2b8;">{stretch_fe:.0f}%</td></tr>'
+            )
 
         target_stuck = max(0, len(stuck_items) - 5)
-        target_rows.append(f'<tr><td style="padding: 8px;">Stuck Items</td><td style="padding: 8px; text-align: center;"><strong>{len(stuck_items)}</strong></td><td style="padding: 8px; text-align: center; color: #28a745;">{target_stuck}</td><td style="padding: 8px; text-align: center; color: #17a2b8;">0</td></tr>')
+        target_rows.append(
+            f'<tr><td style="padding: 8px;">Stuck Items</td><td style="padding: 8px; text-align: center;"><strong>{len(stuck_items)}</strong></td><td style="padding: 8px; text-align: center; color: #28a745;">{target_stuck}</td><td style="padding: 8px; text-align: center; color: #17a2b8;">0</td></tr>'
+        )
 
         target_bottlenecks = max(0, len(critical_bottlenecks) - 2)
-        target_rows.append(f'<tr><td style="padding: 8px;">Critical Bottlenecks</td><td style="padding: 8px; text-align: center;"><strong>{len(critical_bottlenecks)}</strong></td><td style="padding: 8px; text-align: center; color: #28a745;">{target_bottlenecks}</td><td style="padding: 8px; text-align: center; color: #17a2b8;">0</td></tr>')
+        target_rows.append(
+            f'<tr><td style="padding: 8px;">Critical Bottlenecks</td><td style="padding: 8px; text-align: center;"><strong>{len(critical_bottlenecks)}</strong></td><td style="padding: 8px; text-align: center; color: #28a745;">{target_bottlenecks}</td><td style="padding: 8px; text-align: center; color: #17a2b8;">0</td></tr>'
+        )
 
-        interpretation_parts.append(f'''
+        interpretation_parts.append(
+            f"""
 <div style="margin-bottom: 16px;">
     <div style="font-weight: 700; margin-bottom: 10px; font-size: 14px;">🎯 Success Criteria (Next 2 PIs)</div>
     <table style="width: 100%; border-collapse: collapse; font-size: 13px; border: 1px solid #dee2e6;">
@@ -2405,7 +2534,8 @@ def _generate_executive_summary(
         </tbody>
     </table>
 </div>
-''')
+"""
+        )
 
         # Build full observation and interpretation
         observation = "".join(observation_parts)

@@ -879,7 +879,79 @@ async def export_executive_summary(
 
                 bottleneck_data = analysis_summary.get("bottleneck_analysis", {})
                 wip_stats = bottleneck_data.get("wip_statistics", {})
-                stuck_items = bottleneck_data.get("stuck_items", [])
+                stuck_items_from_api = bottleneck_data.get("stuck_items", [])
+
+                # ============================================================
+                # ENHANCEMENT: Get ALL features and calculate stuck items for all ARTs
+                # The API stuck_items may be limited to certain ARTs, so we calculate our own
+                # ============================================================
+                threshold_days = settings.bottleneck_threshold_days
+
+                # Get flow_leadtime data for all requested ARTs
+                flow_params = {"limit": 50000}
+                # Note: We'll filter by ART/PI client-side since the server may have issues with multiple ARTs
+                flow_data = leadtime_service.client.get_flow_leadtime(**flow_params)
+
+                # Filter by selected ARTs and PIs
+                if selected_arts:
+                    flow_data = [f for f in flow_data if f.get("art") in selected_arts]
+                if selected_pis:
+                    flow_data = [f for f in flow_data if f.get("pi") in selected_pis]
+
+                # Calculate stuck items from flow_leadtime data
+                # A feature is "stuck" if it's currently in a stage for longer than threshold
+                stage_columns = [
+                    "in_backlog",
+                    "in_planned",
+                    "in_analysis",
+                    "in_progress",
+                    "in_reviewing",
+                    "in_sit",
+                    "ready_for_uat",
+                    "in_uat",
+                    "ready_for_deployment",
+                ]
+
+                stuck_items = []
+                for feature in flow_data:
+                    # Only check non-completed features (status != 'DONE')
+                    if feature.get("status") == "DONE":
+                        continue
+
+                    # Find the current stage (last stage with time > 0)
+                    current_stage = None
+                    current_stage_days = 0
+
+                    for stage in stage_columns:
+                        stage_time = feature.get(stage, 0) or 0
+                        if stage_time > 0:
+                            current_stage = stage
+                            current_stage_days = stage_time
+
+                    # If stuck longer than threshold, add to stuck items
+                    if current_stage and current_stage_days > threshold_days:
+                        stuck_items.append(
+                            {
+                                "issue_key": feature.get("issue_key", "Unknown"),
+                                "art": feature.get("art", "Unknown"),
+                                "team": feature.get("development_team", "Unknown"),
+                                "current_stage": current_stage,
+                                "days_in_stage": round(current_stage_days, 1),
+                                "summary": feature.get("summary", ""),
+                                "status": feature.get("status", "Unknown"),
+                                "pi": feature.get("pi", "Unknown"),
+                                "total_leadtime": feature.get("total_leadtime", 0),
+                            }
+                        )
+
+                # Sort by days in stage descending
+                stuck_items.sort(key=lambda x: x.get("days_in_stage", 0), reverse=True)
+
+                # Log what we found
+                arts_in_stuck = set(item.get("art") for item in stuck_items)
+                print(
+                    f"📊 Excel Export: Found {len(stuck_items)} stuck items across {len(arts_in_stuck)} ARTs: {arts_in_stuck}"
+                )
 
                 # Create Excel workbook with multiple sheets
                 output = BytesIO()
@@ -887,19 +959,17 @@ async def export_executive_summary(
                     # Sheet 1: Stuck Items (ALL items, sorted by days in stage)
                     if stuck_items:
                         stuck_df = pd.DataFrame(stuck_items)
-                        # Sort by days_in_stage descending to show worst first
-                        stuck_df = stuck_df.sort_values(
-                            "days_in_stage", ascending=False
-                        )
                         # Reorder columns for better readability
                         column_order = [
                             "issue_key",
                             "art",
+                            "team",
                             "current_stage",
                             "days_in_stage",
                             "summary",
                             "status",
                             "pi",
+                            "total_leadtime",
                         ]
                         # Only include columns that exist
                         column_order = [
@@ -907,6 +977,21 @@ async def export_executive_summary(
                         ]
                         stuck_df = stuck_df[column_order]
                         stuck_df.to_excel(writer, sheet_name="Stuck Items", index=False)
+                    else:
+                        # Create empty sheet with headers
+                        empty_df = pd.DataFrame(
+                            columns=[
+                                "issue_key",
+                                "art",
+                                "team",
+                                "current_stage",
+                                "days_in_stage",
+                                "summary",
+                                "status",
+                                "pi",
+                            ]
+                        )
+                        empty_df.to_excel(writer, sheet_name="Stuck Items", index=False)
 
                     # Sheet 2: Bottleneck Analysis (ALL stages with scores)
                     bottleneck_list = []
