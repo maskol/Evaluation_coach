@@ -534,6 +534,9 @@ async def generate_pi_report(
 
                 traceback.print_exc()
 
+        # Get excluded feature statuses from database
+        excluded_statuses = get_excluded_feature_statuses(db)
+
         # Get strategic targets from database
         targets = db.query(StrategicTarget).all()
         target_dict = {t.metric_name: t for t in targets}
@@ -550,9 +553,14 @@ async def generate_pi_report(
         if is_multi_pi:
             # Multi-PI report (e.g., full year)
             pi_list = ", ".join(pis)
+            excluded_status_note = (
+                f"\n**Note:** Features with the following statuses are excluded from analysis: {', '.join(excluded_statuses)}"
+                if excluded_statuses
+                else ""
+            )
             data_context = f"""
 **Analysis Period:** {pi_list} ({len(pis)} Program Increments)
-**Report Type:** Multi-PI Performance Analysis
+**Report Type:** Multi-PI Performance Analysis{excluded_status_note}
 
 """
             # Show metrics for each PI
@@ -625,8 +633,13 @@ async def generate_pi_report(
             # Single PI report
             pi = pis[0]
             current_metrics = all_pi_metrics.get(pi, {})
+            excluded_status_note = (
+                f"\n**Note:** Features with the following statuses are excluded from analysis: {', '.join(excluded_statuses)}"
+                if excluded_statuses
+                else ""
+            )
             data_context = f"""
-**PI Being Analyzed:** {pi}
+**PI Being Analyzed:** {pi}{excluded_status_note}
 
 **Current PI Performance:**
 - Flow Efficiency: {current_metrics.get('flow_efficiency', 'N/A')}%
@@ -815,6 +828,9 @@ async def generate_insights_endpoint(
         else:
             print("🤖 Generating insights without LLM enhancement")
 
+        # Get excluded feature statuses from database
+        excluded_statuses = get_excluded_feature_statuses(db)
+
         # Parse filter parameters
         selected_pis = (
             [pi.strip() for pi in pis.split(",") if pi.strip()] if pis else []
@@ -886,6 +902,12 @@ async def generate_insights_endpoint(
                     "status": "success",
                     "insights": [insight.dict() for insight in insights],
                     "count": len(insights),
+                    "excluded_statuses": excluded_statuses,
+                    "filter_info": {
+                        "excluded_statuses": excluded_statuses,
+                        "selected_pis": selected_pis,
+                        "selected_arts": selected_arts,
+                    },
                 }
             except Exception as e:
                 print(f"❌ Error generating insights: {e}")

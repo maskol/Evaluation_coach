@@ -1219,7 +1219,10 @@ function generateInsights() {
         .then(data => {
             clearTimeout(llmTimer);
             const insights = data.insights || [];
-            displayGeneratedInsights(insights);
+            const excludedStatuses = data.excluded_statuses || [];
+            const filterInfo = data.filter_info || {};
+
+            displayGeneratedInsights(insights, excludedStatuses, filterInfo);
             hideLoadingOverlay();
 
             // Hide cancel button on success
@@ -1303,7 +1306,7 @@ function generateInsights() {
 }
 
 // Display generated insights
-function displayGeneratedInsights(insights) {
+function displayGeneratedInsights(insights, excludedStatuses = [], filterInfo = {}) {
     const insightsContent = document.getElementById('insightsContent');
     if (!insightsContent) return;
 
@@ -1336,14 +1339,19 @@ function displayGeneratedInsights(insights) {
         filterParts.push('All ARTs');
     }
 
-    const filterInfo = filterParts.join(' | ');
+    // Add excluded statuses info
+    if (excludedStatuses && excludedStatuses.length > 0) {
+        filterParts.push(`Excluded: ${excludedStatuses.join(', ')}`);
+    }
+
+    const filterInfoText = filterParts.join(' | ');
 
     const insightsHTML = `
         <div class="messages">
             <div class="active-context-inline">
                 <div class="active-context-title-inline">📊 Active Filters</div>
                 <div class="active-context-content-inline">
-                    ${filterInfo}
+                    ${filterInfoText}
                 </div>
             </div>
             
