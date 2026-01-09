@@ -1371,6 +1371,26 @@ function displayGeneratedInsights(insights) {
                         <span>Export to Excel</span>
                     </button>
                     <button 
+                        onclick="exportToWord()" 
+                        style="
+                            background: linear-gradient(135deg, #2B5797 0%, #1E3A5F 100%);
+                            color: white;
+                            border: none;
+                            padding: 10px 20px;
+                            font-size: 14px;
+                            font-weight: 600;
+                            border-radius: 6px;
+                            cursor: pointer;
+                            box-shadow: 0 2px 8px rgba(43, 87, 151, 0.3);
+                            display: inline-flex;
+                            align-items: center;
+                            gap: 6px;
+                        "
+                    >
+                        <span>📄</span>
+                        <span>Export to Word</span>
+                    </button>
+                    <button 
                         onclick="printAllInsights()" 
                         style="
                             background: linear-gradient(135deg, #34C759 0%, #30B350 100%);
@@ -1796,6 +1816,127 @@ function printAllInsights() {
     }, 250);
 
     updateStatusBar(`Complete insights report prepared for printing (${insights.length} insights)`);
+}
+
+// Export all insights to MS Word format
+function exportToWord() {
+    const insights = appState.currentInsights || [];
+    if (insights.length === 0) {
+        alert('No insights available to export');
+        return;
+    }
+
+    const insightsHTML = insights.map((insight, index) =>
+        generateEnhancedInsightHTML(insight, index + 1)
+    ).join('<div style="page-break-after: always; margin: 30px 0;"></div>');
+
+    // Generate complete HTML document that Word can open
+    const htmlContent = `
+<!DOCTYPE html>
+<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+<head>
+    <meta charset='utf-8'>
+    <title>AI Expert Insights Report - ${new Date().toLocaleDateString()}</title>
+    <!--[if gte mso 9]>
+    <xml>
+        <w:WordDocument>
+            <w:View>Print</w:View>
+            <w:Zoom>90</w:Zoom>
+            <w:DoNotOptimizeForBrowser/>
+        </w:WordDocument>
+    </xml>
+    <![endif]-->
+    <style>
+        ${getEnhancedPrintStyles()}
+        /* Additional Word-specific styles */
+        @page {
+            size: 8.5in 11in;
+            margin: 1in;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+    </style>
+</head>
+<body>
+    ${generateEnhancedReportHeader()}
+    <div class="summary-section">
+        <h2 style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 28px;">📊</span>
+            <span>Executive Summary</span>
+        </h2>
+        <div class="summary-grid">
+            <div class="summary-card">
+                <div class="summary-value">${insights.length}</div>
+                <div class="summary-label">Total Insights</div>
+            </div>
+            <div class="summary-card critical">
+                <div class="summary-value">${insights.filter(i => i.severity === 'critical').length}</div>
+                <div class="summary-label">Critical Issues</div>
+            </div>
+            <div class="summary-card warning">
+                <div class="summary-value">${insights.filter(i => i.severity === 'warning').length}</div>
+                <div class="summary-label">Warnings</div>
+            </div>
+            <div class="summary-card info">
+                <div class="summary-value">${insights.filter(i => i.severity === 'info').length}</div>
+                <div class="summary-label">Information</div>
+            </div>
+        </div>
+        <div class="context-info">
+            <div class="context-row">
+                <span class="context-label">📊 Scope:</span>
+                <span class="context-value">${appState.scope.charAt(0).toUpperCase() + appState.scope.slice(1)}</span>
+            </div>
+            <div class="context-row">
+                <span class="context-label">📅 PI(s):</span>
+                <span class="context-value">${appState.selectedPIs.length > 0 ? appState.selectedPIs.join(', ') : 'All PIs'}</span>
+            </div>
+            ${appState.selectedARTs && appState.selectedARTs.length > 0 ? `
+                <div class="context-row">
+                    <span class="context-label">🔄 ART(s):</span>
+                    <span class="context-value">${appState.selectedARTs.join(', ')}</span>
+                </div>
+            ` : ''}
+            <div class="context-row">
+                <span class="context-label">🕐 Generated:</span>
+                <span class="context-value">${new Date().toLocaleString()}</span>
+            </div>
+        </div>
+    </div>
+    <div style="page-break-after: always;"></div>
+    ${insightsHTML}
+    ${generateReportFooter()}
+</body>
+</html>
+    `.trim();
+
+    // Create blob with Word MIME type
+    const blob = new Blob(['\ufeff', htmlContent], {
+        type: 'application/msword'
+    });
+
+    // Generate filename with date
+    const date = new Date();
+    const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    const filename = `AI_Insights_Report_${dateStr}.doc`;
+
+    // Create download link
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+
+    // Cleanup
+    setTimeout(() => {
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }, 100);
+
+    updateStatusBar(`Report exported to Word: ${filename} (${insights.length} insights)`);
 }
 
 // Generate HTML for a single insight (legacy version)
@@ -2641,171 +2782,13 @@ function getEnhancedPrintStyles() {
 function getPrintStyles() {
     return getEnhancedPrintStyles();
 }
-@media print {
-    @page {
-        size: A4;
-        margin: 15mm;
-    }
-}
-        
-        body {
-    font - family: -apple - system, BlinkMacSystemFont, 'Segoe UI', system - ui, sans - serif;
-    line - height: 1.6;
-    color: #333;
-    max - width: 210mm;
-    margin: 0 auto;
-    padding: 20px;
-    background: white;
-}
-        
-        .report - header {
-    border - bottom: 3px solid #667eea;
-    padding - bottom: 20px;
-    margin - bottom: 30px;
-}
-        
-        .report - header h1 {
-    color: #667eea;
-    margin: 0 0 10px 0;
-    font - size: 28px;
-}
-        
-        .report - meta {
-    display: flex;
-    justify - content: space - between;
-    font - size: 12px;
-    color: #666;
-}
-        
-        .summary - section {
-    background: #f8f9fa;
-    padding: 20px;
-    border - radius: 8px;
-    margin - bottom: 30px;
-}
-        
-        .summary - section h2 {
-    margin - top: 0;
-    color: #667eea;
-}
-        
-        .summary - section p {
-    margin: 8px 0;
-}
-        
-        .insight - section {
-    margin - bottom: 40px;
-    page -break-inside: avoid;
-}
-        
-        .insight - header {
-    border - left: 4px solid;
-    padding - left: 16px;
-    margin - bottom: 16px;
-    display: flex;
-    justify - content: space - between;
-    align - items: start;
-}
-        
-        .insight - header h2 {
-    margin: 0;
-    font - size: 20px;
-}
-        
-        .severity - badge {
-    color: white;
-    padding: 4px 12px;
-    border - radius: 4px;
-    font - size: 11px;
-    font - weight: 600;
-    white - space: nowrap;
-}
-        
-        .metadata {
-    color: #666;
-    font - size: 13px;
-    margin - bottom: 20px;
-    padding - bottom: 10px;
-    border - bottom: 1px solid #eee;
-}
-        
-        .section {
-    margin - bottom: 20px;
-}
-        
-        .section h3 {
-    color: #667eea;
-    font - size: 16px;
-    margin: 0 0 10px 0;
-}
-        
-        .section p {
-    margin: 8px 0;
-}
-        
-        .section ul, .section ol {
-    padding - left: 24px;
-    margin: 8px 0;
-}
-        
-        .section li {
-    margin - bottom: 12px;
-}
-        
-        .evidence - list {
-    margin - top: 8px;
-    font - size: 13px;
-    color: #666;
-}
-        
-        .evidence - list li {
-    margin - bottom: 4px;
-}
-        
-        .actions - section {
-    background: #e8f5e9;
-    padding: 15px;
-    border - radius: 6px;
-}
-        
-        .action - details {
-    margin - top: 8px;
-    padding - left: 16px;
-    font - size: 13px;
-    color: #666;
-}
-        
-        .action - details div {
-    margin: 4px 0;
-}
-        
-        .outcomes - section {
-    background: #fff9e6;
-    padding: 15px;
-    border - radius: 6px;
-}
-        
-        .report - footer {
-    margin - top: 40px;
-    padding - top: 20px;
-    border - top: 2px solid #eee;
-    text - align: center;
-    font - size: 11px;
-    color: #999;
-}
-        
-        .report - footer p {
-    margin: 4px 0;
-}
-`;
-}
 
 // Add message to chat
 function addMessage(message) {
     const messagesContainer = document.getElementById('chatMessages');
 
     const messageDiv = document.createElement('div');
-    messageDiv.className = `message ${ message.type } `;
+    messageDiv.className = `message ${message.type} `;
 
     const contentDiv = document.createElement('div');
     contentDiv.className = 'message-content';
