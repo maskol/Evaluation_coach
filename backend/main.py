@@ -417,8 +417,6 @@ async def generate_pi_report(
         db: Database session
     """
     try:
-        from datetime import datetime
-
         # Extract values from request (support both single PI and multiple PIs)
         pis = request.pis if request.pis else ([request.pi] if request.pi else [])
         if not pis:
@@ -748,7 +746,7 @@ Use clear markdown formatting with headers (##, ###), bullet points, and **bold*
 
         # Check if report generation failed due to timeout
         if report_content.startswith("Error:"):
-            print(f"⚠️  Report generation encountered an issue")
+            print("⚠️  Report generation encountered an issue")
             # If using a slower model and got timeout, suggest faster model
             if (
                 "timeout" in report_content.lower()
@@ -828,7 +826,6 @@ async def generate_insights_endpoint(
         if use_agent_graph and scope in ["portfolio", "pi"]:
             print(f"🤖 Using agent graph workflow for {scope} scope")
             from agents.graph import run_evaluation_coach
-            from datetime import datetime, timedelta
 
             # Update LLM service with custom parameters if provided
             if enhance_with_llm:
@@ -871,8 +868,6 @@ async def generate_insights_endpoint(
             insights = final_state.get("insights", [])
 
             # Convert to API response format if needed
-            from api_models import InsightResponse
-
             insight_responses = []
             for insight in insights:
                 if isinstance(insight, InsightResponse):

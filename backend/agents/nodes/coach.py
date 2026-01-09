@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 def coaching_node(state: AgentState) -> Dict[str, Any]:
     """Node 5: Generate insights and improvement proposals."""
-    logger.info(f"Starting coaching analysis for {state['scope']}")
+    logger.info("Starting coaching analysis for %s", state["scope"])
 
     try:
         updates = {"coaching_timestamp": datetime.utcnow()}
@@ -20,11 +20,11 @@ def coaching_node(state: AgentState) -> Dict[str, Any]:
         littles_law_insights = state.get("littles_law_insights", [])
         if littles_law_insights:
             logger.info(
-                f"Incorporating {len(littles_law_insights)} Little's Law insights"
+                "Incorporating %d Little's Law insights", len(littles_law_insights)
             )
             updates["insights"] = littles_law_insights
             updates["reasoning_chain"] = [
-                f"Applied Little's Law analysis to understand flow dynamics",
+                "Applied Little's Law analysis to understand flow dynamics",
                 f"Identified {len(littles_law_insights)} actionable insights from flow metrics",
             ]
 
@@ -35,11 +35,11 @@ def coaching_node(state: AgentState) -> Dict[str, Any]:
         # insights = reasoner.generate_insights(state)
         # proposals = ProposalGenerator().generate(state, insights)
 
-        logger.info(f"Coaching analysis complete for {state['scope']}")
+        logger.info("Coaching analysis complete for %s", state["scope"])
         return updates
 
     except Exception as e:
-        logger.error(f"Error in coaching: {e}", exc_info=True)
+        logger.error("Error in coaching: %s", e, exc_info=True)
         return {
             "errors": [f"Coaching failed: {str(e)}"],
             "coaching_timestamp": datetime.utcnow(),
