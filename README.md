@@ -192,7 +192,20 @@ curl -X POST http://localhost:8850/api/v1/scorecard \
 - Quality (defect injection, bug fix time, rework)
 - Team Stability (churn, tenure)
 
-### 3. Explainable Insights with 5-Part Template
+### 3. AI-Generated Insights
+
+**Little's Law Analysis** (see [LITTLES_LAW_INSIGHT.md](docs/LITTLES_LAW_INSIGHT.md))
+
+Automatic PI-level analysis using Little's Law (L = λ × W) to optimize WIP and flow:
+- **Throughput Analysis**: Features delivered per day
+- **Lead Time Optimization**: Identify gaps between current and target (30 days)
+- **WIP Recommendations**: Calculate optimal work-in-progress levels
+- **Flow Efficiency**: Measure active work vs. wait time percentage
+- **Actionable Targets**: Specific WIP limits and improvement actions
+
+**Data Source**: Real-time flow metrics from `flow_leadtime` API (DL Webb App integration)
+
+### 4. Explainable Insights with 5-Part Template
 
 **Every Insight Follows This Structure** (see [EXPLAINABLE_INSIGHTS.md](docs/EXPLAINABLE_INSIGHTS.md))
 
@@ -202,7 +215,7 @@ curl -X POST http://localhost:8850/api/v1/scorecard \
 4. **Recommended Actions**: Short/medium/long term actions with owners, effort, success signals
 5. **Expected Outcome**: Metrics to watch, timeline, leading/lagging indicators, risks
 
-### 4. Metadata-Driven Knowledge Retrieval (RAG)
+### 5. Metadata-Driven Knowledge Retrieval (RAG)
 
 **Structured Knowledge Base** (see [RAG_KNOWLEDGE_STRUCTURE.md](docs/RAG_KNOWLEDGE_STRUCTURE.md))
 
@@ -211,7 +224,7 @@ curl -X POST http://localhost:8850/api/v1/scorecard \
 - **Hybrid Search**: Combines keyword (BM25) + semantic (vector embeddings)
 - **Context-Aware**: Retrieves knowledge relevant to detected patterns
 
-### 5. Pattern Detection
+### 6. Pattern Detection
 
 - **Bottlenecks**: Identifies where work gets stuck
 - **Anomalies**: Detects statistical outliers

@@ -4,6 +4,151 @@ All notable changes to the Evaluation Coach project.
 
 ---
 
+## [2026-01-09] - Little's Law AI Insight Feature
+
+### 🎉 New Feature: Little's Law Analysis for PI Performance
+
+Added automatic AI-generated insights that analyze Program Increment (PI) delivery using Little's Law (L = λ × W) with real-time flow metrics from the `flow_leadtime` API.
+
+### ✅ Added - Core Insight Generation
+
+#### Little's Law Analysis (`backend/services/insights_service.py`)
+- **New Method**: `_generate_littles_law_insight()` (200+ lines)
+  - Calculates throughput (λ): features delivered per day
+  - Analyzes average lead time (W): days per feature
+  - Computes predicted WIP (L): optimal work in progress
+  - Measures flow efficiency: active work % vs wait time %
+  - Recommends optimal WIP targets for 30-day lead time goal
+
+#### Integration Logic
+- Automatic PI detection when scope is "pi" or "portfolio"
+- Fetches `flow_leadtime` data from DL Webb App server
+- Filters for completed features with valid lead times
+- Generates insight when ≥5 features available
+- Assigns severity based on lead time and flow efficiency:
+  - **Critical**: Lead time > 60 days OR Flow efficiency < 30%
+  - **Warning**: Lead time > 45 days OR Flow efficiency < 40%
+  - **Info**: Lead time > 30 days OR Flow efficiency < 50%
+  - **Success**: Lead time ≤ 30 days AND Flow efficiency ≥ 50%
+
+#### Actionable Recommendations
+- **Short-term**: WIP limit implementation with specific targets
+- **Medium-term**: Wait time elimination (value stream mapping)
+- **Ongoing**: Weekly metrics monitoring with success signals
+
+### ✅ Added - Testing & Documentation
+
+#### Test Script (`test_littles_law_insight.py`)
+- Standalone test script (190 lines)
+- Validates data fetch and insight generation
+- Displays formatted output with all sections
+- Checks service availability and PI data
+
+#### Comprehensive Documentation
+- **Full Guide**: `docs/LITTLES_LAW_INSIGHT.md` (450+ lines)
+  - Formula explanations and calculations
+  - Example outputs with real data
+  - Severity level definitions
+  - Troubleshooting guide
+- **Quick Start**: `docs/LITTLES_LAW_QUICKSTART.md` (150+ lines)
+  - Usage examples (API, Frontend, Test Script)
+  - Prerequisites and setup
+  - Common issues and solutions
+- **Architecture**: `docs/LITTLES_LAW_ARCHITECTURE.md`
+  - Visual workflow diagram
+  - Formula breakdown
+  - Flow efficiency calculations
+
+#### Implementation Summary
+- **Summary**: `LITTLES_LAW_IMPLEMENTATION.md`
+  - Complete feature overview
+  - Files created and modified
+  - Testing instructions
+  - Future enhancement ideas
+
+### 🐛 Fixed - Bug Fixes
+
+#### RAG Admin Upload (`frontend/rag_admin.html`)
+- **Fixed**: JavaScript ReferenceError "form is not defined"
+- **Issue**: Variable `form` was scoped to `setupUploadForm()` but referenced in `uploadDocument()`
+- **Solution**: Added `const form = document.getElementById('uploadForm');` to `uploadDocument()` function
+
+### 📝 Modified - Documentation Updates
+
+#### Main README (`README.md`)
+- Added section "3. AI-Generated Insights"
+- Documented Little's Law analysis capability
+- Linked to feature documentation
+- Renumbered subsequent sections (4, 5, 6)
+
+### 🎯 Benefits
+
+- **Data-Driven**: Uses real flow metrics from `flow_leadtime`, not estimates
+- **Quantitative**: Provides specific WIP reduction targets (e.g., "reduce from 25 to 15 features")
+- **Actionable**: Clear recommendations with owners and success signals
+- **Scientific**: Based on proven queueing theory (Little's Law)
+- **Automatic**: Generated for every PI analysis request
+- **Coaching-Oriented**: Explains the "why" behind recommendations
+
+### 🔧 Technical Details
+
+#### Data Source
+- **API**: `GET /api/flow_leadtime?pi={PI}&limit=10000`
+- **Server**: DL Webb App (http://localhost:8000)
+- **Fields Used**:
+  - `issue_key`, `status`, `total_leadtime`
+  - `in_backlog`, `in_analysis`, `in_progress`
+  - `in_reviewing`, `in_sit`, `in_uat`
+  - `ready_for_deployment`, `deployed`
+
+#### Calculations
+```
+Throughput (λ) = completed_features / pi_duration_days
+Average Lead Time (W) = sum(leadtimes) / total_features
+Predicted WIP (L) = λ × W
+Flow Efficiency = (active_time / total_leadtime) × 100%
+Optimal WIP = λ × target_leadtime (30 days)
+```
+
+### 📋 Prerequisites
+
+1. DL Webb App running on `http://localhost:8000`
+2. Lead-time service enabled in `.env`:
+   ```env
+   LEADTIME_SERVER_ENABLED=true
+   LEADTIME_SERVER_URL=http://localhost:8000
+   ```
+3. Minimum 5 completed features in the PI
+
+### 🧪 Testing
+
+```bash
+# Run test script
+./test_littles_law_insight.py
+
+# Or via API
+curl "http://localhost:8850/api/insights?scope=pi&scope_id=24Q4"
+```
+
+### 📊 Example Output
+
+```json
+{
+  "title": "Little's Law Analysis for PI 24Q4",
+  "severity": "warning",
+  "confidence": 88.0,
+  "observation": "42 features in 84 days. λ=0.50/day, W=50.2 days, L=25.1, FE=38.5%",
+  "interpretation": "Low flow efficiency (38.5%) indicates 30.9 days waiting vs 19.3 days active work. Reduce WIP from 25.1 to 15.0 to achieve 30-day lead time.",
+  "recommended_actions": [
+    "Implement WIP limits: cap at 15 features",
+    "Eliminate wait time sources",
+    "Monitor metrics weekly"
+  ]
+}
+```
+
+---
+
 ## [Phase 0 Complete] - 2026-01-02
 
 ### 🎉 Major Milestone: Full-Stack Application Complete

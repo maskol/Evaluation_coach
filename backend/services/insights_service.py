@@ -284,6 +284,238 @@ class InsightsService:
 
         return insights
 
+    def _generate_littles_law_insight(
+        self,
+        pi: str,
+        flow_data: List[dict],
+        pi_duration_days: int = 84,
+    ) -> Optional[dict]:
+        """Generate Little's Law analysis insight for a specific PI
+
+        Little's Law: L = λ × W
+        Where:
+        - L = Average WIP (Work in Progress)
+        - λ = Throughput (features completed per day)
+        - W = Average Lead Time (days per feature)
+
+        Args:
+            pi: Program Increment identifier (e.g., "21Q4")
+            flow_data: List of features from flow_leadtime API
+            pi_duration_days: Duration of PI in days (default 84 for 6 weeks)
+
+        Returns:
+            Insight dictionary or None if insufficient data
+        """
+        if not flow_data:
+            return None
+
+        # Filter completed features for the PI
+        completed_features = [
+            f
+            for f in flow_data
+            if f.get("status") in ["Done", "Deployed"]
+            and f.get("total_leadtime", 0) > 0
+        ]
+
+        if len(completed_features) < 5:  # Need minimum data for meaningful analysis
+            return None
+
+        # Calculate metrics
+        total_features = len(completed_features)
+
+        # W: Average Lead Time (days)
+        lead_times = [f["total_leadtime"] for f in completed_features]
+        avg_leadtime = sum(lead_times) / len(lead_times)
+
+        # λ: Throughput (features per day)
+        throughput_per_day = total_features / pi_duration_days
+
+        # L: Predicted WIP using Little's Law
+        predicted_wip = throughput_per_day * avg_leadtime
+
+        # Calculate actual average WIP (if we have in_progress data)
+        # This is approximate based on the total time items spent in progress
+        in_progress_times = [
+            f.get("in_progress", 0) + f.get("in_analysis", 0) + f.get("in_reviewing", 0)
+            for f in completed_features
+        ]
+        avg_active_time = (
+            sum(in_progress_times) / len(in_progress_times)
+            if in_progress_times
+            else avg_leadtime
+        )
+
+        # Estimated actual WIP
+        actual_wip = throughput_per_day * avg_active_time
+
+        # Calculate efficiency metrics
+        flow_efficiency = (
+            (avg_active_time / avg_leadtime * 100) if avg_leadtime > 0 else 0
+        )
+        wait_time = avg_leadtime - avg_active_time
+
+        # Determine severity based on lead time and flow efficiency
+        if avg_leadtime > 60 or flow_efficiency < 30:
+            severity = "critical"
+        elif avg_leadtime > 45 or flow_efficiency < 40:
+            severity = "warning"
+        elif avg_leadtime > 30 or flow_efficiency < 50:
+            severity = "info"
+        else:
+            severity = "success"
+
+        # Generate insights based on Little's Law analysis
+        observation_parts = [
+            f"PI {pi} analysis using Little's Law (L = λ × W):",
+            f"{total_features} features completed in {pi_duration_days} days.",
+            f"Throughput (λ) = {throughput_per_day:.2f} features/day.",
+            f"Average Lead Time (W) = {avg_leadtime:.1f} days.",
+            f"Predicted WIP (L) = {predicted_wip:.1f} features.",
+            f"Flow Efficiency = {flow_efficiency:.1f}% (active time / total lead time).",
+        ]
+
+        interpretation_parts = []
+
+        if flow_efficiency < 40:
+            interpretation_parts.append(
+                f"Low flow efficiency ({flow_efficiency:.1f}%) indicates features spend {wait_time:.1f} days waiting "
+                f"vs {avg_active_time:.1f} days in active work. This suggests significant waste in the system."
+            )
+        elif flow_efficiency < 60:
+            interpretation_parts.append(
+                f"Moderate flow efficiency ({flow_efficiency:.1f}%) shows room for improvement. "
+                f"Features wait {wait_time:.1f} days on average."
+            )
+        else:
+            interpretation_parts.append(
+                f"Good flow efficiency ({flow_efficiency:.1f}%) indicates smooth flow with minimal waiting."
+            )
+
+        if avg_leadtime > 45:
+            interpretation_parts.append(
+                f"Average lead time of {avg_leadtime:.1f} days exceeds healthy targets (30-45 days). "
+                f"To reduce lead time while maintaining throughput, focus on reducing WIP."
+            )
+
+        # Calculate optimal WIP for target lead time of 30 days
+        target_leadtime = 30
+        optimal_wip = throughput_per_day * target_leadtime
+        wip_reduction = predicted_wip - optimal_wip
+
+        if wip_reduction > 2:
+            interpretation_parts.append(
+                f"To achieve 30-day lead time, reduce WIP from {predicted_wip:.1f} to {optimal_wip:.1f} features "
+                f"(reduction of {wip_reduction:.1f} features)."
+            )
+
+        # Root causes
+        root_causes = []
+
+        if flow_efficiency < 50:
+            root_causes.append(
+                {
+                    "description": f"High wait time ({wait_time:.1f} days) indicates bottlenecks or blocked work",
+                    "evidence": [f"flow_efficiency_{flow_efficiency:.0f}pct"],
+                    "confidence": 90.0,
+                    "reference": "littles_law_analysis",
+                }
+            )
+
+        if predicted_wip > 10:
+            root_causes.append(
+                {
+                    "description": "Excessive WIP leads to context switching and delayed flow",
+                    "evidence": [f"predicted_wip_{predicted_wip:.1f}"],
+                    "confidence": 85.0,
+                    "reference": "littles_law_analysis",
+                }
+            )
+
+        # Recommended actions
+        actions = []
+
+        if predicted_wip > optimal_wip:
+            actions.append(
+                {
+                    "timeframe": "short-term",
+                    "description": f"Implement WIP limits: cap active features at {optimal_wip:.0f} per team",
+                    "owner": "Scrum Masters & Product Owner",
+                    "effort": "Low",
+                    "dependencies": [],
+                    "success_signal": f"WIP reduced to {optimal_wip:.0f}, lead time trending toward 30 days",
+                }
+            )
+
+        if flow_efficiency < 50:
+            actions.append(
+                {
+                    "timeframe": "medium-term",
+                    "description": "Identify and eliminate sources of wait time (dependencies, blockers, handoffs)",
+                    "owner": "ART Leadership",
+                    "effort": "Medium",
+                    "dependencies": ["Value stream mapping session"],
+                    "success_signal": "Flow efficiency improves to >50% within 2 PIs",
+                }
+            )
+
+        actions.append(
+            {
+                "timeframe": "ongoing",
+                "description": f"Monitor Little's Law metrics weekly: maintain λ={throughput_per_day:.2f}/day, reduce W to 30 days",
+                "owner": "RTE",
+                "effort": "Low",
+                "dependencies": ["Lead time tracking dashboard"],
+                "success_signal": f"Consistent delivery of L={optimal_wip:.0f} features with W=30 days",
+            }
+        )
+
+        return {
+            "title": f"Little's Law Analysis for PI {pi}",
+            "severity": severity,
+            "confidence": 88.0,
+            "scope": "pi",
+            "scope_id": pi,
+            "observation": " ".join(observation_parts),
+            "interpretation": " ".join(interpretation_parts),
+            "root_causes": (
+                root_causes
+                if root_causes
+                else [
+                    {
+                        "description": "System dynamics analysis using Little's Law",
+                        "evidence": ["flow_leadtime_data"],
+                        "confidence": 88.0,
+                        "reference": "littles_law_formula",
+                    }
+                ]
+            ),
+            "recommended_actions": actions,
+            "expected_outcomes": {
+                "metrics_to_watch": [
+                    "Average Lead Time",
+                    "Throughput",
+                    "WIP",
+                    "Flow Efficiency",
+                ],
+                "leading_indicators": [
+                    "Daily WIP count",
+                    "Features started vs completed",
+                    "Time in blocked status",
+                ],
+                "lagging_indicators": [
+                    "Average lead time trend",
+                    "Throughput stability",
+                ],
+                "timeline": "2-3 PIs to reach optimal flow",
+                "risks": [
+                    "Reduced WIP may initially slow starts",
+                    "Team resistance to limiting work",
+                ],
+            },
+            "metric_references": ["lead_time", "throughput", "wip", "flow_efficiency"],
+            "evidence": [f"pi_{pi}_flow_data", "littles_law_calculation"],
+        }
+
     async def generate_insights(
         self,
         scope: ScopeType,
@@ -333,6 +565,70 @@ class InsightsService:
                 current_planning_accuracy=current_planning_accuracy,
             )
             insights_data.extend(target_insights)
+
+        # Add Little's Law insight if PI is specified and leadtime service is available
+        if scope_id and (scope == "pi" or scope == "portfolio"):
+            try:
+                from services.leadtime_service import LeadTimeService
+
+                leadtime_service = LeadTimeService()
+
+                if leadtime_service.is_available():
+                    # Determine PI to analyze
+                    pi_to_analyze = scope_id if scope == "pi" else None
+
+                    # If no specific PI, try to get the most recent one
+                    if not pi_to_analyze:
+                        try:
+                            filters = leadtime_service.client.get_available_filters()
+                            available_pis = filters.get("pis", [])
+                            if available_pis:
+                                # Sort PIs and get most recent (assumes format like "21Q4", "22Q1")
+                                pi_to_analyze = sorted(available_pis, reverse=True)[0]
+                        except Exception as e:
+                            print(f"⚠️ Could not fetch available PIs: {e}")
+
+                    if pi_to_analyze:
+                        print(
+                            f"📊 Generating Little's Law insight for PI {pi_to_analyze}..."
+                        )
+                        try:
+                            # Fetch flow_leadtime data for the PI
+                            flow_data = leadtime_service.client.get_flow_leadtime(
+                                pi=pi_to_analyze,
+                                limit=10000,  # Get all features for the PI
+                            )
+
+                            if flow_data:
+                                littles_law_insight = (
+                                    self._generate_littles_law_insight(
+                                        pi=pi_to_analyze,
+                                        flow_data=flow_data,
+                                        pi_duration_days=84,  # Standard 6-week PI
+                                    )
+                                )
+
+                                if littles_law_insight:
+                                    insights_data.append(littles_law_insight)
+                                    print(
+                                        f"✅ Generated Little's Law insight for PI {pi_to_analyze}"
+                                    )
+                                else:
+                                    print(
+                                        f"⚠️ Insufficient data for Little's Law analysis"
+                                    )
+                            else:
+                                print(
+                                    f"⚠️ No flow data available for PI {pi_to_analyze}"
+                                )
+
+                        except Exception as e:
+                            print(f"⚠️ Error generating Little's Law insight: {e}")
+                else:
+                    print("⚠️ Lead-time service not available for Little's Law analysis")
+
+            except Exception as e:
+                print(f"⚠️ Could not initialize lead-time service: {e}")
 
         # Add operational insights
         insights_data.extend(
