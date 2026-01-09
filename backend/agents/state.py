@@ -64,6 +64,11 @@ class AgentState(TypedDict):
     rag_queries: Annotated[List[str], add]  # Queries sent to RAG
     knowledge_retrieval_timestamp: Optional[datetime]
 
+    # Node 4b: Little's Law Analyzer outputs
+    littles_law_metrics: Optional[Dict[str, Any]]  # Calculated L, λ, W metrics
+    littles_law_insights: Annotated[List, add]  # Little's Law specific insights
+    littles_law_analysis_timestamp: Optional[datetime]
+
     # Node 5: Reasoning & Coaching outputs
     insights: Annotated[List, add]  # List of Insight objects
     improvement_proposals: Annotated[List, add]  # List of ImprovementProposal objects
@@ -146,6 +151,9 @@ def create_initial_state(
         knowledge_sources=[],
         rag_queries=[],
         knowledge_retrieval_timestamp=None,
+        littles_law_metrics=None,
+        littles_law_insights=[],
+        littles_law_analysis_timestamp=None,
         insights=[],
         improvement_proposals=[],
         prioritized_proposal_ids=[],

@@ -17,7 +17,8 @@ const appState = {
     currentInsights: [],  // Store current insights for actions
     isLoading: false,  // Track loading state
     insightsAbortController: null,  // Track ongoing insights request
-    piReportAbortController: null   // Track ongoing PI report request
+    piReportAbortController: null,   // Track ongoing PI report request
+    littleslawAbortController: null  // Track ongoing Little's Law analysis request
 };
 
 function getSavedDefaultFilters() {
@@ -1024,7 +1025,7 @@ function switchMainTab(tabName) {
     }
 
     // Show/hide tab content
-    const tabs = ['dashboard', 'chat', 'insights', 'metrics', 'admin'];
+    const tabs = ['dashboard', 'chat', 'insights', 'littleslaw', 'metrics', 'admin'];
     tabs.forEach(tab => {
         const content = document.getElementById(`${tab}Content`);
         if (content) {
@@ -1035,6 +1036,8 @@ function switchMainTab(tabName) {
     // Load data when switching to specific tabs
     if (tabName === 'insights') {
         renderInsightsTab();
+    } else if (tabName === 'littleslaw') {
+        renderLittlesLawTab();
     } else if (tabName === 'metrics') {
         loadMetricsCatalog();
     } else if (tabName === 'admin') {
@@ -3704,6 +3707,445 @@ function showTemplates() {
         - epic_template.txt<br>
         - feature_template.txt<br>
         - user_story_template.txt`, 'info');
+}
+
+// ============================================
+// LITTLE'S LAW TAB FUNCTIONS
+// ============================================
+
+// Render Little's Law Analysis tab
+function renderLittlesLawTab() {
+    console.log('🔬 Loading Little\'s Law Analysis tab...');
+
+    const littleslawContent = document.getElementById('littleslawContent');
+    if (!littleslawContent) return;
+
+    // Build filter info respecting scope priority
+    const filterParts = [
+        appState.scope.charAt(0).toUpperCase() + appState.scope.slice(1),
+        appState.selectedPIs.length > 0 ? `PI: ${appState.selectedPIs.join(', ')}` : 'All PIs'
+    ];
+
+    // Add ART info based on scope
+    if (appState.scope === 'art' && appState.selectedART) {
+        filterParts.push(`ART: ${appState.selectedART}`);
+    } else if (appState.selectedARTs && appState.selectedARTs.length > 0) {
+        // If all ARTs are selected, show "All ARTs"
+        if (appState.allARTs && appState.selectedARTs.length >= appState.allARTs.length) {
+            filterParts.push('All ARTs');
+        } else {
+            const artText = appState.selectedARTs.length <= 5
+                ? appState.selectedARTs.join(', ')
+                : `${appState.selectedARTs.slice(0, 5).join(', ')} +${appState.selectedARTs.length - 5} more`;
+            filterParts.push(`ARTs: ${artText}`);
+        }
+    } else {
+        filterParts.push('All ARTs');
+    }
+
+    const filterInfo = filterParts.join(' | ');
+
+    // Show initial view with Generate button
+    littleslawContent.innerHTML = `
+        <div class="messages">
+            <div class="active-context-inline">
+                <div class="active-context-title-inline">📊 Active Filters</div>
+                <div class="active-context-content-inline">
+                    ${filterInfo}
+                </div>
+            </div>
+
+            <div style="background: white; border-radius: 8px; padding: 40px; text-align: center;">
+                <div style="font-size: 48px; margin-bottom: 16px;">🔬</div>
+                <h2 style="margin-bottom: 16px; color: #333;">Little's Law Flow Analysis</h2>
+                <p style="color: #666; margin-bottom: 24px; line-height: 1.6;">
+                    Analyze your flow metrics, planning accuracy, and commitment discipline using Little's Law.
+                    <br>Get insights on WIP optimization, planning patterns, and delivery predictability.
+                </p>
+                <button 
+                    id="generateLittlesLawBtn"
+                    onclick="generateLittlesLawAnalysis()" 
+                    style="
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        color: white;
+                        border: none;
+                        padding: 16px 32px;
+                        font-size: 16px;
+                        font-weight: 600;
+                        border-radius: 8px;
+                        cursor: pointer;
+                        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+                        transition: all 0.3s ease;
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 8px;
+                    "
+                    onmouseover="if(!this.disabled) { this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 16px rgba(102, 126, 234, 0.5)'; }"
+                    onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(102, 126, 234, 0.4)'"
+                >
+                    <span id="generateLittlesLawBtnIcon">🚀</span>
+                    <span id="generateLittlesLawBtnText">Generate Little's Law Analysis</span>
+                </button>
+                <button 
+                    id="cancelLittlesLawBtn"
+                    onclick="cancelLittlesLawGeneration()" 
+                    style="
+                        background: #FF3B30;
+                        color: white;
+                        border: none;
+                        padding: 16px 32px;
+                        font-size: 16px;
+                        font-weight: 600;
+                        border-radius: 8px;
+                        cursor: pointer;
+       Cancel any existing request
+    if (appState.littleslawAbortController) {
+        appState.littleslawAbortController.abort();
+    }
+
+    // Create new abort controller
+    appState.littleslawAbortController = new AbortController();
+
+    //                  box-shadow: 0 4px 12px rgba(255, 59, 48, 0.4);
+                        transition: all 0.3s ease;
+                        display: none;
+                        align-items: center;
+                        gap: 8px;
+                        margin-left: 12px;
+                    "
+                    onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 16px rgba(255, 59, 48, 0.5)';"
+                    onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(255, 59, 48, 0.4)'"
+                >
+                    🛑 Cancel
+                </button>
+                <div style="margin-top: 16px; font-size: 12px; color: #8E8E93;">
+                    📊 Analyzes: Flow Efficiency • WIP Levels • Planning Accuracy • Commitment Discipline
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// Generate Little's Law analysis
+async function generateLittlesLawAnalysis() {
+    console.log('🔬 Generating Little\'s Law analysis...');
+
+    // Disable button and show spinner
+    const btn = document.getElementById('generateLittlesLawBtn');
+    const btnIcon = document.getElementById('generateLittlesLawBtnIcon');
+    const btnText = document.getElementById('generateLittlesLawBtnText');
+
+    if (btn) {
+        btn.disabled = true;
+        // Show cancel button
+        const cancelBtn = document.getElementById('cancelLittlesLawBtn');
+        if (cancelBtn) {
+            cancelBtn.style.display = 'inline-flex';
+        }
+
+        btn.style.opacity = '0.7';
+        btn.style.cursor = 'not-allowed';
+        if (btnIcon) {
+            btnIcon.innerHTML = '<div style="width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top: 2px solid white; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>';
+        }
+        if (btnText) btnText.textContent = 'Analyzing...';
+    }
+
+    showLoadingOverlay('🔬 Analyzing flow metrics and planning data...');
+
+    const params = new URLSearchParams();
+    params.append('scope', appState.scope);
+
+    if (appState.selectedPIs.length > 0) {
+        params.append('pis', appState.selectedPIs.join(','));
+    }
+
+    // Priority: scope-specific ART selection overrides default ARTs filter
+    if (appState.scope === 'art' && appState.selectedART) {
+        params.append('art,
+            signal: appState.littleslawAbortController.signals', appState.selectedART);
+    } else if (appState.selectedARTs.length > 0) {
+        params.append('arts', appState.selectedARTs.join(','));
+    }
+
+    // Add LLM configuration for RAG enhancement
+    const llmConfig = getLLMConfig();
+    params.append('model', llmConfig.model);
+    params.append('temperature', llmConfig.temperature);
+    params.append('enhance_with_llm', 'true');  // Enable RAG for richer insights
+    params.append('use_agent_graph', 'true');  // Use agent graph workflow
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/v1/insights/generate?${params.toString()}`, {
+            method: 'POST'
+        });
+
+        const data = await response.json();
+
+        // Filter for Little's Law insights
+        const allInsights = data.insights || [];
+        const littlesLawInsights = allInsights.filter(insight =>
+            insight.type === 'littles_law' ||
+            insight.source === 'littles_law_analyzer' ||
+            insight.title?.toLowerCase().includes('little\'s law') ||
+            insight.title?.toLowerCase().includes('wip') ||
+
+        // Hide cancel button on success
+        const cancelBtn = document.getElementById('cancelLittlesLawBtn');
+        if (cancelBtn) {
+            cancelBtn.style.display = 'none';
+        }
+
+        appState.littleslawAbortController = null;
+        insight.title?.toLowerCase().includes('flow efficiency') ||
+            insight.title?.toLowerCase().includes('planning accuracy') ||
+            insight.title?.toLowerCase().includes('commitment')
+        );
+
+        displayLittlesLawInsights(littlesLawInsights, data.excluded_statuses, data.filter_info);
+        hideLoadingOverlay();
+    } catch (error) {
+        console.error('❌ Error generating Little\'s Law analysis:', error);
+
+        // Check if request was cancelled
+        if (error.name === 'AbortError') {
+            console.log('🚫 Little\'s Law analysis cancelled by user');
+            const littleslawContent = document.getElementById('littleslawContent');
+            if (littleslawContent) {
+                littleslawContent.innerHTML = `
+                    <div class="messages">
+                        <div style="background: white; border-radius: 8px; padding: 40px; text-align: center; color: #666;">
+                            <div style="font-size: 48px; margin-bottom: 16px;">🚫</div>
+                            <div style="font-size: 18px; margin-bottom: 8px;">Analysis Cancelled</div>
+                            <div style="font-size: 14px; color: #666; margin-bottom: 24px;">Little's Law analysis was cancelled</div>
+                            <button onclick="renderLittlesLawTab()" style="
+                                background: #667eea;
+                                color: white;
+                                border: none;
+                                padding: 12px 24px;
+                                border-radius: 6px;
+                                cursor: pointer;
+                                font-weight: 600;
+                            ">Generate Analysis</button>
+                        </div>
+                    </div>
+                `;
+            }
+        } else {
+            const littleslawContent = document.getElementById('littleslawContent');
+            if (littleslawContent) {
+                littleslawContent.innerHTML = `
+                    <div class="messages">
+                        <div style="background: white; border-radius: 8px; padding: 40px; text-align: center; color: #FF3B30;">
+                            <div style="font-size: 48px; margin-bottom: 16px;">⚠️</div>
+                            <div style="font-size: 18px; margin-bottom: 8px;">Error Generating Analysis</div>
+                            <div style="font-size: 14px; color: #666; margin-bottom: 24px;">${error.message}</div>
+                            <button onclick="renderLittlesLawTab()" style="
+                                background: #667eea;
+                                color: white;
+                                border: none;
+                                padding: 12px 24px;
+                                border-radius: 6px;
+                                cursor: pointer;
+                                font-weight: 600;
+                            ">Try Again</button>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        // Re-enable button
+        if (btn) {
+            btn.disabled = false;
+            btn.style.opacity = '1';
+            btn.style.cursor = 'pointer';
+            if (btnIcon) btnIcon.textContent = '🚀';
+            if (btnText) btnText.textContent = 'Generate Little\'s Law Analysis';
+        }
+
+        // Hide cancel button on error
+        const cancelBtn = document.getElementById('cancelLittlesLawBtn');
+        if (cancelBtn) {
+            cancelBtn.style.display = 'none';
+        }
+
+        hideLoadingOverlay();
+        appState.littleslawAbortController = null;
+    }
+}
+
+// Cancel Little's Law analysis generation
+function cancelLittlesLawGeneration() {
+    if (appState.littleslawAbortController) {
+        appState.littleslawAbortController.abort();
+        console.log('🛑 Cancelling Little\'s Law analysis...');
+    }
+}
+
+// Display Little's Law insights
+function displayLittlesLawInsights(insights, excludedStatuses = [], filterInfo = {}) {
+    const littleslawContent = document.getElementById('littleslawContent');
+    if (!littleslawContent) return;
+
+    const severityConfig = {
+        'critical': { color: '#FF3B30', label: 'CRITICAL', badge: '#FF3B30' },
+        'warning': { color: '#FF9500', label: 'WARNING', badge: '#FF9500' },
+        'info': { color: '#34C759', label: 'SUCCESS', badge: '#34C759' }
+    };
+
+    // Build filter info respecting scope priority
+    const filterParts = [
+        appState.scope.charAt(0).toUpperCase() + appState.scope.slice(1),
+        appState.selectedPIs.length > 0 ? `PI: ${appState.selectedPIs.join(', ')}` : 'All PIs'
+    ];
+
+    // Add ART info based on scope
+    if (appState.scope === 'art' && appState.selectedART) {
+        filterParts.push(`ART: ${appState.selectedART}`);
+    } else if (appState.selectedARTs && appState.selectedARTs.length > 0) {
+        if (appState.allARTs && appState.selectedARTs.length >= appState.allARTs.length) {
+            filterParts.push('All ARTs');
+        } else {
+            const artText = appState.selectedARTs.length <= 5
+                ? appState.selectedARTs.join(', ')
+                : `${appState.selectedARTs.slice(0, 5).join(', ')} +${appState.selectedARTs.length - 5} more`;
+            filterParts.push(`ARTs: ${artText}`);
+        }
+    } else {
+        filterParts.push('All ARTs');
+    }
+
+    if (excludedStatuses && excludedStatuses.length > 0) {
+        filterParts.push(`Excluded: ${excludedStatuses.join(', ')}`);
+    }
+
+    const filterInfoText = filterParts.join(' | ');
+
+    const insightsHTML = `
+        <div class="messages">
+            <div class="active-context-inline">
+                <div class="active-context-title-inline">📊 Active Filters</div>
+                <div class="active-context-content-inline">
+                    ${filterInfoText}
+                </div>
+            </div>
+            
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 style="margin: 0; color: #333;">🔬 Little's Law Analysis (${insights.length})</h2>
+                <button 
+                    id="generateLittlesLawBtn"
+                    onclick="generateLittlesLawAnalysis()" 
+                    style="
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        color: white;
+                        border: none;
+                        padding: 10px 20px;
+                        font-size: 14px;
+                        font-weight: 600;
+                        border-radius: 6px;
+                        cursor: pointer;
+                        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 6px;
+                    "
+                >
+                    <span id="generateLittlesLawBtnIcon">🔄</span>
+                    <span id="generateLittlesLawBtnText">Regenerate Analysis</span>
+                </button>
+            </div>
+            
+            ${insights.length === 0 ? `
+                <div style="background: white; border-radius: 8px; padding: 40px; text-align: center; color: #8E8E93;">
+                    <div style="font-size: 48px; margin-bottom: 16px;">🔬</div>
+                    <div style="font-size: 18px; margin-bottom: 8px;">No Little's Law Insights Available</div>
+                    <div style="font-size: 14px;">
+                        Little's Law analysis requires Portfolio or PI scope with sufficient flow data.
+                        <br>Try adjusting your filters or ensure you have flow metrics available.
+                    </div>
+                </div>
+            ` : insights.map((insight, index) => {
+        const config = severityConfig[insight.severity] || severityConfig['info'];
+        const confidence = Math.round((insight.confidence || 0) * 100);
+        const actions = insight.recommended_actions || [];
+        const rootCauses = insight.root_causes || [];
+
+        return `
+            <div style="background: white; border: 2px solid ${config.color}; border-radius: 8px; padding: 20px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);">
+                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px;">
+                    <h3 style="color: ${config.color}; margin: 0;">${insight.title}</h3>
+                    <span style="background: ${config.badge}; color: white; padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: 600;">${config.label}</span>
+                </div>
+                
+                <div style="display: flex; gap: 16px; margin-bottom: 12px; font-size: 14px; color: #666;">
+                    <span>🎯 Confidence: <strong>${confidence}%</strong></span>
+                    <span>📊 Scope: <strong>${insight.scope || 'Portfolio'}</strong></span>
+                    <span>🔬 Analysis: <strong>#${index + 1}</strong></span>
+                </div>
+                
+                ${insight.observation ? `
+                    <p style="color: #333; margin-bottom: 12px; line-height: 1.6;">
+                        <strong>📋 Observation:</strong> ${insight.observation}
+                    </p>
+                ` : ''}
+                
+                ${insight.interpretation ? `
+                    <p style="color: #333; margin-bottom: 12px; line-height: 1.6;">
+                        <strong>💭 Interpretation:</strong> ${insight.interpretation}
+                    </p>
+                ` : ''}
+                
+                ${rootCauses.length > 0 ? `
+                    <div style="background: #f8f9fa; padding: 12px; border-radius: 6px; margin-bottom: 12px;">
+                        <strong style="display: block; margin-bottom: 8px; color: #667eea;">🔍 Root Causes:</strong>
+                        <ul style="padding-left: 20px; line-height: 1.8; color: #555; margin: 0;">
+                            ${rootCauses.map(rc => `
+                                <li>
+                                    <strong>${rc.description}</strong>
+                                    ${rc.evidence && rc.evidence.length > 0 ? `
+                                        <ul style="font-size: 13px; color: #666; margin-top: 4px;">
+                                            ${rc.evidence.map(e => `<li>${e}</li>`).join('')}
+                                        </ul>
+                                    ` : ''}
+                                    ${rc.confidence ? `<span style="font-size: 12px; color: #888;">(${Math.round(rc.confidence * 100)}% confidence)</span>` : ''}
+                                </li>
+                            `).join('')}
+                        </ul>
+                    </div>
+                ` : ''}
+                
+                ${actions.length > 0 ? `
+                    <div style="background: #e8f5e9; padding: 12px; border-radius: 6px; margin-bottom: 12px;">
+                        <strong style="display: block; margin-bottom: 8px; color: #2e7d32;">✅ Recommended Actions:</strong>
+                        <ul style="padding-left: 20px; line-height: 1.8; color: #333; margin: 0;">
+                            ${actions.map(action => `
+                                <li>
+                                    <strong>[${action.timeframe.replace('_', ' ').toUpperCase()}]</strong> ${action.description}
+                                    <div style="font-size: 13px; color: #666; margin-top: 4px;">
+                                        👤 Owner: ${action.owner || 'TBD'} | 
+                                        ⏱️ Effort: ${action.effort || 'TBD'}
+                                        ${action.success_signal ? `<br/>🎯 Success Signal: ${action.success_signal}` : ''}
+                                    </div>
+                                </li>
+                            `).join('')}
+                        </ul>
+                    </div>
+                ` : ''}
+                
+                <div style="display: flex; gap: 8px; margin-top: 16px;">
+                    <button class="template-action-btn" onclick="alert('Full details view - Coming soon!')">📋 View Details</button>
+                    <button class="template-action-btn" style="background: #34C759;" onclick="alert('Export - Coming soon!')">💾 Export</button>
+                </div>
+            </div>
+        `;
+    }).join('')}
+        </div>
+    `;
+
+    littleslawContent.innerHTML = insightsHTML;
+
+    console.log(`✅ Displayed ${insights.length} Little's Law insights`);
 }
 
 // Cancel functions

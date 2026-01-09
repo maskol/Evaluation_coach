@@ -16,7 +16,19 @@ def coaching_node(state: AgentState) -> Dict[str, Any]:
     try:
         updates = {"coaching_timestamp": datetime.utcnow()}
 
-        # TODO: Implement reasoning and coaching logic
+        # Consolidate Little's Law insights into main insights list
+        littles_law_insights = state.get("littles_law_insights", [])
+        if littles_law_insights:
+            logger.info(
+                f"Incorporating {len(littles_law_insights)} Little's Law insights"
+            )
+            updates["insights"] = littles_law_insights
+            updates["reasoning_chain"] = [
+                f"Applied Little's Law analysis to understand flow dynamics",
+                f"Identified {len(littles_law_insights)} actionable insights from flow metrics",
+            ]
+
+        # TODO: Implement additional reasoning and coaching logic
         # from backend.coaching.reasoner import Reasoner
         # from backend.coaching.proposal_generator import ProposalGenerator
         # reasoner = Reasoner()

@@ -13,6 +13,7 @@ from .nodes.coach import coaching_node
 from .nodes.data_collector import data_collector_node
 from .nodes.explainer import explainer_node
 from .nodes.knowledge_retriever import knowledge_retriever_node
+from .nodes.littles_law_analyzer import littles_law_analyzer_node
 from .nodes.metrics_engine import metrics_engine_node
 from .nodes.pattern_detector import pattern_detector_node
 from .state import AgentState
@@ -42,17 +43,36 @@ def should_continue_after_data_collection(
 
 def should_continue_after_metrics(
     state: AgentState,
-) -> Literal["pattern_detector", "end"]:
+) -> Literal["pattern_detector", "littles_law_analyzer", "end"]:
     """
     Routing logic after metrics calculation.
 
     If metrics calculation fails, end the workflow.
-    Otherwise, proceed to pattern detection.
+    Otherwise, proceed to both pattern detection and Little's Law analysis.
     """
     if state.get("errors"):
         return "end"
 
     if not state.get("metrics_snapshot"):
+        return "end"
+
+    # For portfolio or PI scope, prefer Little's Law analysis first
+    scope_type = state.get("scope_type", "").lower()
+    if scope_type in ["portfolio", "pi"]:
+        return "littles_law_analyzer"
+
+    return "pattern_detector"
+
+
+def should_continue_after_littles_law(
+    state: AgentState,
+) -> Literal["pattern_detector", "end"]:
+    """
+    Routing logic after Little's Law analysis.
+
+    Always proceed to pattern detection after Little's Law.
+    """
+    if state.get("errors"):
         return "end"
 
     return "pattern_detector"
@@ -110,7 +130,9 @@ def create_evaluation_coach_graph() -> StateGraph:
       ↓ [conditional: check data quality]
     Metrics Engine (Node 2)
       ↓ [conditional: check metrics computed]
-    Pattern Detector (Node 3)
+    Little's Law Analyzer (Node 3a) [for portfolio/PI scope]
+      ↓
+    Pattern Detector (Node 3b)
       ↓ [conditional: continue even if no patterns]
     Knowledge Retriever (Node 4)
       ↓ [conditional: check knowledge retrieved]
@@ -130,6 +152,7 @@ def create_evaluation_coach_graph() -> StateGraph:
     # Add nodes
     workflow.add_node("data_collector", data_collector_node)
     workflow.add_node("metrics_engine", metrics_engine_node)
+    workflow.add_node("littles_law_analyzer", littles_law_analyzer_node)
     workflow.add_node("pattern_detector", pattern_detector_node)
     workflow.add_node("knowledge_retriever", knowledge_retriever_node)
     workflow.add_node("coach", coaching_node)
@@ -151,6 +174,16 @@ def create_evaluation_coach_graph() -> StateGraph:
     workflow.add_conditional_edges(
         "metrics_engine",
         should_continue_after_metrics,
+        {
+            "pattern_detector": "pattern_detector",
+            "littles_law_analyzer": "littles_law_analyzer",
+            "end": END,
+        },
+    )
+
+    workflow.add_conditional_edges(
+        "littles_law_analyzer",
+        should_continue_after_littles_law,
         {
             "pattern_detector": "pattern_detector",
             "end": END,

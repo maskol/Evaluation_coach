@@ -796,6 +796,7 @@ async def generate_insights_endpoint(
     model: Optional[str] = None,
     temperature: Optional[float] = None,
     enhance_with_llm: bool = False,
+    use_agent_graph: bool = True,  # Enable agent graph by default for Little's Law insights
     db: Session = Depends(get_db),
 ):
     """Generate AI-powered insights using expert analysis (LLM)
@@ -809,8 +810,95 @@ async def generate_insights_endpoint(
         arts: Comma-separated list of ARTs
         model: LLM model to use (e.g., gpt-4o, gpt-4o-mini)
         temperature: LLM temperature (0.0-2.0)
+        use_agent_graph: Use full agent graph workflow (includes Little's Law analysis)
     """
     try:
+        # Parse filter parameters
+        selected_pis = (
+            [pi.strip() for pi in pis.split(",") if pi.strip()] if pis else []
+        )
+        selected_arts = (
+            [art.strip() for art in arts.split(",") if art.strip()] if arts else []
+        )
+
+        # Get excluded feature statuses from database
+        excluded_statuses = get_excluded_feature_statuses(db)
+
+        # Use agent graph workflow for comprehensive analysis (includes Little's Law)
+        if use_agent_graph and scope in ["portfolio", "pi"]:
+            print(f"🤖 Using agent graph workflow for {scope} scope")
+            from agents.graph import run_evaluation_coach
+            from datetime import datetime, timedelta
+
+            # Update LLM service with custom parameters if provided
+            if enhance_with_llm:
+                if model:
+                    llm_service.model = model
+                if temperature is not None:
+                    llm_service.temperature = temperature
+                print(
+                    f"🤖 Using LLM: model={llm_service.model}, temperature={llm_service.temperature}"
+                )
+
+                # Inject LLM service into Little's Law analyzer for RAG enhancement
+                from agents.nodes.littles_law_analyzer import set_llm_service
+
+                set_llm_service(llm_service)
+                print("✅ LLM service injected into Little's Law analyzer")
+            else:
+                print("⚠️  Running without LLM enhancement (RAG disabled)")
+
+            # Run the agent graph workflow
+            # For now, use a default time window (last 90 days)
+            end_time = datetime.utcnow()
+            start_time = end_time - timedelta(days=90)
+
+            # Map scope to scope_type
+            scope_type = "Portfolio" if scope == "portfolio" else "PI"
+            scope_name = "Portfolio Analysis"
+            if selected_arts and len(selected_arts) == 1:
+                scope_type = "ART"
+                scope_name = selected_arts[0]
+
+            final_state = run_evaluation_coach(
+                scope=scope_name,
+                scope_type=scope_type,
+                time_window_start=start_time,
+                time_window_end=end_time,
+            )
+
+            # Extract insights from final state
+            insights = final_state.get("insights", [])
+
+            # Convert to API response format if needed
+            from api_models import InsightResponse
+
+            insight_responses = []
+            for insight in insights:
+                if isinstance(insight, InsightResponse):
+                    insight_responses.append(insight)
+                elif isinstance(insight, dict):
+                    # Already in dict format
+                    insight_responses.append(InsightResponse(**insight))
+
+            print(
+                f"✅ Generated {len(insight_responses)} insights via agent graph (includes Little's Law)"
+            )
+
+            return {
+                "status": "success",
+                "insights": [insight.dict() for insight in insight_responses],
+                "count": len(insight_responses),
+                "excluded_statuses": excluded_statuses,
+                "filter_info": {
+                    "excluded_statuses": excluded_statuses,
+                    "selected_pis": selected_pis,
+                    "selected_arts": selected_arts,
+                },
+            }
+
+        # Fall back to direct insights generation (legacy mode)
+        print("🤖 Using direct insights generation (legacy mode - no Little's Law)")
         from agents.nodes.advanced_insights import generate_advanced_insights
 
         llm_service_for_insights = llm_service if enhance_with_llm else None
