@@ -384,3 +384,27 @@ class LLMConfigUpdate(BaseModel):
     temperature: float = Field(
         0.3, ge=0.0, le=1.0, description="Temperature for AI responses"
     )
+
+
+class PIConfiguration(BaseModel):
+    """Model for Program Increment configuration."""
+
+    pi: str = Field(..., description="PI identifier (e.g., 25Q4, 26Q1)")
+    start_date: str = Field(..., description="Start date in YYYY-MM-DD format")
+    end_date: str = Field(..., description="End date in YYYY-MM-DD format")
+
+
+class PIConfigUpdate(BaseModel):
+    """Model for updating PI configurations."""
+
+    pi_configurations: List[PIConfiguration] = Field(
+        default_factory=list, description="List of PI configurations"
+    )
+
+
+class PIConfigResponse(BaseModel):
+    """Response containing PI configurations."""
+
+    pi_configurations: List[PIConfiguration] = Field(
+        default_factory=list, description="List of PI configurations"
+    )

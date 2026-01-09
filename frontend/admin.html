@@ -422,6 +422,52 @@
             </div>
         </div>
 
+        <!-- PI Configuration -->
+        <div class="config-section">
+            <h2>📅 Program Increment (PI) Configuration</h2>
+            <p style="color: #666; margin-bottom: 8px;">Define time periods for Program Increments to calculate accurate
+                durations and throughput rates.</p>
+            <div id="piCount" style="color: #666; font-size: 14px; margin-bottom: 16px; font-weight: 600;">
+                Loading PI configurations...
+            </div>
+
+            <div id="piConfigList"
+                style="margin-bottom: 20px; max-height: 500px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; background: #fafafa;">
+                <!-- PI configurations will be loaded here -->
+            </div>
+
+            <div style="background: #f8f9fa; padding: 16px; border-radius: 8px; border: 2px dashed #dee2e6;">
+                <h3 style="margin-top: 0; font-size: 16px;">➕ Add New PI</h3>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
+                    <div class="form-group" style="margin: 0;">
+                        <label for="newPiName">PI Name</label>
+                        <input type="text" id="newPiName" placeholder="e.g., 25Q4"
+                            style="width: 100%; padding: 8px; border: 1px solid #dee2e6; border-radius: 4px;">
+                        <small>Format: YYQN (e.g., 25Q4, 26Q1)</small>
+                    </div>
+                    <div class="form-group" style="margin: 0;">
+                        <label for="newPiStart">Start Date</label>
+                        <input type="date" id="newPiStart"
+                            style="width: 100%; padding: 8px; border: 1px solid #dee2e6; border-radius: 4px;">
+                    </div>
+                    <div class="form-group" style="margin: 0;">
+                        <label for="newPiEnd">End Date</label>
+                        <input type="date" id="newPiEnd"
+                            style="width: 100%; padding: 8px; border: 1px solid #dee2e6; border-radius: 4px;">
+                    </div>
+                </div>
+                <button type="button" class="btn-save" onclick="addPIConfig()"
+                    style="margin-top: 12px; padding: 8px 16px; font-size: 14px;">
+                    ➕ Add PI
+                </button>
+            </div>
+
+            <div class="button-group">
+                <button type="button" class="btn-save" onclick="savePIConfig()">💾 Save All PI Configurations</button>
+                <button type="button" class="btn-reset" onclick="loadPIConfig()">🔄 Reload</button>
+            </div>
+        </div>
+
         <!-- Connection Info -->
         <div class="config-section">
             <h2>🔌 Lead-Time Data Server</h2>
@@ -436,6 +482,7 @@
         // Load current configuration on page load
         document.addEventListener('DOMContentLoaded', () => {
             loadConfiguration();
+            loadPIConfig();
         });
 
         async function loadConfiguration() {
@@ -600,6 +647,176 @@
                 showAlert('✅ ' + result.message, 'success');
 
             } catch (error) {
+                showAlert('❌ Error: ' + error.message, 'error');
+            }
+        }
+
+        // PI Configuration Management
+        let piConfigs = [];
+
+        async function loadPIConfig() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/admin/config/pi`);
+                if (response.ok) {
+                    const data = await response.json();
+                    piConfigs = data.pi_configurations || [];
+                    renderPIConfigs();
+                }
+            } catch (error) {
+                console.error('Error loading PI configurations:', error);
+            }
+        }
+
+        function renderPIConfigs() {
+            const container = document.getElementById('piConfigList');
+            const countElement = document.getElementById('piCount');
+
+            if (!piConfigs || piConfigs.length === 0) {
+                container.innerHTML = '<p style="color: #666; font-style: italic; padding: 20px; text-align: center;">No PI configurations defined yet. Add one below.</p>';
+                if (countElement) {
+                    countElement.textContent = '📊 Total PIs: 0';
+                    countElement.style.color = '#999';
+                }
+                return;
+            }
+
+            // Update count display
+            if (countElement) {
+                countElement.textContent = `📊 Total PIs: ${piConfigs.length}`;
+                countElement.style.color = '#34C759';
+            }
+
+            const today = new Date().toISOString().split('T')[0];
+
+            container.innerHTML = piConfigs.map((pi, index) => {
+                const startDate = new Date(pi.start_date);
+                const endDate = new Date(pi.end_date);
+                const duration = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
+                const isActive = pi.end_date >= today;
+                const statusBadge = isActive
+                    ? '<span style="background: #34C759; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 600;">⏳ ACTIVE</span>'
+                    : '<span style="background: #8E8E93; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 600;">✅ COMPLETED</span>';
+
+                return `
+                    <div style="background: white; border: 1px solid #dee2e6; border-radius: 8px; padding: 16px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+                        <div style="flex: 1;">
+                            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+                                <strong style="font-size: 18px;">${pi.pi}</strong>
+                                ${statusBadge}
+                                <span style="background: #e7f3ff; color: #007AFF; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">#${index + 1}</span>
+                            </div>
+                            <div style="color: #666; font-size: 14px;">
+                                📅 ${pi.start_date} → ${pi.end_date} 
+                                <span style="background: #f8f9fa; padding: 2px 8px; border-radius: 4px; margin-left: 8px; font-weight: 600;">
+                                    ${duration} days
+                                </span>
+                            </div>
+                        </div>
+                        <button onclick="deletePIConfig(${index})" 
+                            style="background: #FF3B30; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-weight: 600;">
+                            🗑️ Delete
+                        </button>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function addPIConfig() {
+            console.log('🔵 addPIConfig function called');
+            const pi = document.getElementById('newPiName').value.trim();
+            const startDate = document.getElementById('newPiStart').value;
+            const endDate = document.getElementById('newPiEnd').value;
+
+            console.log('📝 Form values:', { pi, startDate, endDate });
+            console.log('📊 Current piConfigs:', piConfigs);
+            console.log('🔢 Current piConfigs.length:', piConfigs.length);
+
+            if (!pi || !startDate || !endDate) {
+                console.log('❌ Validation failed: missing fields');
+                showAlert('❌ Please fill in all fields (PI name, start date, end date)', 'error');
+                return;
+            }
+
+            // Validate PI format
+            const piPattern = /^\d{2,4}Q[1-4]$/;
+            if (!piPattern.test(pi)) {
+                console.log('❌ Validation failed: invalid PI format');
+                showAlert('❌ PI name must be in format YYQN (e.g., 25Q4, 26Q1)', 'error');
+                return;
+            }
+
+            // Check for duplicates
+            if (piConfigs.some(p => p.pi === pi)) {
+                console.log('❌ Validation failed: duplicate PI name');
+                showAlert('❌ PI ' + pi + ' already exists', 'error');
+                return;
+            }
+
+            // Validate dates
+            if (new Date(startDate) >= new Date(endDate)) {
+                showAlert('❌ End date must be after start date', 'error');
+                return;
+            }
+
+            piConfigs.push({ pi, start_date: startDate, end_date: endDate });
+            console.log('PI added. New piConfigs:', piConfigs);
+            console.log('Total PIs now:', piConfigs.length);
+            renderPIConfigs();
+
+            // Clear form
+            document.getElementById('newPiName').value = '';
+            document.getElementById('newPiStart').value = '';
+            document.getElementById('newPiEnd').value = '';
+
+            showAlert('✅ PI ' + pi + ' added. Click "Save All PI Configurations" to persist changes.', 'success');
+        }
+
+        function deletePIConfig(index) {
+            const pi = piConfigs[index];
+            if (confirm(`Delete PI ${pi.pi}?`)) {
+                piConfigs.splice(index, 1);
+                renderPIConfigs();
+                showAlert('✅ PI ' + pi.pi + ' removed. Click "Save All PI Configurations" to persist changes.', 'success');
+            }
+        }
+
+        async function savePIConfig() {
+            try {
+                console.log('Saving PI configurations:', piConfigs);
+                console.log('Number of PIs to save:', piConfigs.length);
+                console.log('JSON size:', JSON.stringify({ pi_configurations: piConfigs }).length);
+
+                const response = await fetch(`${API_BASE_URL}/api/admin/config/pi`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        pi_configurations: piConfigs
+                    }),
+                });
+
+                console.log('Response status:', response.status);
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('Error response:', errorText);
+                    let error;
+                    try {
+                        error = JSON.parse(errorText);
+                    } catch (e) {
+                        throw new Error('Server error: ' + errorText);
+                    }
+                    throw new Error(error.detail || 'Failed to save PI configurations');
+                }
+
+                const result = await response.json();
+                console.log('Save result:', result);
+                showAlert('✅ ' + result.message, 'success');
+                await loadPIConfig(); // Reload to confirm
+
+            } catch (error) {
+                console.error('Save PI config error:', error);
                 showAlert('❌ Error: ' + error.message, 'error');
             }
         }

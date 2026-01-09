@@ -104,6 +104,7 @@ def create_initial_state(
     time_window_end: datetime,
     jira_project_keys: Optional[List[str]] = None,
     include_issue_types: Optional[List[str]] = None,
+    scope_id: Optional[str] = None,
 ) -> AgentState:
     """
     Create an initial agent state with the given parameters.
@@ -115,11 +116,12 @@ def create_initial_state(
         time_window_end: End of analysis period
         jira_project_keys: Optional list of Jira project keys to filter
         include_issue_types: Optional list of issue types to include
+        scope_id: Optional scope identifier (e.g., PI like "26Q1")
 
     Returns:
         Initialized AgentState
     """
-    return AgentState(
+    state = AgentState(
         # Input parameters
         scope=scope,
         scope_type=scope_type,
@@ -170,3 +172,9 @@ def create_initial_state(
         next_node=None,
         should_continue=True,
     )
+
+    # Add scope_id if provided (for Little's Law PI analysis)
+    if scope_id:
+        state["scope_id"] = scope_id
+
+    return state

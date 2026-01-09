@@ -61,7 +61,12 @@ app = FastAPI(
 # CORS middleware for frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8800", "http://127.0.0.1:8800"],
+    allow_origins=[
+        "http://localhost:8800",
+        "http://127.0.0.1:8800",
+        "http://localhost:8850",
+        "http://127.0.0.1:8850",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -790,7 +795,8 @@ Use clear markdown formatting with headers (##, ###), bullet points, and **bold*
 async def generate_insights_endpoint(
     scope: str = "portfolio",
     pis: Optional[str] = None,
-    arts: Optional[str] = None,
+    art: Optional[str] = None,  # Singular ART for scope selection
+    arts: Optional[str] = None,  # Plural ARTs for filtering
     model: Optional[str] = None,
     temperature: Optional[float] = None,
     enhance_with_llm: bool = False,
@@ -805,7 +811,8 @@ async def generate_insights_endpoint(
     Args:
         scope: Scope of analysis (portfolio, art, team)
         pis: Comma-separated list of PIs
-        arts: Comma-separated list of ARTs
+        art: Single ART for scope-specific analysis
+        arts: Comma-separated list of ARTs for filtering
         model: LLM model to use (e.g., gpt-4o, gpt-4o-mini)
         temperature: LLM temperature (0.0-2.0)
         use_agent_graph: Use full agent graph workflow (includes Little's Law analysis)
@@ -823,7 +830,8 @@ async def generate_insights_endpoint(
         excluded_statuses = get_excluded_feature_statuses(db)
 
         # Use agent graph workflow for comprehensive analysis (includes Little's Law)
-        if use_agent_graph and scope in ["portfolio", "pi"]:
+        # NOTE: Agent graph requires Jira data, so disabled for now with DL Webb App API
+        if False and use_agent_graph and scope in ["portfolio", "pi", "art"]:
             print(f"🤖 Using agent graph workflow for {scope} scope")
             from agents.graph import run_evaluation_coach
 
@@ -850,18 +858,45 @@ async def generate_insights_endpoint(
             end_time = datetime.utcnow()
             start_time = end_time - timedelta(days=90)
 
-            # Map scope to scope_type
-            scope_type = "Portfolio" if scope == "portfolio" else "PI"
+            # Map scope to scope_type and scope_name
+            scope_type = (
+                "Portfolio"
+                if scope == "portfolio"
+                else "PI" if scope == "pi" else "ART"
+            )
             scope_name = "Portfolio Analysis"
-            if selected_arts and len(selected_arts) == 1:
+            scope_id_for_agent = (
+                None  # Will be used to pass PI to Little's Law analyzer
+            )
+
+            if scope == "art" and art:
+                scope_type = "ART"
+                scope_name = art
+            elif selected_arts and len(selected_arts) == 1:
                 scope_type = "ART"
                 scope_name = selected_arts[0]
+            elif selected_pis:
+                scope_type = "PI"
+                scope_name = (
+                    selected_pis[0] if len(selected_pis) == 1 else "Multiple PIs"
+                )
+                scope_id_for_agent = selected_pis[0]  # Pass first PI to analyzer
+
+            # Pass PI even for ART scope if PI is selected
+            if selected_pis and not scope_id_for_agent:
+                scope_id_for_agent = selected_pis[0]
+
+            if scope_id_for_agent:
+                print(
+                    f"📌 Scope ID set to: {scope_id_for_agent} for Little's Law analysis"
+                )
 
             final_state = run_evaluation_coach(
                 scope=scope_name,
                 scope_type=scope_type,
                 time_window_start=start_time,
                 time_window_end=end_time,
+                scope_id=scope_id_for_agent,
             )
 
             # Extract insights from final state
@@ -892,8 +927,10 @@ async def generate_insights_endpoint(
                 },
             }
 
-        # Fall back to direct insights generation (legacy mode)
-        print("🤖 Using direct insights generation (legacy mode - no Little's Law)")
+        # Fall back to direct insights generation (with Little's Law if requested)
+        print(
+            f"🤖 Using direct insights generation{' + Little\'s Law' if use_agent_graph and selected_pis else ''}"
+        )
         from agents.nodes.advanced_insights import generate_advanced_insights
 
         llm_service_for_insights = llm_service if enhance_with_llm else None
@@ -944,8 +981,10 @@ async def generate_insights_endpoint(
                     **params
                 )
 
-                # Also get ART comparison for context, filtered by selected ARTs
+                # Also get ART comparison for context, filtered by selected ARTs and PI
                 pip_params = {}
+                if selected_pis:
+                    pip_params["pi"] = selected_pis[0]  # Filter by PI
                 if selected_arts:
                     pip_params["art"] = selected_arts[
                         0
@@ -980,6 +1019,72 @@ async def generate_insights_endpoint(
                 )
 
                 print(f"✅ Generated {len(insights)} AI-powered insights")
+
+                # Add Little's Law analysis if requested with agent graph
+                if use_agent_graph and selected_pis:
+                    print(f"🔬 Adding Little's Law analysis for PI: {selected_pis[0]}")
+                    try:
+                        from agents.nodes.littles_law_analyzer import (
+                            littles_law_analyzer_node,
+                        )
+                        from agents.nodes.littles_law_analyzer import (
+                            set_llm_service as set_ll_llm,
+                        )
+
+                        # Configure LLM for Little's Law analyzer
+                        if llm_service_for_insights:
+                            set_ll_llm(llm_service_for_insights)
+
+                        # Create a minimal state for Little's Law analyzer
+                        ll_state = {
+                            "scope_id": selected_pis[0],
+                            "scope_type": "ART" if scope == "art" else "Portfolio",
+                            "scope": (
+                                art
+                                if art
+                                else (
+                                    selected_arts[0] if selected_arts else "Portfolio"
+                                )
+                            ),
+                            "selected_art": (
+                                art
+                                if art
+                                else (selected_arts[0] if selected_arts else None)
+                            ),
+                        }
+
+                        # Run Little's Law analyzer
+                        ll_result = littles_law_analyzer_node(ll_state)
+
+                        # Extract Little's Law insights
+                        ll_insights = ll_result.get("littles_law_insights", [])
+
+                        if ll_insights:
+                            print(
+                                f"✅ Generated {len(ll_insights)} Little's Law insights"
+                            )
+                            # Convert to InsightResponse and add required fields
+                            import uuid
+
+                            for ll_insight in ll_insights:
+                                if isinstance(ll_insight, dict):
+                                    # Add required fields
+                                    ll_insight["id"] = abs(
+                                        hash(ll_insight.get("title", str(uuid.uuid4())))
+                                    ) % (10**8)
+                                    ll_insight["status"] = "new"
+                                    ll_insight["created_at"] = datetime.utcnow()
+                                    insights.append(InsightResponse(**ll_insight))
+                                else:
+                                    insights.append(ll_insight)
+                        else:
+                            print("⚠️ No Little's Law insights generated")
+
+                    except Exception as ll_error:
+                        print(f"⚠️ Little's Law analysis failed: {ll_error}")
+                        import traceback
+
+                        traceback.print_exc()
 
                 return {
                     "status": "success",
@@ -1530,16 +1635,21 @@ async def get_dashboard(
                         f for f in filtered_throughput if f.get("pi") in selected_pis
                     ]
 
-                throughput_count = len(filtered_throughput)
+                # Count only completed features (those with lead_time_days > 0)
+                # Features without lead time are in progress or haven't been properly tracked
+                completed_throughput = [
+                    f for f in filtered_throughput if f.get("lead_time_days", 0) > 0
+                ]
+                throughput_count = len(completed_throughput)
                 print(
-                    f"✅ Features Delivered: {throughput_count} (from leadtime_thr_data - may have sync delays)"
+                    f"✅ Features Delivered: {throughput_count} completed (from {len(filtered_throughput)} total in leadtime_thr_data)"
                 )
 
                 # Calculate average lead-time from throughput data (completed features only)
-                if filtered_throughput:
+                if completed_throughput:
                     leadtimes = [
                         f.get("lead_time_days", 0)
-                        for f in filtered_throughput
+                        for f in completed_throughput
                         if f.get("lead_time_days", 0) > 0
                     ]
                     if leadtimes:
@@ -1659,35 +1769,58 @@ async def get_dashboard(
                                 flow_efficiency = 0
 
                             # Get average lead-time from throughput data (completed features only)
+                            # Note: get_throughput_data only accepts single PI, so we fetch all and filter
                             throughput_features = (
                                 leadtime_service.client.get_throughput_data(
                                     art=art_name, limit=10000
                                 )
                             )
-                            # Apply status filter
+                            print(
+                                f"   📊 {art_name}: Retrieved {len(throughput_features)} total throughput features"
+                            )
+
+                            # Apply status filter first
                             throughput_features = filter_features_by_status(
                                 throughput_features, excluded_statuses
                             )
-                            # Filter by selected PIs if specified
+                            print(
+                                f"   ✅ {art_name}: After status filter: {len(throughput_features)} features"
+                            )
+
+                            # Filter by selected PIs if specified (CRITICAL: do this before counting!)
                             if selected_pis:
+                                before_pi_filter = len(throughput_features)
                                 throughput_features = [
                                     f
                                     for f in throughput_features
                                     if f.get("pi") in selected_pis
                                 ]
+                                print(
+                                    f"   🎯 {art_name}: PI filter {selected_pis} reduced from {before_pi_filter} to {len(throughput_features)} features"
+                                )
 
                             if throughput_features:
-                                thr_leadtimes = [
-                                    f.get("lead_time_days", 0)
+                                # Count only completed features (those with lead_time_days > 0)
+                                completed_features = [
+                                    f
                                     for f in throughput_features
                                     if f.get("lead_time_days", 0) > 0
+                                ]
+
+                                thr_leadtimes = [
+                                    f.get("lead_time_days", 0)
+                                    for f in completed_features
                                 ]
                                 avg_leadtime_art = (
                                     sum(thr_leadtimes) / len(thr_leadtimes)
                                     if thr_leadtimes
                                     else 0
                                 )
+                                print(
+                                    f"   ✅ {art_name}: {len(completed_features)} completed features (avg lead time: {avg_leadtime_art:.1f} days)"
+                                )
                             else:
+                                completed_features = []
                                 avg_leadtime_art = 0
 
                             # Get planning accuracy for this ART from pip_data
@@ -1751,7 +1884,7 @@ async def get_dashboard(
                                     "planning_accuracy": round(planning_accuracy, 1),
                                     "avg_leadtime": round(avg_leadtime_art, 1),
                                     "quality_score": round(quality_score, 1),
-                                    "features_delivered": len(throughput_features),
+                                    "features_delivered": len(completed_features),
                                     "status": status_val,
                                 }
                             )
@@ -4037,6 +4170,111 @@ async def update_llm_config(config: LLMConfigUpdate, db: Session = Depends(get_d
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to save LLM configuration: {str(e)}",
+        )
+
+
+@app.get("/api/admin/config/pi")
+async def get_pi_config(db: Session = Depends(get_db)):
+    """
+    Get Program Increment configurations.
+
+    Returns:
+        List of PI configurations with dates
+    """
+    try:
+        # Get PI configurations from database
+        config_entry = (
+            db.query(RuntimeConfiguration)
+            .filter(RuntimeConfiguration.config_key == "pi_configurations")
+            .first()
+        )
+
+        pi_configurations = []
+        if config_entry and config_entry.config_value:
+            import json
+
+            pi_configurations = json.loads(config_entry.config_value)
+
+        return {"pi_configurations": pi_configurations}
+
+    except Exception as e:
+        print(f"⚠️ Error loading PI configurations: {e}")
+        return {"pi_configurations": []}
+
+
+@app.post("/api/admin/config/pi")
+async def update_pi_config(config: dict, db: Session = Depends(get_db)):
+    """
+    Update Program Increment configurations.
+
+    Args:
+        config: Dictionary containing pi_configurations list
+        db: Database session
+
+    Returns:
+        Success message
+    """
+    try:
+        import json
+
+        pi_configurations = config.get("pi_configurations", [])
+
+        print(f"📥 Received PI config update request with {len(pi_configurations)} PIs")
+        print(f"🔍 PI configurations: {json.dumps(pi_configurations, indent=2)}")
+
+        # Validate PI configurations
+        for idx, pi_config in enumerate(pi_configurations):
+            if (
+                not pi_config.get("pi")
+                or not pi_config.get("start_date")
+                or not pi_config.get("end_date")
+            ):
+                print(f"❌ Invalid PI config at index {idx}: {pi_config}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"PI configuration at index {idx} is invalid: must have pi, start_date, and end_date",
+                )
+
+        # Save to database
+        config_entry = (
+            db.query(RuntimeConfiguration)
+            .filter(RuntimeConfiguration.config_key == "pi_configurations")
+            .first()
+        )
+
+        json_value = json.dumps(pi_configurations)
+        print(f"📊 JSON size: {len(json_value)} characters")
+
+        if config_entry:
+            config_entry.config_value = json_value
+            config_entry.updated_at = datetime.now(timezone.utc)
+            print(f"♻️ Updating existing PI configuration entry")
+        else:
+            config_entry = RuntimeConfiguration(
+                config_key="pi_configurations",
+                config_value=json_value,
+                config_type="json",
+            )
+            db.add(config_entry)
+            print(f"➕ Creating new PI configuration entry")
+
+        db.commit()
+
+        print(f"✅ PI configurations saved: {len(pi_configurations)} PIs")
+
+        return {
+            "status": "success",
+            "message": f"PI configurations saved successfully ({len(pi_configurations)} PIs).",
+            "pi_configurations": pi_configurations,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save PI configurations: {str(e)}",
         )
 
 

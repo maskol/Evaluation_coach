@@ -326,6 +326,19 @@ class InsightsService:
         # W: Average Lead Time (days)
         lead_times = [f["total_leadtime"] for f in completed_features]
         avg_leadtime = sum(lead_times) / len(lead_times)
+        
+        # DEBUG: Log which features are included in the calculation
+        print(f"\n📊 Little's Law Calculation for PI {pi}:")
+        print(f"   Total features in flow_data: {len(flow_data)}")
+        print(f"   Completed features used: {total_features}")
+        print(f"   Feature details:")
+        for f in completed_features:
+            issue_key = f.get("issue_key", f.get("key", "UNKNOWN"))
+            leadtime = f.get("total_leadtime", 0)
+            status = f.get("status", "N/A")
+            print(f"      - {issue_key}: {leadtime:.1f} days (status: {status})")
+        print(f"   Calculated average lead time: {avg_leadtime:.1f} days")
+        print(f"   Lead time range: {min(lead_times):.1f} - {max(lead_times):.1f} days\n")
 
         # λ: Throughput (features per day)
         throughput_per_day = total_features / pi_duration_days
@@ -365,13 +378,15 @@ class InsightsService:
             severity = "success"
 
         # Generate insights based on Little's Law analysis
+        min_leadtime = min(lead_times)
+        max_leadtime = max(lead_times)
+        
         observation_parts = [
-            f"PI {pi} analysis using Little's Law (L = λ × W):",
-            f"{total_features} features completed in {pi_duration_days} days.",
+            f"During PI {pi} ({pi_duration_days}-day period), {total_features} features were completed.",
             f"Throughput (λ) = {throughput_per_day:.2f} features/day.",
-            f"Average Lead Time (W) = {avg_leadtime:.1f} days.",
+            f"Average Lead Time (W) = {avg_leadtime:.1f} days (range: {min_leadtime:.1f}-{max_leadtime:.1f}).",
             f"Predicted WIP (L) = {predicted_wip:.1f} features.",
-            f"Flow Efficiency = {flow_efficiency:.1f}% (active time / total lead time).",
+            f"Flow Efficiency = {flow_efficiency:.1f}% (active work time / total lead time).",
         ]
 
         interpretation_parts = []
@@ -410,13 +425,28 @@ class InsightsService:
 
         # Root causes
         root_causes = []
+        
+        # Calculate lead time standard deviation for variability analysis
+        import statistics
+        leadtime_stddev = statistics.stdev(lead_times) if len(lead_times) > 1 else 0
+        leadtime_variability = (leadtime_stddev / avg_leadtime * 100) if avg_leadtime > 0 else 0
 
         if flow_efficiency < 50:
             root_causes.append(
                 {
-                    "description": f"High wait time ({wait_time:.1f} days) indicates bottlenecks or blocked work",
-                    "evidence": [f"flow_efficiency_{flow_efficiency:.0f}pct"],
+                    "description": f"High wait time ({wait_time:.1f} days) caused by bottlenecks, dependencies, or blocked work",
+                    "evidence": [f"flow_efficiency_{flow_efficiency:.0f}pct", f"avg_wait_time_{wait_time:.1f}days"],
                     "confidence": 90.0,
+                    "reference": "littles_law_analysis",
+                }
+            )
+
+        if leadtime_variability > 50:  # High variability
+            root_causes.append(
+                {
+                    "description": "High lead time variability indicates unpredictable flow and potential process issues",
+                    "evidence": [f"leadtime_stddev_{leadtime_stddev:.1f}", f"leadtime_range_{min_leadtime:.1f}_to_{max_leadtime:.1f}"],
+                    "confidence": 75.0,
                     "reference": "littles_law_analysis",
                 }
             )
@@ -438,11 +468,11 @@ class InsightsService:
             actions.append(
                 {
                     "timeframe": "short-term",
-                    "description": f"Implement WIP limits: cap active features at {optimal_wip:.0f} per team",
-                    "owner": "Scrum Masters & Product Owner",
+                    "description": f"Implement strict WIP limits: cap active features at {int(optimal_wip)} per team/ART",
+                    "owner": "Scrum Masters & Product Owners",
                     "effort": "Low",
                     "dependencies": [],
-                    "success_signal": f"WIP reduced to {optimal_wip:.0f}, lead time trending toward 30 days",
+                    "success_signal": f"WIP reduced to {int(optimal_wip)}, lead time trending toward 30 days within 1 PI",
                 }
             )
 
@@ -450,22 +480,34 @@ class InsightsService:
             actions.append(
                 {
                     "timeframe": "medium-term",
-                    "description": "Identify and eliminate sources of wait time (dependencies, blockers, handoffs)",
-                    "owner": "ART Leadership",
+                    "description": "Conduct value stream mapping to identify and eliminate wait time sources (blockers, dependencies, handoffs)",
+                    "owner": "ART Leadership & RTEs",
                     "effort": "Medium",
-                    "dependencies": ["Value stream mapping session"],
+                    "dependencies": [],
                     "success_signal": "Flow efficiency improves to >50% within 2 PIs",
+                }
+            )
+        
+        if leadtime_variability > 50:
+            actions.append(
+                {
+                    "timeframe": "medium-term",
+                    "description": "Standardize feature sizing and decomposition to reduce lead time variability",
+                    "owner": "Product Management & Architects",
+                    "effort": "Medium",
+                    "dependencies": [],
+                    "success_signal": "Lead time standard deviation reduced by 30%",
                 }
             )
 
         actions.append(
             {
                 "timeframe": "ongoing",
-                "description": f"Monitor Little's Law metrics weekly: maintain λ={throughput_per_day:.2f}/day, reduce W to 30 days",
-                "owner": "RTE",
+                "description": f"Monitor Little's Law dashboard weekly: track λ={throughput_per_day:.2f}/day, W→30 days, L={int(optimal_wip)}",
+                "owner": "RTE & Scrum Masters",
                 "effort": "Low",
-                "dependencies": ["Lead time tracking dashboard"],
-                "success_signal": f"Consistent delivery of L={optimal_wip:.0f} features with W=30 days",
+                "dependencies": [],
+                "success_signal": f"Consistent delivery with W≤30 days and stable throughput",
             }
         )
 
@@ -566,8 +608,8 @@ class InsightsService:
             )
             insights_data.extend(target_insights)
 
-        # Add Little's Law insight if PI is specified and leadtime service is available
-        if scope_id and (scope == "pi" or scope == "portfolio"):
+        # Add Little's Law insight if PI/ART is specified and leadtime service is available
+        if scope_id and (scope == "pi" or scope == "portfolio" or scope == "art"):
             try:
                 from services.leadtime_service import LeadTimeService
 
@@ -576,6 +618,9 @@ class InsightsService:
                 if leadtime_service.is_available():
                     # Determine PI to analyze
                     pi_to_analyze = scope_id if scope == "pi" else None
+                    
+                    # Determine ART to filter (for ART scope)
+                    art_to_filter = scope_id if scope == "art" else None
 
                     # If no specific PI, try to get the most recent one
                     if not pi_to_analyze:
@@ -589,13 +634,15 @@ class InsightsService:
                             print(f"⚠️ Could not fetch available PIs: {e}")
 
                     if pi_to_analyze:
+                        scope_desc = f"ART {art_to_filter}" if art_to_filter else f"PI {pi_to_analyze}"
                         print(
-                            f"📊 Generating Little's Law insight for PI {pi_to_analyze}..."
+                            f"📊 Generating Little's Law insight for {scope_desc}..."
                         )
                         try:
-                            # Fetch flow_leadtime data for the PI
+                            # Fetch flow_leadtime data for the PI (and optionally filtered by ART)
                             flow_data = leadtime_service.client.get_flow_leadtime(
                                 pi=pi_to_analyze,
+                                art=art_to_filter,  # Filter by ART if in ART scope
                                 limit=10000,  # Get all features for the PI
                             )
 

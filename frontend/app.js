@@ -84,18 +84,35 @@ function clearDefaultFilters() {
 
 // LLM Configuration Functions
 function loadLLMConfig() {
+    const modelSelect = document.getElementById('llmModelSelect');
+    const temperatureInput = document.getElementById('llmTemperature');
+    const tempValue = document.getElementById('tempValue');
+
+    // Elements may not be loaded yet (e.g., in a tab that hasn't been shown)
+    if (!modelSelect || !temperatureInput || !tempValue) {
+        console.log('📋 LLM config elements not loaded yet, will use defaults when available');
+        return;
+    }
+
     const savedConfig = localStorage.getItem('llmConfig');
     if (savedConfig) {
         try {
             const config = JSON.parse(savedConfig);
-            document.getElementById('llmModelSelect').value = config.model || 'gpt-4o-mini';
-            document.getElementById('llmTemperature').value = config.temperature || 0.7;
-            document.getElementById('tempValue').textContent = config.temperature || 0.7;
+            modelSelect.value = config.model || 'gpt-4o-mini';
+            temperatureInput.value = config.temperature || 0.7;
+            tempValue.textContent = config.temperature || 0.7;
             updateLLMStatus();
             console.log('📋 Loaded LLM config:', config);
         } catch (e) {
-            console.warn('⚠️ Failed to parse saved LLM config');
+            console.warn('⚠️ Failed to parse saved LLM config, using defaults:', e.message);
+            // Use defaults silently
+            modelSelect.value = 'gpt-4o-mini';
+            temperatureInput.value = 0.7;
+            tempValue.textContent = 0.7;
         }
+    } else {
+        // No saved config - use defaults silently (first run)
+        console.log('📋 No saved LLM config found, using defaults');
     }
 }
 
@@ -150,25 +167,31 @@ async function loadStrategicTargets() {
         const thresholds = data.thresholds || {};
 
         // Load Lead-Time targets
-        if (thresholds.leadtime_target_2026) {
-            document.getElementById('leadtime2026Target').value = thresholds.leadtime_target_2026;
+        const leadtime2026 = document.getElementById('leadtime2026Target');
+        if (leadtime2026 && thresholds.leadtime_target_2026) {
+            leadtime2026.value = thresholds.leadtime_target_2026;
         }
-        if (thresholds.leadtime_target_2027) {
-            document.getElementById('leadtime2027Target').value = thresholds.leadtime_target_2027;
+        const leadtime2027 = document.getElementById('leadtime2027Target');
+        if (leadtime2027 && thresholds.leadtime_target_2027) {
+            leadtime2027.value = thresholds.leadtime_target_2027;
         }
-        if (thresholds.leadtime_target_true_north) {
-            document.getElementById('leadtimeTrueNorthTarget').value = thresholds.leadtime_target_true_north;
+        const leadtimeTrueNorth = document.getElementById('leadtimeTrueNorthTarget');
+        if (leadtimeTrueNorth && thresholds.leadtime_target_true_north) {
+            leadtimeTrueNorth.value = thresholds.leadtime_target_true_north;
         }
 
         // Load Planning Accuracy targets
-        if (thresholds.planning_accuracy_target_2026) {
-            document.getElementById('planningAccuracy2026Target').value = thresholds.planning_accuracy_target_2026;
+        const planningAccuracy2026 = document.getElementById('planningAccuracy2026Target');
+        if (planningAccuracy2026 && thresholds.planning_accuracy_target_2026) {
+            planningAccuracy2026.value = thresholds.planning_accuracy_target_2026;
         }
-        if (thresholds.planning_accuracy_target_2027) {
-            document.getElementById('planningAccuracy2027Target').value = thresholds.planning_accuracy_target_2027;
+        const planningAccuracy2027 = document.getElementById('planningAccuracy2027Target');
+        if (planningAccuracy2027 && thresholds.planning_accuracy_target_2027) {
+            planningAccuracy2027.value = thresholds.planning_accuracy_target_2027;
         }
-        if (thresholds.planning_accuracy_target_true_north) {
-            document.getElementById('planningAccuracyTrueNorthTarget').value = thresholds.planning_accuracy_target_true_north;
+        const planningAccuracyTrueNorth = document.getElementById('planningAccuracyTrueNorthTarget');
+        if (planningAccuracyTrueNorth && thresholds.planning_accuracy_target_true_north) {
+            planningAccuracyTrueNorth.value = thresholds.planning_accuracy_target_true_north;
         }
 
         console.log('✅ Strategic targets loaded');
@@ -3862,8 +3885,7 @@ async function generateLittlesLawAnalysis() {
 
     // Priority: scope-specific ART selection overrides default ARTs filter
     if (appState.scope === 'art' && appState.selectedART) {
-        params.append('art,
-            signal: appState.littleslawAbortController.signals', appState.selectedART);
+        params.append('art', appState.selectedART);
     } else if (appState.selectedARTs.length > 0) {
         params.append('arts', appState.selectedARTs.join(','));
     }
@@ -3882,13 +3904,13 @@ async function generateLittlesLawAnalysis() {
 
         const data = await response.json();
 
-        // Filter for Little's Law insights
+        // Filter for Little's Law insights only (strict filter)
         const allInsights = data.insights || [];
         const littlesLawInsights = allInsights.filter(insight =>
             insight.type === 'littles_law' ||
             insight.source === 'littles_law_analyzer' ||
-            insight.title?.toLowerCase().includes('little\'s law') ||
-            insight.title?.toLowerCase().includes('wip') ||
+            insight.title?.toLowerCase().includes('little\'s law')
+        );
 
         // Hide cancel button on success
         const cancelBtn = document.getElementById('cancelLittlesLawBtn');
@@ -3897,10 +3919,6 @@ async function generateLittlesLawAnalysis() {
         }
 
         appState.littleslawAbortController = null;
-        insight.title?.toLowerCase().includes('flow efficiency') ||
-            insight.title?.toLowerCase().includes('planning accuracy') ||
-            insight.title?.toLowerCase().includes('commitment')
-        );
 
         displayLittlesLawInsights(littlesLawInsights, data.excluded_statuses, data.filter_info);
         hideLoadingOverlay();
@@ -4061,8 +4079,8 @@ function displayLittlesLawInsights(insights, excludedStatuses = [], filterInfo =
                     <div style="font-size: 48px; margin-bottom: 16px;">🔬</div>
                     <div style="font-size: 18px; margin-bottom: 8px;">No Little's Law Insights Available</div>
                     <div style="font-size: 14px;">
-                        Little's Law analysis requires Portfolio or PI scope with sufficient flow data.
-                        <br>Try adjusting your filters or ensure you have flow metrics available.
+                        Little's Law analysis requires sufficient flow data for the selected scope.
+                        <br>Try adjusting your filters, ensure you have selected a PI, or verify flow metrics are available.
                     </div>
                 </div>
             ` : insights.map((insight, index) => {

@@ -18,9 +18,11 @@ Enhanced with expert agile coach LLM analysis and RAG
 
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+import json
 
 from services.leadtime_service import LeadTimeService
 from agents.state import AgentState
+from database import SessionLocal, RuntimeConfiguration
 
 # Global LLM service for RAG enhancement (injected from main.py)
 _llm_service = None
@@ -83,8 +85,40 @@ def littles_law_analyzer_node(state: AgentState) -> Dict[str, Any]:
 
         print(f"📊 Analyzing PI: {pi_to_analyze}")
 
-        # Get flow data for the PI
-        flow_data = leadtime_service.get_feature_leadtime_data(pi=pi_to_analyze)
+        # Get ART filter if analyzing specific ART
+        art_filter = (
+            state.get("selected_art") or state.get("scope")
+            if state.get("scope_type") == "ART"
+            else None
+        )
+
+        if art_filter and art_filter not in ["Portfolio", "portfolio"]:
+            print(f"🎯 Filtering for ART: {art_filter}")
+
+        # Get analysis summary (provides accurate aggregated metrics from DL Webb APP)
+        print(f"📊 Fetching analysis summary for PI {pi_to_analyze}...")
+        summary_params = {"pis": [pi_to_analyze]}
+        if art_filter and art_filter not in ["Portfolio", "portfolio"]:
+            summary_params["arts"] = [art_filter]
+
+        analysis_summary = leadtime_service.client.get_analysis_summary(
+            **summary_params
+        )
+
+        if analysis_summary:
+            print(f"✅ Retrieved analysis summary with accurate metrics")
+        else:
+            print("⚠️  No analysis summary available")
+
+        # Get flow data for the PI (with ART filter if applicable)
+        flow_data = leadtime_service.get_feature_leadtime_data(
+            pi=pi_to_analyze,
+            art=(
+                art_filter
+                if art_filter and art_filter not in ["Portfolio", "portfolio"]
+                else None
+            ),
+        )
 
         if not flow_data:
             print(f"⚠️  No flow data available for PI {pi_to_analyze}")
@@ -93,9 +127,37 @@ def littles_law_analyzer_node(state: AgentState) -> Dict[str, Any]:
 
         print(f"✅ Retrieved {len(flow_data)} features for flow analysis")
 
-        # Get PI planning data (pip_data)
+        # Log which features are being analyzed
+        if flow_data:
+            print(f"📝 Features in analysis:")
+            for idx, feature in enumerate(flow_data[:10], 1):  # Show first 10
+                # Get available fields - check for different possible key names
+                feature_id = (
+                    feature.get("issue_key")
+                    or feature.get("key")
+                    or feature.get("id")
+                    or feature.get("feature_id")
+                    or "N/A"
+                )
+                art = feature.get("art", "N/A")
+                status = feature.get("status", "N/A")
+                leadtime = feature.get("total_leadtime", 0)
+                print(
+                    f"   {idx}. {feature_id} | ART: {art} | Status: {status} | Lead Time: {leadtime:.1f} days"
+                )
+            if len(flow_data) > 10:
+                print(f"   ... and {len(flow_data) - 10} more features")
+
+            # Also show available fields in first feature for debugging
+            if flow_data:
+                print(f"🔍 Available fields in flow data: {list(flow_data[0].keys())}")
+
+        # Get PI planning data (pip_data) - also filter by ART
         print(f"📋 Fetching PI planning data for {pi_to_analyze}...")
-        pip_data = leadtime_service.client.get_pip_data(pi=pi_to_analyze)
+        pip_params = {"pi": pi_to_analyze}
+        if art_filter and art_filter not in ["Portfolio", "portfolio"]:
+            pip_params["art"] = art_filter
+        pip_data = leadtime_service.client.get_pip_data(**pip_params)
 
         if pip_data:
             print(f"✅ Retrieved {len(pip_data)} planning records")
@@ -112,7 +174,9 @@ def littles_law_analyzer_node(state: AgentState) -> Dict[str, Any]:
             print("⚠️  Planning accuracy metrics unavailable")
 
         # Calculate Little's Law metrics
-        metrics = _calculate_littles_law_metrics(flow_data, pi_to_analyze)
+        metrics = _calculate_littles_law_metrics(
+            flow_data, pi_to_analyze, analysis_summary
+        )
 
         if not metrics:
             print("⚠️  Insufficient data for Little's Law calculation")
@@ -226,8 +290,53 @@ def _is_pi_identifier(value: str) -> bool:
     return bool(re.match(pattern, value))
 
 
+def _get_pi_duration_from_config(pi: str) -> int:
+    """
+    Get PI duration from database configuration.
+
+    Args:
+        pi: PI identifier (e.g., 26Q1)
+
+    Returns:
+        Duration in days (defaults to 84 if not configured)
+    """
+    try:
+        db = SessionLocal()
+        config_entry = (
+            db.query(RuntimeConfiguration)
+            .filter(RuntimeConfiguration.config_key == "pi_configurations")
+            .first()
+        )
+
+        if config_entry and config_entry.config_value:
+            pi_configurations = json.loads(config_entry.config_value)
+
+            # Find matching PI configuration
+            for pi_config in pi_configurations:
+                if pi_config.get("pi") == pi:
+                    start_date = datetime.strptime(pi_config["start_date"], "%Y-%m-%d")
+                    end_date = datetime.strptime(pi_config["end_date"], "%Y-%m-%d")
+                    duration = (end_date - start_date).days
+                    print(
+                        f"✅ Found PI {pi} configuration: {duration} days ({pi_config['start_date']} → {pi_config['end_date']})"
+                    )
+                    db.close()
+                    return duration
+
+        db.close()
+        print(f"⚠️  No configuration found for PI {pi}, using default 84 days")
+        return 84
+
+    except Exception as e:
+        print(f"⚠️  Error loading PI configuration: {e}, using default 84 days")
+        return 84
+
+
 def _calculate_littles_law_metrics(
-    flow_data: List[dict], pi: str, pi_duration_days: int = 84
+    flow_data: List[dict],
+    pi: str,
+    analysis_summary: Optional[Dict[str, Any]] = None,
+    pi_duration_days: Optional[int] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     Calculate Little's Law metrics from flow data.
@@ -235,11 +344,131 @@ def _calculate_littles_law_metrics(
     Args:
         flow_data: List of features with lead time data
         pi: Program Increment identifier
-        pi_duration_days: Duration of PI in days (default 84 = 6 weeks)
+        analysis_summary: Pre-calculated summary metrics from DL Webb APP (if available)
+        pi_duration_days: Duration of PI in days (fetched from config if not provided)
 
     Returns:
         Dictionary with calculated metrics or None if insufficient data
     """
+    # Get PI duration from configuration if not provided
+    if pi_duration_days is None:
+        pi_duration_days = _get_pi_duration_from_config(pi)
+
+    # If we have analysis_summary with accurate metrics, use those directly
+    if analysis_summary and "leadtime_analysis" in analysis_summary:
+        leadtime_data = analysis_summary.get("leadtime_analysis", {})
+        throughput_data = analysis_summary.get("throughput", {})
+
+        # Extract correct values from DL Webb APP
+        avg_leadtime = leadtime_data.get("avg_leadtime") or leadtime_data.get(
+            "mean_total"
+        )
+        median_leadtime = leadtime_data.get("median_leadtime") or leadtime_data.get(
+            "median_total"
+        )
+        total_features = throughput_data.get("total_throughput") or throughput_data.get(
+            "total_delivered"
+        )
+
+        # If we have the summary data, use it for throughput calculation
+        if avg_leadtime and total_features:
+            print(
+                f"📊 Using DL Webb APP summary: {total_features} features, {avg_leadtime:.1f} days avg lead time"
+            )
+
+            # Log which completed features contributed to the average
+            completed_features = [
+                f
+                for f in flow_data
+                if f.get("status") in ["Done", "Deployed", "Completed"]
+                and f.get("total_leadtime", 0) > 0
+            ]
+            if completed_features:
+                print(
+                    f"📈 Completed features used in average calculation ({len(completed_features)} features):"
+                )
+                for idx, f in enumerate(completed_features, 1):
+                    feature_id = (
+                        f.get("issue_key")
+                        or f.get("key")
+                        or f.get("id")
+                        or f.get("feature_id")
+                        or f"Feature_{idx}"
+                    )
+                    art = f.get("art", "N/A")
+                    leadtime = f.get("total_leadtime", 0)
+                    print(
+                        f"   {idx}. {feature_id} | ART: {art} | Lead Time: {leadtime:.1f} days"
+                    )
+
+            # Calculate throughput: features delivered / PI duration
+            throughput_per_day = total_features / pi_duration_days
+
+            # Use summary data for lead time
+            min_leadtime = leadtime_data.get("min_total", 0)
+            max_leadtime = leadtime_data.get("max_total", avg_leadtime * 2)
+            leadtime_stddev = leadtime_data.get("stddev_total", 0)
+
+            # Calculate predicted WIP using Little's Law (L = λ × W)
+            predicted_wip = throughput_per_day * avg_leadtime
+
+            # Get flow efficiency if available
+            flow_efficiency = throughput_data.get("flow_efficiency") or 0
+
+            # If flow efficiency not in summary, calculate from flow_data
+            if not flow_efficiency and flow_data:
+                completed_features = [
+                    f
+                    for f in flow_data
+                    if f.get("status") in ["Done", "Deployed", "Completed"]
+                    and f.get("total_leadtime", 0) > 0
+                ]
+
+                if completed_features:
+                    active_times = []
+                    for f in completed_features:
+                        active_time = (
+                            f.get("in_progress", 0)
+                            + f.get("in_analysis", 0)
+                            + f.get("in_reviewing", 0)
+                            + f.get("in_development", 0)
+                            + f.get("in_test", 0)
+                        )
+                        active_times.append(active_time)
+
+                    avg_active_time = (
+                        sum(active_times) / len(active_times)
+                        if active_times
+                        else avg_leadtime
+                    )
+                    flow_efficiency = (
+                        (avg_active_time / avg_leadtime * 100)
+                        if avg_leadtime > 0
+                        else 0
+                    )
+
+            avg_wait_time = (
+                avg_leadtime * (1 - flow_efficiency / 100)
+                if flow_efficiency
+                else avg_leadtime / 2
+            )
+
+            return {
+                "pi": pi,
+                "total_features": int(total_features),
+                "avg_leadtime": avg_leadtime,
+                "median_leadtime": median_leadtime or avg_leadtime,
+                "min_leadtime": min_leadtime,
+                "max_leadtime": max_leadtime,
+                "leadtime_stddev": leadtime_stddev,
+                "throughput_per_day": throughput_per_day,
+                "predicted_wip": predicted_wip,
+                "flow_efficiency": flow_efficiency,
+                "avg_wait_time": avg_wait_time,
+                "pi_duration_days": pi_duration_days,
+            }
+
+    # Fallback: calculate from flow_data if summary not available
     # Filter completed features
     completed_features = [
         f
@@ -654,7 +883,7 @@ def _enhance_insight_with_rag(
         pi = context.get("pi", "Unknown")
 
         # Create a rich prompt for the LLM with scenario modeling format
-        prompt = f"""You are an expert Agile coach with 15+ years of experience analyzing flow metrics using Little's Law.
+        prompt = f"""You are an expert Agile coach with 15+ years of experience analyzing flow metrics using Little's Law for SAFe organizations.
 
 **Current Insight:**
 Title: {insight['title']}
@@ -685,43 +914,94 @@ Interpretation: {insight['interpretation']}
 - Missed Committed: {metrics.get('missed_committed_count', 0)}
 
 **Task:**
-Provide a comprehensive Little's Law analysis in the following format:
+Provide a comprehensive Little's Law analysis using this exact structure:
 
-1. **Scenario Modeling** - Create 2-3 throughput scenarios (e.g., current, improved, degraded) showing:
-   - WIP = Throughput × Lead Time calculations
-   - Impact on lead time if WIP changes
-   - Practical interpretation for each scenario
+## 1️⃣ Little's Law Refresher (Applied)
 
-2. **Stage-Level WIP Mapping** - If process stages are known, break down WIP by stage:
-   - Calculate WIP per stage proportional to time spent
-   - Suggest WIP limits per stage (e.g., "In Progress ≤ 4 Features")
-   - Show how stage-level constraints affect total system WIP
+Start with the formula and clearly state:
+- **Little's Law**: L = λ × W
+- Rearrangements: WIP = Throughput × Lead Time, Throughput = WIP / Lead Time
+- Define: One Feature = flow unit, Time unit = calendar days
 
-3. **Impact Analysis** - Show "what happens if" scenarios:
-   - Table showing WIP increases vs resulting lead time
-   - Break-even points and tipping points
-   - Risk zones and optimal operating ranges
+## 2️⃣ System-Level Mapping (Entire Flow)
 
-4. **Flow Control Rules** - Provide actionable policies:
-   - Hard WIP limits (non-negotiable, with specific numbers)
-   - Aging signals (e.g., "Any feature > 1.5× target days → escalation")
-   - Escalation triggers and governance rules
+Create 3 throughput scenarios based on the current {metrics.get('throughput_per_day', 0):.2f} features/day:
+- **Scenario A** (current): Calculate WIP = λ × W with actual values
+- **Scenario B** (improved, +50% throughput): Show what happens
+- **Scenario C** (degraded, -30% throughput): Show what happens
 
-5. **SAFe-Specific Context** - Connect to SAFe practices:
-   - How this affects PI planning capacity
-   - Team maturity indicators
-   - RTE/PM talking points with mathematical justification
-   - Common anti-patterns observed in the data
+For each scenario, provide:
+```
+WIP = throughput × {metrics.get('avg_leadtime', 0):.0f} days = X features
+```
+Add interpretation (e.g., "Your system should never exceed ~X Features in-flight...")
 
-Focus on:
-- Little's Law relationships (L = λ × W) with concrete calculations
-- Multiple scenarios showing sensitivity to changes
-- Specific numeric recommendations (not vague guidance)
-- Tables and structured data where helpful
-- Making lead time predictable through WIP control
-- Preventing PI overcommitment with math-based evidence
+## 3️⃣ Stage-Level Little's Law Mapping
 
-Be specific, insightful, and actionable. Reference actual numbers from the metrics. Use scenario modeling to show teams the consequences of their choices."""
+If stage data available, create a detailed table:
+| Stage | Days | WIP (= λ × days) | WIP Policy |
+|-------|------|------------------|------------|
+| In Analysis | X | X.X | ≤ X |
+| In Progress | Y | Y.Y | ≤ Y |
+...
+
+Show total WIP matches system-level calculation.
+
+## 4️⃣ What Happens If WIP Increases?
+
+Create an impact table showing relationship:
+| Total WIP | Resulting Lead Time |
+|-----------|-------------------|
+| Current | X days |
+| +25% | Y days |
+| +50% | Z days |
+
+Add warning: "Lead time grows linearly with WIP — this is the #1 hidden SAFe problem."
+
+## 5️⃣ Flow Control Rules You Should Enforce
+
+Provide specific, numeric rules:
+### 🔴 Hard WIP Limits (non-negotiable)
+- In Progress ≤ X Features
+- SIT ≤ Y Features
+- UAT ≤ Z Features
+- Total WIP ≤ N Features
+
+### 🟡 Aging Signals (flow health)
+- Any Feature in state > 1.5× target days → escalation
+- Any "Ready" state > 3 days → dependency issue
+- Any Feature > X days total → ART Sync review
+
+## 6️⃣ Why This Matters for SAFe
+
+Explain impact:
+- Turns Kanban policies into math
+- Makes lead time predictable
+- Prevents PI overcommitment
+- Gives RTEs & PMs objective arguments
+
+Provide before/after example:
+**Before**: "We have too much in progress"
+**After**: "Our WIP is X, so lead time will mathematically be ~Y days"
+
+## 7️⃣ Next Steps & Recommendations
+
+Offer 2-3 specific actions based on the data:
+- If flow efficiency < 50%: Focus on reducing wait time
+- If WIP > optimal: Implement strict WIP limits
+- If planning accuracy < 70%: Review commitment process
+
+**CRITICAL REQUIREMENTS:**
+1. Use ACTUAL numbers from the metrics (not placeholders)
+2. Show ALL calculations explicitly (e.g., "0.2 × 70 = 14")
+3. Create tables in markdown format
+4. Use emojis for section headers (1️⃣, 2️⃣, etc.)
+5. Be mathematically precise — this turns opinions into facts
+6. Focus on Little's Law relationship throughout
+7. Make it actionable for RTEs, PMs, and Scrum Masters
+8. Connect observations to SAFe practices explicitly
+
+Generate the complete analysis now, using the structure above with actual numbers."""
 
         # Get enhanced analysis from LLM with RAG
         enhanced_text = _llm_service.enhance_insight_with_expert_analysis(
@@ -752,7 +1032,7 @@ def _generate_flow_insight(
 
     # Build observation
     observation_parts = [
-        f"PI {pi} completed {metrics['total_features']} features in {metrics['pi_duration_days']} days.",
+        f"During PI {pi} ({metrics['pi_duration_days']}-day period), {metrics['total_features']} features were completed.",
         f"Throughput (λ) = {metrics['throughput_per_day']:.2f} features/day.",
         f"Average Lead Time (W) = {metrics['avg_leadtime']:.1f} days (range: {metrics['leadtime_min']:.1f}-{metrics['leadtime_max']:.1f}).",
         f"Predicted WIP (L) = {metrics['predicted_wip']:.1f} features.",

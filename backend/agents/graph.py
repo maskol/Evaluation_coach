@@ -56,9 +56,9 @@ def should_continue_after_metrics(
     if not state.get("metrics_snapshot"):
         return "end"
 
-    # For portfolio or PI scope, prefer Little's Law analysis first
+    # For portfolio, PI, or ART scope, prefer Little's Law analysis first
     scope_type = state.get("scope_type", "").lower()
-    if scope_type in ["portfolio", "pi"]:
+    if scope_type in ["portfolio", "pi", "art"]:
         return "littles_law_analyzer"
 
     return "pattern_detector"
@@ -231,6 +231,7 @@ def run_evaluation_coach(
     time_window_end: datetime,
     jira_project_keys: list[str] | None = None,
     include_issue_types: list[str] | None = None,
+    scope_id: str | None = None,
 ) -> AgentState:
     """
     Execute the Evaluation Coach workflow.
@@ -244,6 +245,7 @@ def run_evaluation_coach(
         time_window_end: End of analysis period
         jira_project_keys: Optional list of Jira project keys to filter
         include_issue_types: Optional list of issue types to include
+        scope_id: Optional scope identifier (e.g., PI like "26Q1") for Little's Law analysis
 
     Returns:
         Final AgentState containing all analysis results and the coaching report
@@ -270,6 +272,7 @@ def run_evaluation_coach(
         time_window_end=time_window_end,
         jira_project_keys=jira_project_keys,
         include_issue_types=include_issue_types,
+        scope_id=scope_id,
     )
 
     # Create and run the graph
