@@ -326,7 +326,7 @@ class InsightsService:
         # W: Average Lead Time (days)
         lead_times = [f["total_leadtime"] for f in completed_features]
         avg_leadtime = sum(lead_times) / len(lead_times)
-        
+
         # DEBUG: Log which features are included in the calculation
         print(f"\n📊 Little's Law Calculation for PI {pi}:")
         print(f"   Total features in flow_data: {len(flow_data)}")
@@ -338,7 +338,9 @@ class InsightsService:
             status = f.get("status", "N/A")
             print(f"      - {issue_key}: {leadtime:.1f} days (status: {status})")
         print(f"   Calculated average lead time: {avg_leadtime:.1f} days")
-        print(f"   Lead time range: {min(lead_times):.1f} - {max(lead_times):.1f} days\n")
+        print(
+            f"   Lead time range: {min(lead_times):.1f} - {max(lead_times):.1f} days\n"
+        )
 
         # λ: Throughput (features per day)
         throughput_per_day = total_features / pi_duration_days
@@ -380,7 +382,7 @@ class InsightsService:
         # Generate insights based on Little's Law analysis
         min_leadtime = min(lead_times)
         max_leadtime = max(lead_times)
-        
+
         observation_parts = [
             f"During PI {pi} ({pi_duration_days}-day period), {total_features} features were completed.",
             f"Throughput (λ) = {throughput_per_day:.2f} features/day.",
@@ -425,17 +427,23 @@ class InsightsService:
 
         # Root causes
         root_causes = []
-        
+
         # Calculate lead time standard deviation for variability analysis
         import statistics
+
         leadtime_stddev = statistics.stdev(lead_times) if len(lead_times) > 1 else 0
-        leadtime_variability = (leadtime_stddev / avg_leadtime * 100) if avg_leadtime > 0 else 0
+        leadtime_variability = (
+            (leadtime_stddev / avg_leadtime * 100) if avg_leadtime > 0 else 0
+        )
 
         if flow_efficiency < 50:
             root_causes.append(
                 {
                     "description": f"High wait time ({wait_time:.1f} days) caused by bottlenecks, dependencies, or blocked work",
-                    "evidence": [f"flow_efficiency_{flow_efficiency:.0f}pct", f"avg_wait_time_{wait_time:.1f}days"],
+                    "evidence": [
+                        f"flow_efficiency_{flow_efficiency:.0f}pct",
+                        f"avg_wait_time_{wait_time:.1f}days",
+                    ],
                     "confidence": 90.0,
                     "reference": "littles_law_analysis",
                 }
@@ -445,7 +453,10 @@ class InsightsService:
             root_causes.append(
                 {
                     "description": "High lead time variability indicates unpredictable flow and potential process issues",
-                    "evidence": [f"leadtime_stddev_{leadtime_stddev:.1f}", f"leadtime_range_{min_leadtime:.1f}_to_{max_leadtime:.1f}"],
+                    "evidence": [
+                        f"leadtime_stddev_{leadtime_stddev:.1f}",
+                        f"leadtime_range_{min_leadtime:.1f}_to_{max_leadtime:.1f}",
+                    ],
                     "confidence": 75.0,
                     "reference": "littles_law_analysis",
                 }
@@ -487,7 +498,7 @@ class InsightsService:
                     "success_signal": "Flow efficiency improves to >50% within 2 PIs",
                 }
             )
-        
+
         if leadtime_variability > 50:
             actions.append(
                 {
@@ -618,7 +629,7 @@ class InsightsService:
                 if leadtime_service.is_available():
                     # Determine PI to analyze
                     pi_to_analyze = scope_id if scope == "pi" else None
-                    
+
                     # Determine ART to filter (for ART scope)
                     art_to_filter = scope_id if scope == "art" else None
 
@@ -634,17 +645,78 @@ class InsightsService:
                             print(f"⚠️ Could not fetch available PIs: {e}")
 
                     if pi_to_analyze:
-                        scope_desc = f"ART {art_to_filter}" if art_to_filter else f"PI {pi_to_analyze}"
-                        print(
-                            f"📊 Generating Little's Law insight for {scope_desc}..."
+                        scope_desc = (
+                            f"ART {art_to_filter}"
+                            if art_to_filter
+                            else f"PI {pi_to_analyze}"
                         )
+                        print(f"📊 Generating Little's Law insight for {scope_desc}...")
                         try:
-                            # Fetch flow_leadtime data for the PI (and optionally filtered by ART)
-                            flow_data = leadtime_service.client.get_flow_leadtime(
-                                pi=pi_to_analyze,
+                            # Fetch flow_leadtime data (without PI filter - will filter client-side)
+                            all_flow_data = leadtime_service.client.get_flow_leadtime(
                                 art=art_to_filter,  # Filter by ART if in ART scope
-                                limit=10000,  # Get all features for the PI
+                                limit=10000,
                             )
+
+                            # Filter by PI - for Done features use resolved_date, for others use pi field
+                            flow_data = []
+                            if all_flow_data:
+                                from datetime import datetime
+                                from database import SessionLocal, RuntimeConfiguration
+                                import json
+
+                                for f in all_flow_data:
+                                    feature_pi = None
+                                    if f.get("status") == "Done" and f.get(
+                                        "resolved_date"
+                                    ):
+                                        # Calculate PI from resolved_date for Done features
+                                        try:
+                                            resolved_dt = datetime.strptime(
+                                                f["resolved_date"][:10], "%Y-%m-%d"
+                                            )
+                                            db = SessionLocal()
+                                            config_entry = (
+                                                db.query(RuntimeConfiguration)
+                                                .filter(
+                                                    RuntimeConfiguration.config_key
+                                                    == "pi_configurations"
+                                                )
+                                                .first()
+                                            )
+                                            if (
+                                                config_entry
+                                                and config_entry.config_value
+                                            ):
+                                                pi_configurations = json.loads(
+                                                    config_entry.config_value
+                                                )
+                                                for pi_config in pi_configurations:
+                                                    start_date = datetime.strptime(
+                                                        pi_config["start_date"],
+                                                        "%Y-%m-%d",
+                                                    )
+                                                    end_date = datetime.strptime(
+                                                        pi_config["end_date"],
+                                                        "%Y-%m-%d",
+                                                    )
+                                                    if (
+                                                        start_date
+                                                        <= resolved_dt
+                                                        <= end_date
+                                                    ):
+                                                        feature_pi = pi_config.get("pi")
+                                                        break
+                                            db.close()
+                                        except:
+                                            pass
+
+                                    # Use stored pi field for non-Done features or if calculation failed
+                                    if feature_pi is None:
+                                        feature_pi = f.get("pi")
+
+                                    if feature_pi == pi_to_analyze:
+                                        flow_data.append(f)
 
                             if flow_data:
                                 littles_law_insight = (

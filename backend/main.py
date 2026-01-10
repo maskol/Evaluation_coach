@@ -455,12 +455,56 @@ async def generate_pi_report(
                     limit=10000
                 )
 
+                def calculate_pi_from_resolved_date(
+                    resolved_date: str,
+                ) -> Optional[str]:
+                    """Calculate PI based on resolved date."""
+                    if not resolved_date:
+                        return None
+                    try:
+                        resolved_dt = datetime.strptime(resolved_date[:10], "%Y-%m-%d")
+                        # Get PI configurations from database
+                        config_entry = (
+                            db.query(RuntimeConfiguration)
+                            .filter(
+                                RuntimeConfiguration.config_key == "pi_configurations"
+                            )
+                            .first()
+                        )
+                        if config_entry and config_entry.config_value:
+                            import json
+
+                            pi_configurations = json.loads(config_entry.config_value)
+                            for pi_config in pi_configurations:
+                                start_date = datetime.strptime(
+                                    pi_config["start_date"], "%Y-%m-%d"
+                                )
+                                end_date = datetime.strptime(
+                                    pi_config["end_date"], "%Y-%m-%d"
+                                )
+                                if start_date <= resolved_dt <= end_date:
+                                    return pi_config.get("pi")
+                        return None
+                    except:
+                        return None
+
                 def calculate_pi_metrics(pi_name, features, pip_data, throughput_data):
                     """Calculate metrics for a single PI"""
                     metrics = {"pi_name": pi_name}
 
                     # Flow efficiency and lead time
-                    pi_features = [f for f in features if f.get("pi") == pi_name]
+                    # For Done features (throughput), use resolved date to determine PI
+                    # For other statuses, use the stored pi field
+                    pi_features = [
+                        f
+                        for f in features
+                        if (
+                            f.get("status") == "Done"
+                            and calculate_pi_from_resolved_date(f.get("resolved_date"))
+                            == pi_name
+                        )
+                        or (f.get("status") != "Done" and f.get("pi") == pi_name)
+                    ]
                     if pi_features:
                         value_add_times = []
                         total_times = []
@@ -1172,7 +1216,47 @@ async def export_executive_summary(
                 if selected_arts:
                     flow_data = [f for f in flow_data if f.get("art") in selected_arts]
                 if selected_pis:
-                    flow_data = [f for f in flow_data if f.get("pi") in selected_pis]
+                    # Helper to calculate PI from resolved date
+                    def get_feature_pi(feature):
+                        if feature.get("status") == "Done" and feature.get(
+                            "resolved_date"
+                        ):
+                            # For Done features, calculate PI from resolved date
+                            try:
+                                resolved_dt = datetime.strptime(
+                                    feature["resolved_date"][:10], "%Y-%m-%d"
+                                )
+                                config_entry = (
+                                    db.query(RuntimeConfiguration)
+                                    .filter(
+                                        RuntimeConfiguration.config_key
+                                        == "pi_configurations"
+                                    )
+                                    .first()
+                                )
+                                if config_entry and config_entry.config_value:
+                                    import json
+
+                                    pi_configurations = json.loads(
+                                        config_entry.config_value
+                                    )
+                                    for pi_config in pi_configurations:
+                                        start_date = datetime.strptime(
+                                            pi_config["start_date"], "%Y-%m-%d"
+                                        )
+                                        end_date = datetime.strptime(
+                                            pi_config["end_date"], "%Y-%m-%d"
+                                        )
+                                        if start_date <= resolved_dt <= end_date:
+                                            return pi_config.get("pi")
+                            except:
+                                pass
+                        # For non-Done features, use stored pi field
+                        return feature.get("pi")
+
+                    flow_data = [
+                        f for f in flow_data if get_feature_pi(f) in selected_pis
+                    ]
 
                 # Filter by excluded statuses
                 if excluded_statuses:
@@ -1733,8 +1817,48 @@ async def get_dashboard(
 
                         # Filter by selected PIs if specified
                         if selected_pis:
+                            # Helper to calculate PI from resolved date for Done features
+                            def get_feature_pi(feature):
+                                if feature.get("status") == "Done" and feature.get(
+                                    "resolved_date"
+                                ):
+                                    try:
+                                        resolved_dt = datetime.strptime(
+                                            feature["resolved_date"][:10], "%Y-%m-%d"
+                                        )
+                                        config_entry = (
+                                            db.query(RuntimeConfiguration)
+                                            .filter(
+                                                RuntimeConfiguration.config_key
+                                                == "pi_configurations"
+                                            )
+                                            .first()
+                                        )
+                                        if config_entry and config_entry.config_value:
+                                            import json
+
+                                            pi_configurations = json.loads(
+                                                config_entry.config_value
+                                            )
+                                            for pi_config in pi_configurations:
+                                                start_date = datetime.strptime(
+                                                    pi_config["start_date"], "%Y-%m-%d"
+                                                )
+                                                end_date = datetime.strptime(
+                                                    pi_config["end_date"], "%Y-%m-%d"
+                                                )
+                                                if (
+                                                    start_date
+                                                    <= resolved_dt
+                                                    <= end_date
+                                                ):
+                                                    return pi_config.get("pi")
+                                    except:
+                                        pass
+                                return feature.get("pi")
+
                             features = [
-                                f for f in features if f.get("pi") in selected_pis
+                                f for f in features if get_feature_pi(f) in selected_pis
                             ]
 
                         if features and len(features) > 0:

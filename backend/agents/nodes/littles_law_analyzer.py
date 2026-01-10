@@ -110,9 +110,10 @@ def littles_law_analyzer_node(state: AgentState) -> Dict[str, Any]:
         else:
             print("⚠️  No analysis summary available")
 
-        # Get flow data for the PI (with ART filter if applicable)
-        flow_data = leadtime_service.get_feature_leadtime_data(
-            pi=pi_to_analyze,
+        # Get flow data with stage breakdown (with ART filter if applicable)
+        # Fetch without PI filter and filter client-side based on resolved_date for Done features
+        print(f"📊 Fetching flow data with stage breakdown for PI {pi_to_analyze}...")
+        all_flow_data = leadtime_service.get_feature_leadtime_data(
             art=(
                 art_filter
                 if art_filter and art_filter not in ["Portfolio", "portfolio"]
@@ -120,18 +121,82 @@ def littles_law_analyzer_node(state: AgentState) -> Dict[str, Any]:
             ),
         )
 
+        if not all_flow_data:
+            print(f"⚠️  No flow data available")
+            updates["warnings"] = [f"No flow data available for PI {pi_to_analyze}"]
+            return updates
+
+        # Filter by PI - for Done features use resolved_date, for others use pi field
+        flow_data = []
+        for f in all_flow_data:
+            feature_pi = None
+            if f.get("status") == "Done" and f.get("resolved_date"):
+                # Calculate PI from resolved_date for Done features
+                feature_pi = _calculate_pi_from_date(f.get("resolved_date"))
+            else:
+                # Use stored pi field for non-Done features
+                feature_pi = f.get("pi")
+
+            if feature_pi == pi_to_analyze:
+                flow_data.append(f)
+
         if not flow_data:
             print(f"⚠️  No flow data available for PI {pi_to_analyze}")
             updates["warnings"] = [f"No flow data available for PI {pi_to_analyze}"]
             return updates
 
-        print(f"✅ Retrieved {len(flow_data)} features for flow analysis")
+        print(
+            f"✅ Retrieved {len(flow_data)} features for PI {pi_to_analyze} (filtered by resolved date for Done features)"
+        )
+
+        # Get throughput data for accurate total lead times
+        # Note: throughput data (leadtime_thr_data table) already has correct Delivered PI
+        print(f"📊 Fetching throughput data for accurate lead times...")
+        throughput_data = leadtime_service.client.get_throughput_data(
+            pi=pi_to_analyze,
+            art=(
+                art_filter
+                if art_filter and art_filter not in ["Portfolio", "portfolio"]
+                else None
+            ),
+            limit=10000,
+        )
+
+        # Create lookup for accurate lead times by issue_key
+        accurate_leadtimes = {}
+        if throughput_data:
+            for feature in throughput_data:
+                issue_key = feature.get("issue_key")
+                lead_time = feature.get("lead_time_days", 0)
+                if issue_key and lead_time > 0:
+                    accurate_leadtimes[issue_key] = lead_time
+            print(
+                f"✅ Retrieved {len(accurate_leadtimes)} accurate lead times from throughput data"
+            )
+            print(f"🔍 Throughput lead times: {accurate_leadtimes}")
+
+        # Merge accurate lead times into flow_data
+        merged_count = 0
+        for feature in flow_data:
+            issue_key = feature.get("issue_key") or feature.get("key")
+            old_leadtime = feature.get("total_leadtime", 0)
+            if issue_key and issue_key in accurate_leadtimes:
+                feature["total_leadtime"] = accurate_leadtimes[issue_key]
+                merged_count += 1
+                print(
+                    f"🔄 Merged {issue_key}: {old_leadtime:.1f} → {accurate_leadtimes[issue_key]:.1f} days"
+                )
+
+        if merged_count > 0:
+            print(f"✅ Merged {merged_count} accurate lead times into flow_data")
+        else:
+            print(f"⚠️  No lead times were merged - check issue_key matching")
 
         # Log which features are being analyzed
         if flow_data:
-            print(f"📝 Features in analysis:")
-            for idx, feature in enumerate(flow_data[:10], 1):  # Show first 10
-                # Get available fields - check for different possible key names
+            print(f"📝 Features in analysis (Done status only):")
+            done_features = [f for f in flow_data if f.get("status") == "Done"]
+            for idx, feature in enumerate(done_features[:10], 1):  # Show first 10
                 feature_id = (
                     feature.get("issue_key")
                     or feature.get("key")
@@ -145,12 +210,9 @@ def littles_law_analyzer_node(state: AgentState) -> Dict[str, Any]:
                 print(
                     f"   {idx}. {feature_id} | ART: {art} | Status: {status} | Lead Time: {leadtime:.1f} days"
                 )
-            if len(flow_data) > 10:
-                print(f"   ... and {len(flow_data) - 10} more features")
-
-            # Also show available fields in first feature for debugging
-            if flow_data:
-                print(f"🔍 Available fields in flow data: {list(flow_data[0].keys())}")
+            if len(done_features) > 10:
+                print(f"   ... and {len(done_features) - 10} more Done features")
+            print(f"📊 Total features: {len(flow_data)}, Done: {len(done_features)}")
 
         # Get PI planning data (pip_data) - also filter by ART
         print(f"📋 Fetching PI planning data for {pi_to_analyze}...")
@@ -290,6 +352,53 @@ def _is_pi_identifier(value: str) -> bool:
     return bool(re.match(pattern, value))
 
 
+def _calculate_pi_from_date(resolved_date: str) -> Optional[str]:
+    """Calculate PI based on resolved date using PI configurations.
+
+    Args:
+        resolved_date: ISO format date string (e.g., '2026-01-07')
+
+    Returns:
+        PI identifier (e.g., '26Q1') or None if date doesn't fall in any configured PI
+    """
+    if not resolved_date:
+        return None
+
+    try:
+        # Parse the resolved date
+        if isinstance(resolved_date, str):
+            resolved_dt = datetime.strptime(resolved_date[:10], "%Y-%m-%d")
+        else:
+            resolved_dt = resolved_date
+
+        # Get PI configurations from database
+        db = SessionLocal()
+        config_entry = (
+            db.query(RuntimeConfiguration)
+            .filter(RuntimeConfiguration.config_key == "pi_configurations")
+            .first()
+        )
+
+        if config_entry and config_entry.config_value:
+            pi_configurations = json.loads(config_entry.config_value)
+
+            # Find which PI the resolved date falls into
+            for pi_config in pi_configurations:
+                start_date = datetime.strptime(pi_config["start_date"], "%Y-%m-%d")
+                end_date = datetime.strptime(pi_config["end_date"], "%Y-%m-%d")
+
+                if start_date <= resolved_dt <= end_date:
+                    db.close()
+                    return pi_config.get("pi")
+
+        db.close()
+        return None
+
+    except Exception as e:
+        print(f"⚠️  Error calculating PI from date {resolved_date}: {e}")
+        return None
+
+
 def _get_pi_duration_from_config(pi: str) -> int:
     """
     Get PI duration from database configuration.
@@ -376,16 +485,15 @@ def _calculate_littles_law_metrics(
                 f"📊 Using DL Webb APP summary: {total_features} features, {avg_leadtime:.1f} days avg lead time"
             )
 
-            # Log which completed features contributed to the average
+            # Log which Done features contributed to the average
             completed_features = [
                 f
                 for f in flow_data
-                if f.get("status") in ["Done", "Deployed", "Completed"]
-                and f.get("total_leadtime", 0) > 0
+                if f.get("status") == "Done" and f.get("total_leadtime", 0) > 0
             ]
             if completed_features:
                 print(
-                    f"📈 Completed features used in average calculation ({len(completed_features)} features):"
+                    f"📈 Done features used in average calculation ({len(completed_features)} features):"
                 )
                 for idx, f in enumerate(completed_features, 1):
                     feature_id = (
@@ -420,8 +528,7 @@ def _calculate_littles_law_metrics(
                 completed_features = [
                     f
                     for f in flow_data
-                    if f.get("status") in ["Done", "Deployed", "Completed"]
-                    and f.get("total_leadtime", 0) > 0
+                    if f.get("status") == "Done" and f.get("total_leadtime", 0) > 0
                 ]
 
                 if completed_features:
@@ -469,12 +576,11 @@ def _calculate_littles_law_metrics(
             }
 
     # Fallback: calculate from flow_data if summary not available
-    # Filter completed features
+    # Filter for Done features only (most accurate for throughput calculation)
     completed_features = [
         f
         for f in flow_data
-        if f.get("status") in ["Done", "Deployed", "Completed"]
-        and f.get("total_leadtime", 0) > 0
+        if f.get("status") == "Done" and f.get("total_leadtime", 0) > 0
     ]
 
     if len(completed_features) < 5:  # Minimum threshold for meaningful analysis
