@@ -24,6 +24,7 @@ def generate_advanced_insights(
     art_comparison: List[Dict[str, Any]],
     selected_arts: Optional[List[str]] = None,
     selected_pis: Optional[List[str]] = None,
+    selected_team: Optional[str] = None,
     llm_service=None,
 ) -> List[InsightResponse]:
     """
@@ -34,6 +35,7 @@ def generate_advanced_insights(
         art_comparison: List of ART performance data
         selected_arts: Filtered ARTs (if any)
         selected_pis: Filtered PIs (if any)
+        selected_team: Selected team name (if any)
         llm_service: LLM service for expert commentary (optional)
 
     Returns:
@@ -53,51 +55,71 @@ def generate_advanced_insights(
     throughput = analysis_summary.get("throughput_analysis", {})
 
     # 1. Bottleneck Analysis Insights
-    insights.extend(_analyze_bottlenecks(bottleneck, selected_arts, selected_pis))
+    insights.extend(
+        _analyze_bottlenecks(bottleneck, selected_arts, selected_pis, selected_team)
+    )
 
     # 2. Stuck Item Pattern Analysis (Hidden Dependencies)
     insights.extend(
-        _analyze_stuck_item_patterns(bottleneck, selected_arts, selected_pis)
+        _analyze_stuck_item_patterns(
+            bottleneck, selected_arts, selected_pis, selected_team
+        )
     )
 
     # 3. WIP Statistics Analysis
-    insights.extend(_analyze_wip_statistics(bottleneck, selected_arts, selected_pis))
+    insights.extend(
+        _analyze_wip_statistics(bottleneck, selected_arts, selected_pis, selected_team)
+    )
 
     # 4. Waste Analysis Insights
-    insights.extend(_analyze_waste(waste, selected_arts, selected_pis))
+    insights.extend(_analyze_waste(waste, selected_arts, selected_pis, selected_team))
 
     # 5. Planning Accuracy Insights
-    insights.extend(_analyze_planning_accuracy(planning, selected_arts, selected_pis))
+    insights.extend(
+        _analyze_planning_accuracy(planning, selected_arts, selected_pis, selected_team)
+    )
 
     # 6. Flow Efficiency Insights
     insights.extend(
-        _analyze_flow_efficiency(art_comparison, selected_arts, selected_pis)
+        _analyze_flow_efficiency(
+            art_comparison, selected_arts, selected_pis, selected_team
+        )
     )
 
     # 7. Throughput & Delivery Pattern Insights
-    insights.extend(_analyze_throughput(throughput, selected_arts, selected_pis))
+    insights.extend(
+        _analyze_throughput(throughput, selected_arts, selected_pis, selected_team)
+    )
 
     # 8. Lead Time Variability Insights
     insights.extend(
-        _analyze_leadtime_variability(leadtime, selected_arts, selected_pis)
+        _analyze_leadtime_variability(
+            leadtime, selected_arts, selected_pis, selected_team
+        )
     )
 
     # 9. ART Load Balancing Analysis (Organizational Structure)
     insights.extend(
-        _analyze_art_load_balance(art_comparison, selected_arts, selected_pis)
+        _analyze_art_load_balance(
+            art_comparison, selected_arts, selected_pis, selected_team
+        )
     )
 
     # 10. Feature Size & Batch Analysis (Way of Working)
-    insights.extend(_analyze_feature_sizing(throughput, selected_arts, selected_pis))
+    insights.extend(
+        _analyze_feature_sizing(throughput, selected_arts, selected_pis, selected_team)
+    )
 
     # 11. Strategic Target Analysis - Compare current performance vs targets
     insights.extend(
-        _analyze_strategic_targets(leadtime, planning, selected_arts, selected_pis)
+        _analyze_strategic_targets(
+            leadtime, planning, selected_arts, selected_pis, selected_team
+        )
     )
 
     # 12. Add comprehensive executive summary (like DL Webb App AI Summary)
     summary_insight = _generate_executive_summary(
-        analysis_summary, insights, selected_arts, selected_pis
+        analysis_summary, insights, selected_arts, selected_pis, selected_team
     )
     if summary_insight:
         insights.append(summary_insight)
@@ -157,6 +179,7 @@ def _analyze_bottlenecks(
     bottleneck_data: Dict[str, Any],
     selected_arts: Optional[List[str]],
     selected_pis: Optional[List[str]],
+    selected_team: Optional[str] = None,
 ) -> List[InsightResponse]:
     """Analyze workflow bottlenecks and generate insights"""
     insights = []
@@ -196,7 +219,7 @@ def _analyze_bottlenecks(
         )[:3]
 
         if score > 50:  # Significant bottleneck
-            scope_desc = _format_scope(selected_arts, selected_pis)
+            scope_desc = _format_scope(selected_arts, selected_pis, selected_team)
 
             # Build stuck items evidence
             stuck_evidence = []
@@ -328,7 +351,7 @@ def _analyze_bottlenecks(
                     title="Multiple Workflow Bottlenecks Detected",
                     severity="warning",
                     confidence=0.85,
-                    scope=_format_scope(selected_arts, selected_pis),
+                    scope=_format_scope(selected_arts, selected_pis, selected_team),
                     scope_id=None,
                     observation=f"Three stages showing bottleneck behavior: {', '.join(stage_details)}. Combined average time: {total_mean:.1f} days.",
                     interpretation="Multiple bottlenecks indicate systemic workflow issues rather than isolated problems. The entire delivery pipeline needs optimization. This suggests issues with overall process design, resource allocation, or dependencies between stages. Note: Same features may appear in multiple stages if they exceeded thresholds throughout their journey.",
@@ -375,6 +398,7 @@ def _analyze_stuck_item_patterns(
     bottleneck_data: Dict[str, Any],
     selected_arts: Optional[List[str]],
     selected_pis: Optional[List[str]],
+    selected_team: Optional[str] = None,
 ) -> List[InsightResponse]:
     """
     Analyze stuck items for patterns - items stuck in multiple stages indicate
@@ -416,7 +440,7 @@ def _analyze_stuck_item_patterns(
             reverse=True,
         )[:3]
 
-        scope_desc = _format_scope(selected_arts, selected_pis)
+        scope_desc = _format_scope(selected_arts, selected_pis, selected_team)
 
         # Build evidence from worst items
         evidence_list = []
@@ -519,6 +543,7 @@ def _analyze_wip_statistics(
     bottleneck_data: Dict[str, Any],
     selected_arts: Optional[List[str]],
     selected_pis: Optional[List[str]],
+    selected_team: Optional[str] = None,
 ) -> List[InsightResponse]:
     """
     Analyze WIP statistics to identify stages with excessive work in progress
@@ -559,7 +584,7 @@ def _analyze_wip_statistics(
         problematic_stages.sort(key=lambda x: x["exceeding_pct"], reverse=True)
         top_3 = problematic_stages[:3]
 
-        scope_desc = _format_scope(selected_arts, selected_pis)
+        scope_desc = _format_scope(selected_arts, selected_pis, selected_team)
 
         # Note: Don't sum exceeding counts as they represent stage occurrences, not unique items
         total_wip = sum(s["total_items"] for s in top_3)
@@ -669,6 +694,7 @@ def _analyze_waste(
     waste_data: Dict[str, Any],
     selected_arts: Optional[List[str]],
     selected_pis: Optional[List[str]],
+    selected_team: Optional[str] = None,
 ) -> List[InsightResponse]:
     """Analyze waste metrics and generate insights"""
     insights = []
@@ -697,7 +723,7 @@ def _analyze_waste(
                 title=f"High Waste Detected: {total_waste:.0f} Days Lost",
                 severity="critical" if total_waste > 500 else "warning",
                 confidence=0.9,
-                scope=_format_scope(selected_arts, selected_pis),
+                scope=_format_scope(selected_arts, selected_pis, selected_team),
                 scope_id=None,
                 observation=f"Total waste: {total_waste:.0f} days. Breakdown: Waiting waste: {waiting:.0f} days, Removed work: {removed:.0f} days.",
                 interpretation="Significant value delivery time is being consumed by non-value-adding activities. This directly impacts time-to-market and team efficiency.",
@@ -776,6 +802,7 @@ def _analyze_planning_accuracy(
     planning_data: Dict[str, Any],
     selected_arts: Optional[List[str]],
     selected_pis: Optional[List[str]],
+    selected_team: Optional[str] = None,
 ) -> List[InsightResponse]:
     """Analyze planning accuracy and generate insights"""
     insights = []
@@ -791,7 +818,7 @@ def _analyze_planning_accuracy(
                 title=f"Low PI Predictability: {accuracy_pct:.1f}%",
                 severity="critical" if accuracy_pct < 50 else "warning",
                 confidence=0.9,
-                scope=_format_scope(selected_arts, selected_pis),
+                scope=_format_scope(selected_arts, selected_pis, selected_team),
                 scope_id=None,
                 observation=f"Only {delivered} of {committed} committed features were delivered ({accuracy_pct:.1f}% predictability). SAFe target is ≥80%.",
                 interpretation="Teams are consistently overcommitting or underdelivering, indicating planning process issues or execution challenges.",
@@ -880,6 +907,7 @@ def _analyze_flow_efficiency(
     art_comparison: List[Dict[str, Any]],
     selected_arts: Optional[List[str]],
     selected_pis: Optional[List[str]],
+    selected_team: Optional[str] = None,
 ) -> List[InsightResponse]:
     """Analyze flow efficiency across ARTs"""
     insights = []
@@ -904,7 +932,7 @@ def _analyze_flow_efficiency(
                 title=f"Low Flow Efficiency in {len(low_flow_arts)} ART(s)",
                 severity="warning",
                 confidence=0.85,
-                scope=_format_scope(selected_arts, selected_pis),
+                scope=_format_scope(selected_arts, selected_pis, selected_team),
                 scope_id=None,
                 observation=f"ARTs with flow efficiency <30%: {', '.join(art_names)}. Average: {avg_flow:.1f}%.",
                 interpretation="These ARTs are spending >70% of cycle time in waiting states (backlog, planned) vs. active development. Industry target is >40% flow efficiency.",
@@ -976,6 +1004,7 @@ def _analyze_throughput(
     throughput_data: Dict[str, Any],
     selected_arts: Optional[List[str]],
     selected_pis: Optional[List[str]],
+    selected_team: Optional[str] = None,
 ) -> List[InsightResponse]:
     """Analyze delivery throughput patterns"""
     insights = []
@@ -992,7 +1021,7 @@ def _analyze_throughput(
                 title="Declining Delivery Throughput Detected",
                 severity="warning",
                 confidence=0.8,
-                scope=_format_scope(selected_arts, selected_pis),
+                scope=_format_scope(selected_arts, selected_pis, selected_team),
                 scope_id=None,
                 observation=f"Throughput is declining. Currently averaging {avg_per_week:.1f} features/week (total: {features_delivered} features).",
                 interpretation="Decreasing delivery rate may indicate accumulating technical debt, increasing complexity, or team capacity issues.",
@@ -1049,6 +1078,7 @@ def _analyze_leadtime_variability(
     leadtime_data: Dict[str, Any],
     selected_arts: Optional[List[str]],
     selected_pis: Optional[List[str]],
+    selected_team: Optional[str] = None,
 ) -> List[InsightResponse]:
     """Analyze lead time variability and predictability"""
     insights = []
@@ -1072,7 +1102,7 @@ def _analyze_leadtime_variability(
                     title="High Lead Time Variability Detected",
                     severity="warning",
                     confidence=0.85,
-                    scope=_format_scope(selected_arts, selected_pis),
+                    scope=_format_scope(selected_arts, selected_pis, selected_team),
                     scope_id=None,
                     observation=f"Lead time variability is high. Median: {median:.0f} days, 85th percentile: {p85:.0f} days ({variability_ratio:.1f}x difference).",
                     interpretation="High variability makes delivery dates unpredictable. Some features take significantly longer than typical, indicating inconsistent processes.",
@@ -1149,6 +1179,7 @@ def _analyze_art_load_balance(
     art_comparison: List[Dict[str, Any]],
     selected_arts: Optional[List[str]],
     selected_pis: Optional[List[str]],
+    selected_team: Optional[str] = None,
 ) -> List[InsightResponse]:
     """
     Analyze load distribution across ARTs to identify imbalances that suggest
@@ -1199,7 +1230,7 @@ def _analyze_art_load_balance(
             highest = sorted_arts[0]
             lowest = sorted_arts[-1]
 
-            scope_desc = _format_scope(selected_arts, selected_pis)
+            scope_desc = _format_scope(selected_arts, selected_pis, selected_team)
 
             insights.append(
                 InsightResponse(
@@ -1300,6 +1331,7 @@ def _analyze_feature_sizing(
     throughput_data: Dict[str, Any],
     selected_arts: Optional[List[str]],
     selected_pis: Optional[List[str]],
+    selected_team: Optional[str] = None,
 ) -> List[InsightResponse]:
     """
     Analyze feature sizing patterns - large batches lead to longer lead times,
@@ -1334,7 +1366,7 @@ def _analyze_feature_sizing(
 
     # If >30% of features take >60 days, there's a batch size problem
     if large_pct > 30:
-        scope_desc = _format_scope(selected_arts, selected_pis)
+        scope_desc = _format_scope(selected_arts, selected_pis, selected_team)
 
         insights.append(
             InsightResponse(
@@ -1432,7 +1464,9 @@ def _analyze_feature_sizing(
 
 
 def _format_scope(
-    selected_arts: Optional[List[str]], selected_pis: Optional[List[str]]
+    selected_arts: Optional[List[str]],
+    selected_pis: Optional[List[str]],
+    selected_team: Optional[str] = None,
 ) -> str:
     """Format scope description from filters"""
     parts = []
@@ -1443,6 +1477,9 @@ def _format_scope(
             parts.append(f"{len(selected_arts)} ARTs")
     else:
         parts.append("Portfolio")
+
+    if selected_team:
+        parts.append(f"Team: {selected_team}")
 
     if selected_pis:
         if len(selected_pis) == 1:
@@ -1458,6 +1495,7 @@ def _analyze_strategic_targets(
     planning: Dict[str, Any],
     selected_arts: Optional[List[str]],
     selected_pis: Optional[List[str]],
+    selected_team: Optional[str] = None,
 ) -> List[InsightResponse]:
     """Analyze current performance against strategic targets (2026, 2027, True North).
 
@@ -1644,7 +1682,7 @@ def _analyze_strategic_targets(
                 title="Feature Lead-Time vs Strategic Targets",
                 severity=severity,
                 confidence=0.85,
-                scope=_format_scope(selected_arts, selected_pis),
+                scope=_format_scope(selected_arts, selected_pis, selected_team),
                 scope_id=None,
                 observation=" ".join(observation_parts),
                 interpretation=interpretation,
@@ -1768,7 +1806,7 @@ def _analyze_strategic_targets(
                 title="Planning Accuracy vs Strategic Targets",
                 severity=severity,
                 confidence=0.8,
-                scope=_format_scope(selected_arts, selected_pis),
+                scope=_format_scope(selected_arts, selected_pis, selected_team),
                 scope_id=None,
                 observation=" ".join(observation_parts),
                 interpretation=interpretation,
@@ -1806,6 +1844,7 @@ def _generate_executive_summary(
     insights: List[InsightResponse],
     selected_arts: Optional[List[str]],
     selected_pis: Optional[List[str]],
+    selected_team: Optional[str] = None,
 ) -> Optional[InsightResponse]:
     """
     Generate comprehensive executive summary with expert-level analysis.
@@ -2641,7 +2680,7 @@ def _generate_executive_summary(
             title="📋 Executive Summary - Comprehensive Portfolio Analysis",
             severity=severity,
             confidence=0.95,
-            scope=_format_scope(selected_arts, selected_pis),
+            scope=_format_scope(selected_arts, selected_pis, selected_team),
             scope_id=None,
             observation=observation,
             interpretation=interpretation,

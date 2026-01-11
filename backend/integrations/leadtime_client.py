@@ -128,10 +128,59 @@ class LeadTimeClient:
 
         return self._get("/api/flow_leadtime", params=params if params else None)
 
+    def get_story_flow_leadtime(
+        self,
+        art: Optional[str] = None,
+        pi: Optional[str] = None,
+        arts: Optional[List[str]] = None,
+        pis: Optional[List[str]] = None,
+        development_team: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get detailed flow lead-time data for user stories.
+
+        Returns lead-time broken down by workflow stages:
+        - refinement, ready_for_development, in_development
+        - in_review, ready_for_test, in_testing
+        - ready_for_deployment, deployed, total_leadtime
+
+        Args:
+            art: Filter by ART (Agile Release Train) - single value
+            pi: Filter by PI (Program Increment) - single value
+            arts: Filter by multiple ARTs - list
+            pis: Filter by multiple PIs - list
+            development_team: Filter by development team
+            status: Filter by issue status
+            limit: Maximum number of records to return
+
+        Returns:
+            List of user stories with detailed lead-time metrics
+        """
+        params = {}
+        if arts:
+            params["art"] = arts
+        elif art:
+            params["art"] = art
+        if pis:
+            params["pi"] = pis
+        elif pi:
+            params["pi"] = pi
+        if development_team:
+            params["development_team"] = development_team
+        if status:
+            params["status"] = status
+        if limit:
+            params["limit"] = str(limit)
+
+        return self._get("/api/story_flow_leadtime", params=params if params else None)
+
     def get_pip_data(
         self,
         art: Optional[str] = None,
         pi: Optional[str] = None,
+        team: Optional[str] = None,
         limit: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """
@@ -146,6 +195,7 @@ class LeadTimeClient:
         Args:
             art: Filter by ART
             pi: Filter by PI
+            team: Filter by team name
             limit: Maximum number of records to return
 
         Returns:
@@ -156,6 +206,8 @@ class LeadTimeClient:
             params["art"] = art
         if pi:
             params["pi"] = pi
+        if team:
+            params["development_team"] = team
         if limit:
             params["limit"] = str(limit)
 
@@ -331,6 +383,7 @@ class LeadTimeClient:
         self,
         arts: Optional[List[str]] = None,
         pis: Optional[List[str]] = None,
+        team: Optional[str] = None,
         threshold_days: Optional[float] = None,
     ) -> Dict[str, Any]:
         """
@@ -341,6 +394,7 @@ class LeadTimeClient:
         Args:
             arts: List of ARTs to analyze
             pis: List of PIs to analyze
+            team: Team name to filter by
             threshold_days: Threshold in days for identifying items exceeding limit
 
         Returns:
@@ -351,6 +405,8 @@ class LeadTimeClient:
             params["art"] = arts  # Pass as list for repeated params
         if pis:
             params["pi"] = pis  # Pass as list for repeated params
+        if team:
+            params["development_team"] = team
         if threshold_days is not None:
             params["threshold_days"] = str(threshold_days)
 

@@ -235,9 +235,17 @@ def littles_law_analyzer_node(state: AgentState) -> Dict[str, Any]:
         else:
             print("⚠️  Planning accuracy metrics unavailable")
 
-        # Calculate Little's Law metrics
+        # Calculate historical capacity baseline
+        historical_baseline = _calculate_historical_capacity_baseline(
+            leadtime_service, pi_to_analyze, art_filter, lookback_pis=8
+        )
+
+        # Calculate Little's Law metrics (with historical baseline)
         metrics = _calculate_littles_law_metrics(
-            flow_data, pi_to_analyze, analysis_summary
+            flow_data,
+            pi_to_analyze,
+            analysis_summary,
+            historical_baseline=historical_baseline,
         )
 
         if not metrics:
@@ -446,6 +454,7 @@ def _calculate_littles_law_metrics(
     pi: str,
     analysis_summary: Optional[Dict[str, Any]] = None,
     pi_duration_days: Optional[int] = None,
+    historical_baseline: Optional[Dict[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     Calculate Little's Law metrics from flow data.
@@ -455,6 +464,7 @@ def _calculate_littles_law_metrics(
         pi: Program Increment identifier
         analysis_summary: Pre-calculated summary metrics from DL Webb APP (if available)
         pi_duration_days: Duration of PI in days (fetched from config if not provided)
+        historical_baseline: Historical capacity baseline from past PIs
 
     Returns:
         Dictionary with calculated metrics or None if insufficient data
@@ -658,6 +668,55 @@ def _calculate_littles_law_metrics(
     optimal_wip = throughput_per_day * target_leadtime
     wip_reduction = predicted_wip - optimal_wip
 
+    # Analyze current vs historical capacity
+    capacity_analysis = {}
+    if historical_baseline and historical_baseline.get("available"):
+        historical_throughput = historical_baseline.get("avg_throughput_per_day", 0)
+        historical_leadtime = historical_baseline.get("avg_historical_leadtime", 0)
+
+        # Compare current to historical
+        throughput_vs_baseline = (
+            ((throughput_per_day / historical_throughput) - 1) * 100
+            if historical_throughput > 0
+            else 0
+        )
+        leadtime_vs_baseline = (
+            ((avg_leadtime / historical_leadtime) - 1) * 100
+            if historical_leadtime > 0
+            else 0
+        )
+
+        # Calculate capacity utilization
+        historical_capacity = historical_baseline.get("avg_throughput_per_pi", 0)
+        current_capacity_utilization = (
+            (total_features / historical_capacity) * 100
+            if historical_capacity > 0
+            else 0
+        )
+
+        capacity_analysis = {
+            "historical_avg_throughput_per_day": historical_throughput,
+            "historical_avg_leadtime": historical_leadtime,
+            "throughput_vs_baseline_pct": throughput_vs_baseline,
+            "leadtime_vs_baseline_pct": leadtime_vs_baseline,
+            "capacity_utilization_pct": current_capacity_utilization,
+            "pis_in_baseline": historical_baseline.get("num_pis", 0),
+            "baseline_range": f"{historical_baseline.get('min_throughput_per_pi', 0):.0f}-{historical_baseline.get('max_throughput_per_pi', 0):.0f} features/PI",
+        }
+
+        print(f"\n📊 Capacity vs Historical Baseline:")
+        print(
+            f"   Historical Avg: {historical_throughput:.2f} features/day ({historical_baseline.get('avg_throughput_per_pi', 0):.1f} features/PI)"
+        )
+        print(
+            f"   Current: {throughput_per_day:.2f} features/day ({total_features} features/PI)"
+        )
+        print(f"   Throughput Change: {throughput_vs_baseline:+.1f}%")
+        print(f"   Lead Time Change: {leadtime_vs_baseline:+.1f}%")
+        print(
+            f"   Capacity Utilization: {current_capacity_utilization:.1f}% of historical average"
+        )
+
     # Determine severity
     if avg_leadtime > 60 or flow_efficiency < 30:
         severity = "critical"
@@ -690,10 +749,149 @@ def _calculate_littles_law_metrics(
         "target_leadtime": target_leadtime,
         "optimal_wip": optimal_wip,
         "wip_reduction": wip_reduction,
+        # Historical capacity analysis
+        "capacity_analysis": capacity_analysis,
+        "historical_baseline": historical_baseline,
         # Assessment
         "severity": severity,
-        "confidence": 88.0,
+        "confidence": 0.88,
     }
+
+
+def _calculate_historical_capacity_baseline(
+    leadtime_service: LeadTimeService,
+    current_pi: str,
+    art_filter: Optional[str] = None,
+    lookback_pis: int = 8,
+) -> Dict[str, Any]:
+    """
+    Calculate historical capacity baseline from past PIs using throughput data.
+
+    Uses leadtime_thr_data to get accurate throughput across multiple PIs,
+    providing a capacity proxy for planning and comparison.
+
+    Args:
+        leadtime_service: LeadTime service instance
+        current_pi: Current PI being analyzed
+        art_filter: Optional ART filter
+        lookback_pis: Number of historical PIs to analyze (default 8)
+
+    Returns:
+        Dictionary with historical capacity metrics
+    """
+    print(f"\n📊 Calculating historical capacity baseline ({lookback_pis} PIs)...")
+
+    try:
+        # Get all available PIs to determine historical range
+        filters = leadtime_service.client.get_available_filters()
+        all_pis = filters.get("pis", [])
+
+        # Find current PI position and get historical PIs
+        try:
+            current_idx = all_pis.index(current_pi)
+            # Get PIs before current (historical data)
+            historical_pis = all_pis[max(0, current_idx - lookback_pis) : current_idx]
+        except ValueError:
+            # Current PI not in list, use last N PIs
+            historical_pis = (
+                all_pis[-lookback_pis:] if len(all_pis) >= lookback_pis else all_pis
+            )
+
+        if not historical_pis:
+            print("⚠️  No historical PIs available")
+            return {"available": False}
+
+        print(f"📋 Historical PIs: {', '.join(historical_pis)}")
+
+        # Fetch throughput data for all historical PIs
+        historical_throughput = []
+        pi_throughputs = {}
+
+        for pi in historical_pis:
+            params = {"pi": pi, "limit": 10000}
+            if art_filter and art_filter not in ["Portfolio", "portfolio"]:
+                params["art"] = art_filter
+
+            thr_data = leadtime_service.client.get_throughput_data(**params)
+
+            if thr_data:
+                pi_throughputs[pi] = len(thr_data)
+                historical_throughput.extend(thr_data)
+                print(f"  ✅ {pi}: {len(thr_data)} features delivered")
+            else:
+                print(f"  ⚠️  {pi}: No throughput data")
+
+        if not historical_throughput:
+            print("⚠️  No historical throughput data available")
+            return {"available": False}
+
+        # Calculate capacity baseline metrics
+        total_historical_features = len(historical_throughput)
+        num_pis_with_data = len(pi_throughputs)
+
+        # Average throughput per PI
+        avg_throughput_per_pi = (
+            total_historical_features / num_pis_with_data
+            if num_pis_with_data > 0
+            else 0
+        )
+
+        # Throughput per day (assuming 84-day PIs)
+        avg_throughput_per_day = (
+            avg_throughput_per_pi / 84 if avg_throughput_per_pi > 0 else 0
+        )
+
+        # Calculate variability (stddev of PI throughputs)
+        throughput_values = list(pi_throughputs.values())
+        mean_throughput = (
+            sum(throughput_values) / len(throughput_values) if throughput_values else 0
+        )
+        variance = (
+            sum((x - mean_throughput) ** 2 for x in throughput_values)
+            / len(throughput_values)
+            if throughput_values
+            else 0
+        )
+        stddev_throughput = variance**0.5
+
+        # Min/max throughput across PIs
+        min_throughput = min(throughput_values) if throughput_values else 0
+        max_throughput = max(throughput_values) if throughput_values else 0
+
+        # Calculate lead times from historical data
+        lead_times = [
+            f.get("lead_time_days", 0)
+            for f in historical_throughput
+            if f.get("lead_time_days", 0) > 0
+        ]
+        avg_historical_leadtime = sum(lead_times) / len(lead_times) if lead_times else 0
+
+        print(f"\n✅ Historical Capacity Baseline:")
+        print(f"   PIs Analyzed: {num_pis_with_data} ({', '.join(historical_pis)})")
+        print(f"   Total Features Delivered: {total_historical_features}")
+        print(f"   Avg Throughput per PI: {avg_throughput_per_pi:.1f} features")
+        print(f"   Avg Throughput per Day: {avg_throughput_per_day:.2f} features/day")
+        print(f"   Throughput Range: {min_throughput}-{max_throughput} features/PI")
+        print(f"   Throughput StdDev: {stddev_throughput:.1f} features")
+        print(f"   Avg Historical Lead Time: {avg_historical_leadtime:.1f} days")
+
+        return {
+            "available": True,
+            "pis_analyzed": historical_pis,
+            "num_pis": num_pis_with_data,
+            "total_features": total_historical_features,
+            "avg_throughput_per_pi": avg_throughput_per_pi,
+            "avg_throughput_per_day": avg_throughput_per_day,
+            "min_throughput_per_pi": min_throughput,
+            "max_throughput_per_pi": max_throughput,
+            "stddev_throughput": stddev_throughput,
+            "avg_historical_leadtime": avg_historical_leadtime,
+            "pi_breakdown": pi_throughputs,
+        }
+
+    except Exception as e:
+        print(f"⚠️  Error calculating historical baseline: {e}")
+        return {"available": False, "error": str(e)}
 
 
 def _calculate_planning_metrics(
@@ -743,7 +941,8 @@ def _calculate_planning_metrics(
         # Categorize items
         if planned_committed == 1:
             committed.append(item)
-            if plc_delivery == 1:
+            # plc_delivery can be string "1" or integer 1, handle both
+            if str(plc_delivery) == "1" or plc_delivery == 1:
                 delivered_committed.append(item)
             else:
                 missed_committed.append(item)
@@ -842,7 +1041,8 @@ def _analyze_missed_deliveries(
         art_misses[art] = art_misses.get(art, 0) + 1
 
     # Identify ARTs with high miss rates
-    if art_misses:
+    # Only report ART performance issues if analyzing multiple ARTs
+    if art_misses and len(art_misses) > 1:
         max_misses = max(art_misses.values())
         problematic_arts = [
             art for art, count in art_misses.items() if count >= max_misses * 0.5
@@ -1008,6 +1208,15 @@ Interpretation: {insight['interpretation']}
 - Lead Time Std Dev: {metrics.get('leadtime_stddev', 0):.1f} days
 - Lead Time Range: {metrics.get('leadtime_min', 0):.1f}-{metrics.get('leadtime_max', 0):.1f} days
 
+**Historical Capacity Baseline:**
+- Based on: {metrics.get('capacity_analysis', dict()).get('pis_in_baseline', 0)} previous PIs
+- Historical Avg Throughput: {metrics.get('capacity_analysis', dict()).get('historical_avg_throughput_per_day', 0):.2f} features/day
+- Historical Avg Lead Time: {metrics.get('capacity_analysis', dict()).get('historical_avg_leadtime', 0):.1f} days
+- Throughput vs Baseline: {metrics.get('capacity_analysis', dict()).get('throughput_vs_baseline_pct', 0):+.1f}%
+- Lead Time vs Baseline: {metrics.get('capacity_analysis', dict()).get('leadtime_vs_baseline_pct', 0):+.1f}%
+- Capacity Utilization: {metrics.get('capacity_analysis', dict()).get('capacity_utilization_pct', 0):.1f}%
+- Historical Range: {metrics.get('capacity_analysis', dict()).get('baseline_range', 'N/A')}
+
 **Stage-Level Breakdown:**
 {_format_stage_metrics(metrics.get('stage_metrics', dict()))}
 
@@ -1028,6 +1237,14 @@ Start with the formula and clearly state:
 - **Little's Law**: L = λ × W
 - Rearrangements: WIP = Throughput × Lead Time, Throughput = WIP / Lead Time
 - Define: One Feature = flow unit, Time unit = calendar days
+
+## 1.5️⃣ Historical Capacity Context
+
+Compare current performance to historical baseline:
+- Show current vs historical throughput and lead time
+- Interpret capacity utilization percentage
+- Explain if current performance is sustainable or anomalous
+- Use historical data as proxy for realistic capacity planning
 
 ## 2️⃣ System-Level Mapping (Entire Flow)
 
@@ -1145,8 +1362,51 @@ def _generate_flow_insight(
         f"Flow Efficiency = {metrics['flow_efficiency']:.1f}% (active work time / total lead time).",
     ]
 
+    # Add historical capacity comparison if available
+    capacity_analysis = metrics.get("capacity_analysis", {})
+    if capacity_analysis:
+        historical_throughput = capacity_analysis.get(
+            "historical_avg_throughput_per_day", 0
+        )
+        throughput_change = capacity_analysis.get("throughput_vs_baseline_pct", 0)
+        capacity_util = capacity_analysis.get("capacity_utilization_pct", 0)
+        num_historical_pis = capacity_analysis.get("pis_in_baseline", 0)
+
+        observation_parts.append(
+            f"Historical Baseline ({num_historical_pis} PIs): {historical_throughput:.2f} features/day average. "
+            f"Current throughput is {abs(throughput_change):.1f}% {'above' if throughput_change > 0 else 'below'} historical capacity "
+            f"({capacity_util:.1f}% capacity utilization)."
+        )
+
     # Build interpretation
     interpretation_parts = []
+
+    # Add capacity trend interpretation
+    if capacity_analysis:
+        throughput_change = capacity_analysis.get("throughput_vs_baseline_pct", 0)
+        leadtime_change = capacity_analysis.get("leadtime_vs_baseline_pct", 0)
+        historical_leadtime = capacity_analysis.get("historical_avg_leadtime", 0)
+
+        if throughput_change < -20:
+            interpretation_parts.append(
+                f"Throughput has decreased {abs(throughput_change):.1f}% compared to historical baseline. "
+                "This indicates potential capacity constraints or increased complexity."
+            )
+        elif throughput_change > 20:
+            interpretation_parts.append(
+                f"Throughput has increased {throughput_change:.1f}% above historical baseline, "
+                "demonstrating improved delivery capacity."
+            )
+
+        if leadtime_change > 20 and historical_leadtime > 0:
+            interpretation_parts.append(
+                f"Lead time has increased {leadtime_change:.1f}% from historical average ({historical_leadtime:.1f} days), "
+                "suggesting growing inefficiency in the delivery process."
+            )
+        elif leadtime_change < -10 and historical_leadtime > 0:
+            interpretation_parts.append(
+                f"Lead time has improved {abs(leadtime_change):.1f}% compared to historical baseline ({historical_leadtime:.1f} days)."
+            )
 
     if metrics["flow_efficiency"] < 40:
         interpretation_parts.append(
@@ -1188,7 +1448,7 @@ def _generate_flow_insight(
                     f"flow_efficiency_{metrics['flow_efficiency']:.0f}pct",
                     f"avg_wait_time_{metrics['avg_wait_time']:.1f}days",
                 ],
-                "confidence": 90.0,
+                "confidence": 0.90,
                 "reference": "littles_law_flow_analysis",
             }
         )
@@ -1201,7 +1461,7 @@ def _generate_flow_insight(
                     f"predicted_wip_{metrics['predicted_wip']:.1f}",
                     f"optimal_wip_{metrics['optimal_wip']:.1f}",
                 ],
-                "confidence": 85.0,
+                "confidence": 0.85,
                 "reference": "littles_law_wip_analysis",
             }
         )
@@ -1214,13 +1474,56 @@ def _generate_flow_insight(
                     f"leadtime_stddev_{metrics['leadtime_stddev']:.1f}",
                     f"leadtime_range_{metrics['leadtime_min']:.1f}_to_{metrics['leadtime_max']:.1f}",
                 ],
-                "confidence": 75.0,
+                "confidence": 0.75,
                 "reference": "littles_law_variability_analysis",
             }
         )
 
     # Recommended actions
     actions = []
+
+    # Add capacity-based recommendations
+    if capacity_analysis:
+        throughput_change = capacity_analysis.get("throughput_vs_baseline_pct", 0)
+        capacity_util = capacity_analysis.get("capacity_utilization_pct", 0)
+
+        if throughput_change < -20:
+            actions.append(
+                {
+                    "timeframe": "immediate",
+                    "description": f"Investigate {abs(throughput_change):.1f}% throughput decline vs historical baseline: review team capacity, dependencies, and impediments",
+                    "owner": "RTE & ART Leadership",
+                    "effort": "Low",
+                    "dependencies": [
+                        "Historical throughput data",
+                        "Team retrospectives",
+                    ],
+                    "success_signal": "Root causes identified and mitigation plan created within 1 sprint",
+                }
+            )
+
+        if capacity_util > 120:
+            actions.append(
+                {
+                    "timeframe": "short-term",
+                    "description": f"Current delivery ({capacity_util:.0f}% of historical capacity) is unsustainable: reduce commitments to historical baseline ({capacity_analysis.get('historical_avg_throughput_per_day', 0):.2f} features/day)",
+                    "owner": "Product Management & RTEs",
+                    "effort": "Low",
+                    "dependencies": ["Stakeholder alignment"],
+                    "success_signal": "Commitment levels aligned with sustainable capacity within 1 PI",
+                }
+            )
+        elif capacity_util < 70:
+            actions.append(
+                {
+                    "timeframe": "short-term",
+                    "description": f"Operating below historical capacity ({capacity_util:.0f}%): investigate underutilization or capacity loss",
+                    "owner": "RTE & Scrum Masters",
+                    "effort": "Medium",
+                    "dependencies": ["Team capacity review"],
+                    "success_signal": "Return to 80-100% of historical baseline capacity",
+                }
+            )
 
     if metrics["wip_reduction"] > 2:
         actions.append(
@@ -1288,7 +1591,7 @@ def _generate_flow_insight(
                 {
                     "description": "Systematic flow analysis using Little's Law (L = λ × W)",
                     "evidence": ["flow_leadtime_data"],
-                    "confidence": 88.0,
+                    "confidence": 0.88,
                     "reference": "littles_law_formula",
                 }
             ]
@@ -1397,7 +1700,7 @@ def _generate_planning_insight(
                     f"planning_accuracy_{planning_accuracy:.0f}pct",
                     f"{missed_count}_missed_commitments",
                 ],
-                "confidence": 90.0,
+                "confidence": 0.90,
                 "reference": "planning_accuracy_analysis",
             }
         )
@@ -1410,7 +1713,7 @@ def _generate_planning_insight(
                     f"{post_planning_count}_post_planning_items",
                     f"post_planning_rate_{metrics.get('post_planning_percentage', 0):.0f}pct",
                 ],
-                "confidence": 85.0,
+                "confidence": 0.85,
                 "reference": "scope_management_analysis",
             }
         )
@@ -1424,7 +1727,7 @@ def _generate_planning_insight(
                     f"{reason['category']}_pattern",
                     f"{reason['count']}_items",
                 ],
-                "confidence": 80.0 if reason["impact"] == "high" else 70.0,
+                "confidence": 0.80 if reason["impact"] == "high" else 0.70,
                 "reference": "missed_delivery_analysis",
             }
         )
@@ -1491,7 +1794,7 @@ def _generate_planning_insight(
     return {
         "title": f"PI {pi} Planning Accuracy & Predictability",
         "severity": severity,
-        "confidence": 92.0,
+        "confidence": 0.92,
         "scope": "pi",
         "scope_id": pi,
         "observation": " ".join(observation_parts),
@@ -1503,7 +1806,7 @@ def _generate_planning_insight(
                 {
                     "description": "Planning and commitment analysis based on PI planning data",
                     "evidence": ["pip_data"],
-                    "confidence": 92.0,
+                    "confidence": 0.92,
                     "reference": "planning_accuracy_analysis",
                 }
             ]
@@ -1598,7 +1901,7 @@ def _generate_commitment_insight(
                     f"commitment_rate_{committed_pct:.0f}pct",
                     f"{uncommitted_count}_uncommitted",
                 ],
-                "confidence": 85.0,
+                "confidence": 0.85,
                 "reference": "commitment_analysis",
             }
         )
@@ -1611,7 +1914,7 @@ def _generate_commitment_insight(
                     f"commitment_rate_{committed_pct:.0f}pct",
                     "no_flex_capacity",
                 ],
-                "confidence": 80.0,
+                "confidence": 0.80,
                 "reference": "capacity_buffer_analysis",
             }
         )
@@ -1665,7 +1968,7 @@ def _generate_commitment_insight(
     return {
         "title": f"PI {pi} Commitment Discipline",
         "severity": severity,
-        "confidence": 88.0,
+        "confidence": 0.88,
         "scope": "pi",
         "scope_id": pi,
         "observation": " ".join(observation_parts),
@@ -1677,7 +1980,7 @@ def _generate_commitment_insight(
                 {
                     "description": "Commitment pattern analysis from PI planning data",
                     "evidence": ["pip_data"],
-                    "confidence": 88.0,
+                    "confidence": 0.88,
                     "reference": "commitment_analysis",
                 }
             ]

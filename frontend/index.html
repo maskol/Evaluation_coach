@@ -63,6 +63,19 @@
                     </select>
                 </div>
 
+                <!-- Analysis Level Selection (only visible in Team view) -->
+                <div class="sidebar-section" id="analysisLevelSelection" style="display: none;">
+                    <div class="sidebar-title">Analysis Level</div>
+                    <select class="sidebar-input" id="analysisLevelSelector" onchange="updateAnalysisLevel()">
+                        <option value="feature">Feature Level</option>
+                        <option value="story">Story Level</option>
+                    </select>
+                    <div style="padding: 8px; color: #666; font-size: 12px;">
+                        Feature: Epic-level work items<br>
+                        Story: User story-level items
+                    </div>
+                </div>
+
                 <!-- PI Selection -->
                 <div class="sidebar-section">
                     <div class="sidebar-title">Program Increments (24Q1+)</div>

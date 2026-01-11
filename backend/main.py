@@ -841,6 +841,8 @@ async def generate_insights_endpoint(
     pis: Optional[str] = None,
     art: Optional[str] = None,  # Singular ART for scope selection
     arts: Optional[str] = None,  # Plural ARTs for filtering
+    team: Optional[str] = None,  # Team name for team scope
+    analysis_level: Optional[str] = None,  # 'feature' or 'story' for team view
     model: Optional[str] = None,
     temperature: Optional[float] = None,
     enhance_with_llm: bool = False,
@@ -857,6 +859,8 @@ async def generate_insights_endpoint(
         pis: Comma-separated list of PIs
         art: Single ART for scope-specific analysis
         arts: Comma-separated list of ARTs for filtering
+        team: Team name for team scope
+        analysis_level: 'feature' or 'story' for team view
         model: LLM model to use (e.g., gpt-4o, gpt-4o-mini)
         temperature: LLM temperature (0.0-2.0)
         use_agent_graph: Use full agent graph workflow (includes Little's Law analysis)
@@ -1017,10 +1021,27 @@ async def generate_insights_endpoint(
                         selected_pis  # LeadTimeClient.get_analysis_summary() handles conversion to singular
                     )
 
+                # Add team filter if in team scope
+                if scope == "team" and team:
+                    params["team"] = team
+                    print(f"📊 Filtering insights for team: {team}")
+
                 # Add threshold from settings
                 params["threshold_days"] = settings.bottleneck_threshold_days
 
-                # Get analysis summary
+                # Determine which data source to use based on analysis level
+                use_story_level = analysis_level == "story"
+                data_source_name = "user stories" if use_story_level else "features"
+
+                if use_story_level:
+                    print(
+                        f"⚠️  Story-level insights requested but DL Webb App API only supports feature-level bottleneck analysis"
+                    )
+                    print(
+                        f"📊 Dashboard will show story data, but insights will reference features"
+                    )
+
+                # Get analysis summary (currently only supports feature level)
                 analysis_summary = leadtime_service.client.get_analysis_summary(
                     **params
                 )
@@ -1033,6 +1054,11 @@ async def generate_insights_endpoint(
                     pip_params["art"] = selected_arts[
                         0
                     ]  # Get pip_data for first selected ART
+
+                # Add team filter for team scope
+                if scope == "team" and team:
+                    pip_params["team"] = team
+
                 pip_data = leadtime_service.client.get_pip_data(**pip_params)
 
                 if pip_data:
@@ -1059,8 +1085,31 @@ async def generate_insights_endpoint(
                     art_comparison=art_comparison,
                     selected_arts=selected_arts,
                     selected_pis=selected_pis,
+                    selected_team=team,
                     llm_service=llm_service_for_insights,
                 )
+
+                # Add informational insight for story-level analysis
+                if use_story_level:
+                    story_level_info = InsightResponse(
+                        title="Story-Level Analysis: Limited Insights Available",
+                        observation="You have selected Story-Level analysis. The dashboard metrics show story-level data correctly, but the AI insights below are based on feature-level bottleneck analysis.",
+                        interpretation="Story-level bottleneck insights are not yet available from the data API. The insights shown reference 'features' even though your dashboard displays story-level metrics. This is a known limitation.",
+                        severity="info",
+                        confidence=1.0,
+                        scope=f"Team: {team}" if team else "Story Level",
+                        recommended_actions=[
+                            {
+                                "description": "Review the dashboard metrics for accurate story-level flow data",
+                                "timeframe": "immediate",
+                                "owner": "product_owner",
+                                "effort": "5 minutes",
+                            }
+                        ],
+                        root_causes=[],
+                        expected_outcomes={},
+                    )
+                    insights.insert(0, story_level_info)
 
                 print(f"✅ Generated {len(insights)} AI-powered insights")
 
@@ -1082,12 +1131,22 @@ async def generate_insights_endpoint(
                         # Create a minimal state for Little's Law analyzer
                         ll_state = {
                             "scope_id": selected_pis[0],
-                            "scope_type": "ART" if scope == "art" else "Portfolio",
+                            "scope_type": (
+                                "Team"
+                                if scope == "team"
+                                else ("ART" if scope == "art" else "Portfolio")
+                            ),
                             "scope": (
-                                art
-                                if art
+                                team
+                                if team
                                 else (
-                                    selected_arts[0] if selected_arts else "Portfolio"
+                                    art
+                                    if art
+                                    else (
+                                        selected_arts[0]
+                                        if selected_arts
+                                        else "Portfolio"
+                                    )
                                 )
                             ),
                             "selected_art": (
@@ -1095,6 +1154,7 @@ async def generate_insights_endpoint(
                                 if art
                                 else (selected_arts[0] if selected_arts else None)
                             ),
+                            "selected_team": team if team else None,
                         }
 
                         # Run Little's Law analyzer
@@ -1139,6 +1199,8 @@ async def generate_insights_endpoint(
                         "excluded_statuses": excluded_statuses,
                         "selected_pis": selected_pis,
                         "selected_arts": selected_arts,
+                        "selected_team": team,
+                        "analysis_level": analysis_level,
                     },
                 }
             except Exception as e:
@@ -1538,14 +1600,18 @@ async def get_dashboard(
     time_range: str = "last_pi",
     pis: Optional[str] = None,
     arts: Optional[str] = None,
+    team: Optional[str] = None,
+    analysis_level: str = "feature",
     generate_insights: bool = False,
     db: Session = Depends(get_db),
 ):
-    """Get dashboard data for specified scope and optional PI/ART filter(s)
+    """Get dashboard data for specified scope and optional PI/ART/Team filter(s)
 
     Args:
         pis: Comma-separated list of PIs (e.g., "24Q1,24Q2,25Q1")
         arts: Comma-separated list of ARTs (e.g., "ACEART,C4ART,CIART")
+        team: Team name for team-level analysis
+        analysis_level: 'feature' or 'story' for team-level analysis (default: feature)
         generate_insights: Whether to generate AI-powered insights (expensive LLM calls)
     """
     try:
@@ -1634,23 +1700,45 @@ async def get_dashboard(
                         )
 
                 # Get lead-time statistics for Flow Efficiency
-                # Fetch features - if ARTs are specified, fetch per-ART to avoid missing data
+                # Fetch features or stories based on analysis level
                 # Get excluded statuses from configuration
                 excluded_statuses = get_excluded_feature_statuses(db)
 
+                # Determine which data source to use
+                use_story_level = analysis_level == "story"
+                data_source_name = "user stories" if use_story_level else "features"
+
+                # Log filtering details
+                filter_info = f"scope={scope}, level={analysis_level}"
                 if selected_arts:
-                    # Fetch per ART to ensure we get all features
+                    filter_info += f", arts={selected_arts}"
+                if team:
+                    filter_info += f", team={team}"
+                print(f"📊 Fetching {data_source_name} with filters: {filter_info}")
+
+                if selected_arts:
+                    # Fetch per ART to ensure we get all data
                     all_features = []
                     for art in selected_arts:
-                        art_features = leadtime_service.client.get_flow_leadtime(
-                            art=art, limit=10000
-                        )
-                        all_features.extend(art_features)
+                        if use_story_level:
+                            art_data = leadtime_service.client.get_story_flow_leadtime(
+                                art=art, development_team=team, limit=10000
+                            )
+                        else:
+                            art_data = leadtime_service.client.get_flow_leadtime(
+                                art=art, development_team=team, limit=10000
+                            )
+                        all_features.extend(art_data)
                 else:
-                    # Get all features when no ART filter
-                    all_features = leadtime_service.client.get_flow_leadtime(
-                        limit=10000
-                    )
+                    # Get all data when no ART filter
+                    if use_story_level:
+                        all_features = leadtime_service.client.get_story_flow_leadtime(
+                            development_team=team, limit=10000
+                        )
+                    else:
+                        all_features = leadtime_service.client.get_flow_leadtime(
+                            development_team=team, limit=10000
+                        )
 
                 # Apply status filter
                 all_features = filter_features_by_status(
@@ -1669,9 +1757,17 @@ async def get_dashboard(
                     total_times = []
 
                     for feature in filtered_features:
-                        value_add = feature.get("in_progress", 0) + feature.get(
-                            "in_reviewing", 0
-                        )
+                        # Calculate value-add time based on data source
+                        # For features: in_progress + in_reviewing
+                        # For stories: in_development + in_review
+                        if use_story_level:
+                            value_add = feature.get("in_development", 0) + feature.get(
+                                "in_review", 0
+                            )
+                        else:
+                            value_add = feature.get("in_progress", 0) + feature.get(
+                                "in_reviewing", 0
+                            )
                         total = feature.get("total_leadtime", 0)
 
                         if total > 0:
@@ -1698,13 +1794,15 @@ async def get_dashboard(
                     all_throughput_features = []
                     for art in selected_arts:
                         art_throughput = leadtime_service.client.get_throughput_data(
-                            art=art, limit=10000
+                            art=art, team=team, limit=10000
                         )
                         all_throughput_features.extend(art_throughput)
                 else:
                     # Get all throughput data when no ART filter
                     all_throughput_features = (
-                        leadtime_service.client.get_throughput_data(limit=10000)
+                        leadtime_service.client.get_throughput_data(
+                            team=team, limit=10000
+                        )
                     )
 
                 # Apply status filter to throughput data
@@ -3107,6 +3205,41 @@ async def get_teams():
         }
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Could not fetch teams: {str(e)}")
+
+
+@app.get("/api/teams/with-art")
+async def get_teams_with_art():
+    """Get list of all teams with their ART mapping from DL Webb App server"""
+    if not leadtime_service:
+        return {"teams": [], "message": "Lead-time service not available"}
+
+    try:
+        # Get full team data from DL Webb App which includes ART information
+        teams_data = leadtime_service.client.get_teams()
+
+        # Transform to simplified format with team name and ART
+        teams_with_art = []
+        for team in teams_data:
+            art_data = team.get("art", {}) if team.get("art") else {}
+            team_info = {
+                "team_name": team.get("team_name"),
+                "team_id": team.get("team_id"),
+                "art_name": art_data.get("art_name"),
+                "art_key": art_data.get("art_key_jira"),  # ART key like "UCART"
+                "art_id": team.get("art_id"),
+            }
+            teams_with_art.append(team_info)
+
+        return {
+            "teams": teams_with_art,
+            "count": len(teams_with_art),
+            "source": "DL Webb App",
+        }
+    except Exception as e:
+        logger.error(f"Failed to fetch teams with ART: {e}")
+        raise HTTPException(
+            status_code=503, detail=f"Could not fetch teams with ART: {str(e)}"
+        )
 
 
 @app.get("/api/pis")

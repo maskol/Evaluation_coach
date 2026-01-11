@@ -111,7 +111,7 @@ class InsightsService:
                 {
                     "title": "Feature Lead-Time vs Strategic Targets",
                     "severity": severity,
-                    "confidence": 95.0,
+                    "confidence": 0.95,
                     "scope": "portfolio",
                     "scope_id": "strategic_targets",
                     "observation": " ".join(observation_parts),
@@ -120,7 +120,7 @@ class InsightsService:
                         {
                             "description": "Baseline measurement for strategic goal tracking",
                             "evidence": ["current_metrics"],
-                            "confidence": 95.0,
+                            "confidence": 0.95,
                             "reference": "strategic_targets_config",
                         }
                     ],
@@ -229,7 +229,7 @@ class InsightsService:
                 {
                     "title": "Planning Accuracy vs Strategic Targets",
                     "severity": severity,
-                    "confidence": 95.0,
+                    "confidence": 0.95,
                     "scope": "portfolio",
                     "scope_id": "strategic_targets",
                     "observation": " ".join(observation_parts),
@@ -238,7 +238,7 @@ class InsightsService:
                         {
                             "description": "Baseline measurement for strategic goal tracking",
                             "evidence": ["current_metrics"],
-                            "confidence": 95.0,
+                            "confidence": 0.95,
                             "reference": "strategic_targets_config",
                         }
                     ],
@@ -444,7 +444,7 @@ class InsightsService:
                         f"flow_efficiency_{flow_efficiency:.0f}pct",
                         f"avg_wait_time_{wait_time:.1f}days",
                     ],
-                    "confidence": 90.0,
+                    "confidence": 0.90,
                     "reference": "littles_law_analysis",
                 }
             )
@@ -457,7 +457,7 @@ class InsightsService:
                         f"leadtime_stddev_{leadtime_stddev:.1f}",
                         f"leadtime_range_{min_leadtime:.1f}_to_{max_leadtime:.1f}",
                     ],
-                    "confidence": 75.0,
+                    "confidence": 0.75,
                     "reference": "littles_law_analysis",
                 }
             )
@@ -467,7 +467,7 @@ class InsightsService:
                 {
                     "description": "Excessive WIP leads to context switching and delayed flow",
                     "evidence": [f"predicted_wip_{predicted_wip:.1f}"],
-                    "confidence": 85.0,
+                    "confidence": 0.85,
                     "reference": "littles_law_analysis",
                 }
             )
@@ -525,7 +525,7 @@ class InsightsService:
         return {
             "title": f"Little's Law Analysis for PI {pi}",
             "severity": severity,
-            "confidence": 88.0,
+            "confidence": 0.88,
             "scope": "pi",
             "scope_id": pi,
             "observation": " ".join(observation_parts),
@@ -537,7 +537,7 @@ class InsightsService:
                     {
                         "description": "System dynamics analysis using Little's Law",
                         "evidence": ["flow_leadtime_data"],
-                        "confidence": 88.0,
+                        "confidence": 0.88,
                         "reference": "littles_law_formula",
                     }
                 ]
@@ -755,7 +755,7 @@ class InsightsService:
                 {
                     "title": "High WIP Across Multiple Teams",
                     "severity": "critical",
-                    "confidence": 92.0,
+                    "confidence": 0.92,
                     "scope": "art",
                     "scope_id": "customer_experience",
                     "observation": "Customer Experience ART shows WIP ratio of 2.3 (vs target 1.5), affecting 3 teams with combined 43 active stories against 18 person capacity.",
@@ -764,13 +764,13 @@ class InsightsService:
                         {
                             "description": "Scattered focus due to external dependencies",
                             "evidence": ["JIRA-123", "JIRA-456"],
-                            "confidence": 85.0,
+                            "confidence": 0.85,
                             "reference": "dependency_analysis_report",
                         },
                         {
                             "description": "Lack of WIP limits enforcement in sprint planning",
                             "evidence": ["sprint_retrospectives"],
-                            "confidence": 90.0,
+                            "confidence": 0.90,
                             "reference": None,
                         },
                     ],
@@ -815,7 +815,7 @@ class InsightsService:
                 {
                     "title": "Increasing Defect Escape Rate",
                     "severity": "warning",
-                    "confidence": 87.0,
+                    "confidence": 0.87,
                     "scope": "team",
                     "scope_id": "mobile_apps",
                     "observation": "Mobile Apps team shows 7.2% defect escape rate (vs target 5%), with 12 production defects found in last sprint from 167 delivered stories.",
@@ -824,7 +824,7 @@ class InsightsService:
                         {
                             "description": "68% of escaped defects lack automated test coverage",
                             "evidence": ["test_coverage_report"],
-                            "confidence": 95.0,
+                            "confidence": 0.95,
                             "reference": "quality_audit_2025",
                         }
                     ],
@@ -851,7 +851,7 @@ class InsightsService:
                 {
                     "title": "Excellent Flow Efficiency Improvement",
                     "severity": "success",
-                    "confidence": 95.0,
+                    "confidence": 0.95,
                     "scope": "art",
                     "scope_id": "platform_engineering",
                     "observation": "Platform Engineering ART achieved 72% flow efficiency (up from 64%), with 28% reduction in blocked time over last 2 PIs.",
@@ -860,7 +860,7 @@ class InsightsService:
                         {
                             "description": "Proactive dependency management and cross-team collaboration",
                             "evidence": ["sync_meeting_notes"],
-                            "confidence": 90.0,
+                            "confidence": 0.90,
                             "reference": "dependency_board",
                         }
                     ],

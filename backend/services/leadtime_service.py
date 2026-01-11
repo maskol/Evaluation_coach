@@ -79,6 +79,35 @@ class LeadTimeService:
             logger.error(f"Failed to fetch lead-time data: {e}")
             return []
 
+    def get_story_leadtime_data(
+        self,
+        art: Optional[str] = None,
+        pi: Optional[str] = None,
+        team: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get detailed lead-time data for user stories.
+
+        Args:
+            art: Filter by ART
+            pi: Filter by PI
+            team: Filter by development team
+
+        Returns:
+            List of user stories with stage-by-stage lead-time breakdown
+        """
+        if not self._enabled:
+            logger.warning("Lead-time service is disabled")
+            return []
+
+        try:
+            return self.client.get_story_flow_leadtime(
+                art=art, pi=pi, development_team=team
+            )
+        except Exception as e:
+            logger.error(f"Failed to fetch story lead-time data: {e}")
+            return []
+
     def get_leadtime_statistics(
         self,
         arts: Optional[List[str]] = None,

@@ -10,6 +10,8 @@ const appState = {
     selectedPIs: [],  // Array of selected PIs
     selectedARTs: [],  // Array of selected ARTs for filtering
     allARTs: [],  // Full list of all ARTs (unfiltered) for admin panel
+    allTeams: [],  // Full list of all teams with ART mapping
+    analysisLevel: 'feature',  // 'feature' or 'story' for Team view
     metricFocus: 'flow',
     activeTab: 'dashboard',
     messages: [],
@@ -357,27 +359,119 @@ async function loadARTsAndTeams() {
             }
         }
 
-        // Load Teams
-        const teamsResponse = await fetch(`${API_BASE_URL}/teams`);
+        // Load Teams with ART mapping
+        const teamsResponse = await fetch(`${API_BASE_URL}/teams/with-art`);
         if (teamsResponse.ok) {
             const teamsData = await teamsResponse.json();
-            const teamSelector = document.getElementById('teamSelector');
-            if (teamSelector && teamsData.teams) {
-                // Clear existing options except the first one
-                teamSelector.innerHTML = '<option value="">-- Select Team --</option>';
+            if (teamsData.teams) {
+                // Store full teams data with ART mapping
+                appState.allTeams = teamsData.teams;
+                console.log(`✅ Loaded ${teamsData.count} teams with ART mapping`);
 
-                // Add real teams
-                teamsData.teams.forEach(team => {
-                    const option = document.createElement('option');
-                    option.value = team;
-                    option.textContent = team;
-                    teamSelector.appendChild(option);
-                });
-                console.log(`✅ Loaded ${teamsData.count} teams`);
+                // Debug: Log sample teams to verify art_key field
+                if (teamsData.teams.length > 0) {
+                    const sampleTeam = teamsData.teams[0];
+                    console.log(`📋 Sample team structure:`, JSON.stringify(sampleTeam, null, 2));
+                    const ucarTeams = teamsData.teams.filter(t => t.art_key === 'UCART');
+                    console.log(`📋 Found ${ucarTeams.length} teams with art_key='UCART'`);
+                }
+
+                // Initial population of team selector (will show all teams initially)
+                updateTeamSelector();
             }
         }
     } catch (error) {
         console.warn('⚠️ Could not load ARTs/Teams:', error);
+    }
+}
+
+// Update team selector based on selected ART
+function updateTeamSelector() {
+    const teamSelector = document.getElementById('teamSelector');
+    if (!teamSelector) {
+        console.warn('⚠️ Team selector element not found');
+        return;
+    }
+
+    // Remember the currently selected team before rebuilding
+    const currentSelection = teamSelector.value;
+
+    // Clear existing options
+    teamSelector.innerHTML = '<option value="">-- Select Team --</option>';
+
+    // Filter teams by selected ART if in team view
+    let teamsToShow = appState.allTeams;
+    if (appState.scope === 'team' && appState.selectedART) {
+        // Filter teams that belong to the selected ART
+        // Match by art_key (like "UCART") which is what the ART selector uses
+        teamsToShow = appState.allTeams.filter(team => team.art_key === appState.selectedART);
+    }
+
+    // Add filtered teams to selector
+    teamsToShow.forEach(team => {
+        const option = document.createElement('option');
+        option.value = team.team_name;
+        option.textContent = team.team_name;
+        teamSelector.appendChild(option);
+    });
+
+    // Restore the previous selection if it still exists in the filtered list
+    if (currentSelection && teamsToShow.some(team => team.team_name === currentSelection)) {
+        teamSelector.value = currentSelection;
+    }
+}
+
+// Update active filters display
+function updateActiveFiltersDisplay() {
+    const activeFiltersDisplay = document.getElementById('activeFiltersDisplay');
+    const activeFiltersText = document.getElementById('activeFiltersText');
+    if (activeFiltersDisplay && activeFiltersText) {
+        const filters = [];
+
+        // Add scope information
+        filters.push(capitalizeFirst(appState.scope));
+
+        if (appState.selectedPIs && appState.selectedPIs.length > 0) {
+            filters.push(`PI: ${appState.selectedPIs.join(', ')}`);
+        }
+
+        // Priority: scope-specific ART selection overrides default ARTs filter
+        if (appState.scope === 'art' && appState.selectedART) {
+            // ART View - show the selected ART
+            filters.push(`ART: ${appState.selectedART}`);
+        } else if (appState.scope === 'team' && appState.selectedART) {
+            // Team View - show the selected ART
+            filters.push(`ART: ${appState.selectedART}`);
+        } else if (appState.selectedARTs && appState.selectedARTs.length > 0) {
+            // Portfolio View - show ARTs filter
+            // If all ARTs are selected, show "All ARTs" instead of listing them
+            if (appState.allARTs && appState.selectedARTs.length >= appState.allARTs.length) {
+                filters.push(`ARTs: All (${appState.allARTs.length} from filter + others in data)`);
+            } else {
+                const artText = appState.selectedARTs.length <= 5
+                    ? appState.selectedARTs.join(', ')
+                    : `${appState.selectedARTs.slice(0, 5).join(', ')} +${appState.selectedARTs.length - 5} more`;
+                filters.push(`ARTs: ${artText}`);
+            }
+        }
+
+        // Add team information if in team view
+        if (appState.scope === 'team' && appState.selectedTeam) {
+            filters.push(`Team: ${appState.selectedTeam}`);
+        }
+
+        // Add analysis level if in team view
+        if (appState.scope === 'team') {
+            const levelText = appState.analysisLevel === 'feature' ? 'Feature' : 'Story';
+            filters.push(`Level: ${levelText}`);
+        }
+
+        if (filters.length > 0) {
+            activeFiltersText.textContent = filters.join(' | ');
+            activeFiltersDisplay.style.display = 'block';
+        } else {
+            activeFiltersDisplay.style.display = 'none';
+        }
     }
 }
 
@@ -397,6 +491,19 @@ async function loadDashboardData() {
         if (appState.scope === 'art' && appState.selectedART) {
             // ART View - use the selected ART from dropdown
             url += `&arts=${appState.selectedART}`;
+        } else if (appState.scope === 'team') {
+            // Team View - use selected ART and team, plus analysis level
+            if (appState.selectedART) {
+                url += `&arts=${appState.selectedART}`;
+                console.log(`📊 Team view - ART filter: ${appState.selectedART}`);
+            }
+            if (appState.selectedTeam) {
+                url += `&team=${encodeURIComponent(appState.selectedTeam)}`;
+                console.log(`📊 Team view - Team filter: ${appState.selectedTeam}`);
+            }
+            // Add analysis level for team view (feature or story)
+            url += `&analysis_level=${appState.analysisLevel}`;
+            console.log(`📊 Team view - Analysis level: ${appState.analysisLevel}`);
         } else if (appState.selectedARTs && appState.selectedARTs.length > 0) {
             // Portfolio View - only apply ARTs filter if not all ARTs are selected
             // Note: Some ARTs exist in data but not in /api/analysis/filters (42 vs 28 ARTs)
@@ -440,39 +547,8 @@ async function loadDashboardData() {
 function updateDashboardUI(data) {
     if (!data) return;
 
-    // Show active filters - respect scope priority
-    const activeFiltersDisplay = document.getElementById('activeFiltersDisplay');
-    const activeFiltersText = document.getElementById('activeFiltersText');
-    if (activeFiltersDisplay && activeFiltersText) {
-        const filters = [];
-        if (appState.selectedPIs && appState.selectedPIs.length > 0) {
-            filters.push(`PIs: ${appState.selectedPIs.join(', ')}`);
-        }
-
-        // Priority: scope-specific ART selection overrides default ARTs filter
-        if (appState.scope === 'art' && appState.selectedART) {
-            // ART View - show the selected ART
-            filters.push(`ART: ${appState.selectedART}`);
-        } else if (appState.selectedARTs && appState.selectedARTs.length > 0) {
-            // Portfolio View - show ARTs filter
-            // If all ARTs are selected, show "All ARTs" instead of listing them
-            if (appState.allARTs && appState.selectedARTs.length >= appState.allARTs.length) {
-                filters.push(`ARTs: All (${appState.allARTs.length} from filter + others in data)`);
-            } else {
-                const artText = appState.selectedARTs.length <= 5
-                    ? appState.selectedARTs.join(', ')
-                    : `${appState.selectedARTs.slice(0, 5).join(', ')} +${appState.selectedARTs.length - 5} more`;
-                filters.push(`ARTs: ${artText}`);
-            }
-        }
-
-        if (filters.length > 0) {
-            activeFiltersText.textContent = filters.join(' | ');
-            activeFiltersDisplay.style.display = 'block';
-        } else {
-            activeFiltersDisplay.style.display = 'none';
-        }
-    }
+    // Update active filters display
+    updateActiveFiltersDisplay();
 
     // Update portfolio metrics
     if (data.portfolio_metrics) {
@@ -751,16 +827,20 @@ function selectScope(scope) {
     // Show/hide ART and Team selectors
     const artSelection = document.getElementById('artSelection');
     const teamSelection = document.getElementById('teamSelection');
+    const analysisLevelSelection = document.getElementById('analysisLevelSelection');
 
     if (scope === 'art') {
         artSelection.style.display = 'block';
         teamSelection.style.display = 'none';
+        analysisLevelSelection.style.display = 'none';
     } else if (scope === 'team') {
         artSelection.style.display = 'block';
         teamSelection.style.display = 'block';
+        analysisLevelSelection.style.display = 'block';
     } else {
         artSelection.style.display = 'none';
         teamSelection.style.display = 'none';
+        analysisLevelSelection.style.display = 'none';
     }
 
     // Update context and reload dashboard with new scope
@@ -855,6 +935,23 @@ function setMetricFocus(focus) {
     updateContext();
 }
 
+// Update analysis level (Feature or Story)
+function updateAnalysisLevel() {
+    const analysisLevelSelector = document.getElementById('analysisLevelSelector');
+    if (analysisLevelSelector) {
+        appState.analysisLevel = analysisLevelSelector.value;
+        console.log(`📊 Analysis level changed to: ${appState.analysisLevel}`);
+
+        // Update context displays (sidebar and inline)
+        updateContext();
+
+        // Reload dashboard if in team view
+        if (appState.scope === 'team') {
+            loadDashboardData();
+        }
+    }
+}
+
 // Update context function
 function updateContext() {
     const defaults = getSavedDefaultFilters();
@@ -876,6 +973,7 @@ function updateContext() {
     const artSelector = document.getElementById('artSelector');
     if (artSelector) {
         if (appState.scope !== 'portfolio') {
+            const previousART = appState.selectedART;
             appState.selectedART = artSelector.value;
 
             // If an ART is selected, update selectedARTs array for filtering
@@ -884,6 +982,16 @@ function updateContext() {
             } else {
                 // If no ART selected, use default filters or all ARTs
                 appState.selectedARTs = defaults.arts;
+            }
+
+            // Update team selector to filter teams by selected ART (in team view)
+            // Only reset team selection if the ART actually changed
+            if (appState.scope === 'team' && previousART !== appState.selectedART) {
+                updateTeamSelector();
+                // Reset team selection when ART changes
+                appState.selectedTeam = '';
+                const teamSelector = document.getElementById('teamSelector');
+                if (teamSelector) teamSelector.value = '';
             }
         }
     }
@@ -900,6 +1008,9 @@ function updateContext() {
     let contextText = `Context: ${capitalizeFirst(appState.scope)}`;
     if (appState.selectedART) contextText += ` | ART: ${appState.selectedART}`;
     if (appState.selectedTeam) contextText += ` | Team: ${appState.selectedTeam}`;
+    if (appState.scope === 'team') {
+        contextText += ` | Level: ${appState.analysisLevel === 'feature' ? 'Feature' : 'Story'}`;
+    }
     contextText += ` | Focus: ${capitalizeFirst(appState.metricFocus)}`;
 
     // Update context displays
@@ -912,6 +1023,9 @@ function updateContext() {
     if (inlineContext) {
         inlineContext.textContent = contextText.replace(/Context: /, '');
     }
+
+    // Update active filters display to match current context
+    updateActiveFiltersDisplay();
 
     // If on metrics tab, reload metrics with new filter
     if (appState.activeTab === 'metrics') {
@@ -1067,6 +1181,9 @@ function switchMainTab(tabName) {
         loadStrategicTargets();
     }
 
+    // Update Active Filters display when switching tabs
+    updateActiveFiltersDisplay();
+
     updateStatusBar(`Switched to ${tabName} view`);
 }
 
@@ -1086,6 +1203,8 @@ function renderInsightsTab() {
     // Add ART info based on scope
     if (appState.scope === 'art' && appState.selectedART) {
         filterParts.push(`ART: ${appState.selectedART}`);
+    } else if (appState.scope === 'team' && appState.selectedART) {
+        filterParts.push(`ART: ${appState.selectedART}`);
     } else if (appState.selectedARTs && appState.selectedARTs.length > 0) {
         // If all ARTs are selected, show "All ARTs"
         if (appState.allARTs && appState.selectedARTs.length >= appState.allARTs.length) {
@@ -1098,6 +1217,17 @@ function renderInsightsTab() {
         }
     } else {
         filterParts.push('All ARTs');
+    }
+
+    // Add team information if in team view
+    if (appState.scope === 'team' && appState.selectedTeam) {
+        filterParts.push(`Team: ${appState.selectedTeam}`);
+    }
+
+    // Add analysis level if in team view
+    if (appState.scope === 'team') {
+        const levelText = appState.analysisLevel === 'feature' ? 'Feature' : 'Story';
+        filterParts.push(`Level: ${levelText}`);
     }
 
     const filterInfo = filterParts.join(' | ');
@@ -1221,9 +1351,22 @@ function generateInsights() {
     if (appState.scope === 'art' && appState.selectedART) {
         // ART View - analyze only the selected ART
         params.append('arts', appState.selectedART);
+    } else if (appState.scope === 'team' && appState.selectedART) {
+        // Team View - include ART context
+        params.append('arts', appState.selectedART);
     } else if (appState.selectedARTs.length > 0) {
         // Portfolio View - analyze filtered ARTs
         params.append('arts', appState.selectedARTs.join(','));
+    }
+
+    // Add team parameter if in team view
+    if (appState.scope === 'team' && appState.selectedTeam) {
+        params.append('team', appState.selectedTeam);
+    }
+
+    // Add analysis level if in team view
+    if (appState.scope === 'team') {
+        params.append('analysis_level', appState.analysisLevel);
     }
 
     // Add LLM configuration
@@ -1464,6 +1607,29 @@ function displayGeneratedInsights(insights, excludedStatuses = [], filterInfo = 
                     >
                         <span id="generateBtnIcon">🔄</span>
                         <span id="generateBtnText">Regenerate Insights</span>
+                    </button>
+                    <button 
+                        id="cancelInsightsBtn"
+                        onclick="cancelInsightsGeneration()" 
+                        style="
+                            background: #FF3B30;
+                            color: white;
+                            border: none;
+                            padding: 10px 20px;
+                            font-size: 14px;
+                            font-weight: 600;
+                            border-radius: 6px;
+                            cursor: pointer;
+                            box-shadow: 0 2px 8px rgba(255, 59, 48, 0.3);
+                            transition: all 0.3s ease;
+                            display: none;
+                            align-items: center;
+                            gap: 6px;
+                        "
+                        onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 12px rgba(255, 59, 48, 0.5)';"
+                        onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 8px rgba(255, 59, 48, 0.3)'"
+                    >
+                        🛑 Cancel
                     </button>
                 </div>
             </div>
@@ -1713,23 +1879,79 @@ window.addEventListener('click', (event) => {
     }
 });
 
-// Export insight (placeholder for future export functionality)
+// Export insight with comprehensive analysis data
 function exportInsight(index) {
     const insight = appState.currentInsights?.[index];
-    if (insight) {
-        console.log('💾 Exporting insight:', insight);
-        const json = JSON.stringify(insight, null, 2);
-        const blob = new Blob([json], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `insight-${insight.title.replace(/\s+/g, '-').toLowerCase()}.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        updateStatusBar('Insight exported successfully');
-    }
+    if (!insight) return;
+
+    console.log('💾 Exporting insight with analysis data:', insight);
+
+    // Build comprehensive export data
+    const exportData = {
+        metadata: {
+            exported_at: new Date().toISOString(),
+            export_version: '1.0',
+            application: 'Evaluation Coach',
+            insight_index: index + 1
+        },
+        insight: {
+            title: insight.title,
+            severity: insight.severity,
+            confidence: insight.confidence,
+            scope: insight.scope,
+            scope_id: insight.scope_id,
+            observation: insight.observation,
+            interpretation: insight.interpretation,
+            created_at: insight.created_at,
+            status: insight.status
+        },
+        root_causes: (insight.root_causes || []).map(rc => ({
+            description: rc.description,
+            evidence: rc.evidence || [],
+            confidence: rc.confidence,
+            reference: rc.reference,
+            category: rc.category,
+            impact: rc.impact,
+            count: rc.count
+        })),
+        recommended_actions: (insight.recommended_actions || []).map(action => ({
+            timeframe: action.timeframe,
+            description: action.description,
+            owner: action.owner,
+            effort: action.effort,
+            dependencies: action.dependencies || [],
+            success_signal: action.success_signal
+        })),
+        expected_outcomes: insight.expected_outcomes || {},
+        analysis_data: {
+            evidence: insight.evidence || [],
+            metric_references: insight.metric_references || [],
+            // Include any additional analysis data stored in the insight
+            raw_data: insight.raw_data || null,
+            calculations: insight.calculations || null,
+            historical_comparison: insight.historical_comparison || null
+        },
+        filters_applied: {
+            art: appState.selectedART,
+            pi: appState.selectedPI,
+            team: appState.selectedTeam
+        }
+    };
+
+    // Create formatted JSON
+    const json = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const timestamp = new Date().toISOString().split('T')[0];
+    a.download = `insight-${insight.title.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-${timestamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    updateStatusBar(`Insight #${index + 1} exported with analysis data`);
 }
 
 // Print a single insight as a formatted report
@@ -3886,8 +4108,21 @@ async function generateLittlesLawAnalysis() {
     // Priority: scope-specific ART selection overrides default ARTs filter
     if (appState.scope === 'art' && appState.selectedART) {
         params.append('art', appState.selectedART);
+    } else if (appState.scope === 'team' && appState.selectedART) {
+        // Team View - include ART context
+        params.append('art', appState.selectedART);
     } else if (appState.selectedARTs.length > 0) {
         params.append('arts', appState.selectedARTs.join(','));
+    }
+
+    // Add team parameter if in team view
+    if (appState.scope === 'team' && appState.selectedTeam) {
+        params.append('team', appState.selectedTeam);
+    }
+
+    // Add analysis level if in team view
+    if (appState.scope === 'team') {
+        params.append('analysis_level', appState.analysisLevel);
     }
 
     // Add LLM configuration for RAG enhancement
