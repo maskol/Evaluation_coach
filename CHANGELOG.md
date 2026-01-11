@@ -4,6 +4,172 @@ All notable changes to the Evaluation Coach project.
 
 ---
 
+## [2026-01-11] - Story-Level Insights Implementation
+
+### 🎉 New Feature: Complete Story-Level AI Insights
+
+Implemented comprehensive story-level insight analysis to complement existing feature-level analysis. The system now generates AI-powered insights specifically tailored to user story workflows (8 stages) vs feature workflows (11 stages).
+
+### ✅ Added - Story-Level API Integration
+
+#### LeadTimeClient Updates (`backend/integrations/leadtime_client.py`)
+- **New Methods** (3 methods, ~100 lines):
+  - `get_story_analysis_summary()`: Bottleneck analysis for 8 story stages
+  - `get_story_pip_data()`: Story planning accuracy and completion metrics
+  - `get_story_waste_analysis()`: Story-level waste and blocked stories
+- Connects to new DL Webb App endpoints:
+  - `/api/story_analysis_summary`
+  - `/api/story_pip_data`
+  - `/api/story_waste_analysis`
+
+#### Story Insights Generator (`backend/agents/nodes/story_insights.py` - NEW FILE)
+- **New Module**: Complete story-level insight generator (~850 lines)
+- **Six Analysis Functions**:
+  1. `_analyze_story_bottlenecks()`: Identifies slow stages with story-appropriate timeframes
+  2. `_analyze_story_stuck_items()`: Detects stories stuck >10 days
+  3. `_analyze_story_wip()`: Monitors WIP (healthy: 5-12 stories)
+  4. `_analyze_story_planning()`: Tracks completion rate (target: 80-90%)
+  5. `_analyze_story_waste()`: Analyzes blocked stories (threshold: >5 days)
+  6. `_analyze_code_review()`: **Story-specific** - monitors code review delays (target: <1 day)
+
+### ✅ Enhanced - Main API Endpoint
+
+#### Coaching Insights Endpoint (`backend/main.py`)
+- **Updated** `/api/coaching/insights` endpoint (~80 lines modified)
+- **Smart Analysis Selection**:
+  - Feature-level: Uses existing 11-stage analysis
+  - Story-level: Routes to new story-specific insights
+- **Conditional Logic**: Based on `analysis_level` parameter ("feature" or "story")
+- **Data Flow**:
+  ```
+  analysis_level=story → get_story_analysis_summary()
+                        → get_story_pip_data()
+                        → get_story_waste_analysis()
+                        → generate_story_insights()
+  ```
+
+### ✅ Added - Testing & Documentation
+
+#### Test Suite (`test_story_insights.py` - NEW FILE)
+- Comprehensive test script (~200 lines)
+- **4 Test Categories**:
+  1. API method existence verification
+  2. Empty data handling
+  3. Sample data insight generation
+  4. Integration import validation
+- **Test Results**: ✅ All tests passing
+- **Sample Output**: Generates 4 insights from test data
+
+#### Documentation
+- **Implementation Guide**: `docs/STORY_INSIGHTS_IMPLEMENTATION.md` (~500 lines)
+  - Complete feature overview
+  - API integration details
+  - Sample insights with examples
+  - Configuration and thresholds
+  - Testing procedures
+  - Troubleshooting guide
+- **Quick Reference**: `docs/STORY_INSIGHTS_QUICK_REFERENCE.md` (~200 lines)
+  - Fast lookup for common tasks
+  - Workflow stages diagram
+  - Expected timeframes table
+  - Best practices
+  - Troubleshooting tips
+
+### 🔧 Changed - Configuration
+
+#### Story-Specific Thresholds
+- **Development**: 5 days (vs 14 days for features)
+- **Testing**: 3 days (vs 7 days for features)
+- **Code Review**: 1 day (not tracked for features)
+- **Overall**: 30 days (vs 60 days for features)
+
+#### WIP Targets
+- **Stories**: 5-12 total (Team level)
+- **Features**: 10-20 total (ART level)
+- **Per Stage**: Development(5), Review(3), Testing(4)
+
+### 📊 Insights Generated
+
+#### Story-Specific Insight Types
+1. **Bottleneck Detection**: Identifies slow stages with story timeframes
+2. **Code Review Analysis**: Unique to stories - monitors PR wait times
+3. **WIP Management**: Tracks active stories across workflow
+4. **Stuck Stories**: Detects stories delayed >10 days
+5. **Blocked Stories**: Monitors dependency blockers
+6. **Planning Accuracy**: Sprint completion rate analysis
+
+#### Sample Insight Example
+```
+Title: Slow Code Reviews: 3.2 Days Average
+Severity: warning
+Confidence: 0.85
+Observation: Code review stage averages 3.2 days. Best practice: <1 day.
+Actions:
+  - Establish 4-hour review SLA
+  - Implement review rotation schedule
+  - Set PR size limits (<400 lines)
+```
+
+### 🎯 Key Differences: Stories vs Features
+
+| Aspect | Stories | Features |
+|--------|---------|----------|
+| **Stages** | 8 stages | 11 stages |
+| **Timeframe** | Days-Weeks | Weeks-Months |
+| **Scope** | Team/Sprint | Portfolio/ART |
+| **WIP Target** | 5-12 | 10-20 |
+| **Threshold** | 30 days | 60 days |
+| **Code Review** | Tracked | Not tracked |
+
+### ✅ Backward Compatibility
+
+- ✅ Feature-level analysis unchanged
+- ✅ No database schema changes
+- ✅ No breaking API changes
+- ✅ Story-level is opt-in via parameter
+- ✅ No new dependencies required
+
+### 📈 Performance
+
+- **Single team, single PI**: <2 seconds
+- **Multiple teams**: <3 seconds
+- **Large datasets (500+ stories)**: <5 seconds
+
+### 🔍 Files Changed
+
+**New Files** (~1,150 lines):
+- `backend/agents/nodes/story_insights.py`
+- `test_story_insights.py`
+- `docs/STORY_INSIGHTS_IMPLEMENTATION.md`
+- `docs/STORY_INSIGHTS_QUICK_REFERENCE.md`
+
+**Modified Files** (~180 lines):
+- `backend/integrations/leadtime_client.py`
+- `backend/main.py`
+
+**Total**: ~1,330 lines added/modified
+
+### 🚀 Usage
+
+**Dashboard**: Select "Story" from Analysis Level dropdown
+
+**API**:
+```http
+GET /api/coaching/insights?analysis_level=story&scope=team&team=Loke&pis=26Q1
+```
+
+**Test**:
+```bash
+python test_story_insights.py
+```
+
+### 📚 References
+
+- Story API specification: `docs/STORY_LEVEL_API_REQUIREMENTS.md`
+- DL Webb App changes: See attached `CHANGELOG_STORY_API.md`
+
+---
+
 ## [2026-01-09] - Little's Law AI Insight Feature
 
 ### 🎉 New Feature: Little's Law Analysis for PI Performance

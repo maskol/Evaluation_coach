@@ -412,6 +412,111 @@ class LeadTimeClient:
 
         return self._get("/api/analysis/summary", params=params if params else None)
 
+    # === Story-Level Analysis ===
+
+    def get_story_analysis_summary(
+        self,
+        arts: Optional[List[str]] = None,
+        pis: Optional[List[str]] = None,
+        team: Optional[str] = None,
+        threshold_days: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """
+        Get comprehensive bottleneck analysis summary for user stories.
+
+        Returns story-level bottleneck analysis including:
+        - Stage analysis for 8 story workflow stages
+        - Stuck items at story level
+        - WIP statistics for stories
+        - Flow distribution
+
+        Args:
+            arts: List of ARTs to analyze
+            pis: List of PIs to analyze
+            team: Team name to filter by
+            threshold_days: Threshold in days for identifying stuck stories
+
+        Returns:
+            Story-level bottleneck analysis summary
+        """
+        params = {}
+        if arts:
+            params["arts"] = ",".join(arts)
+        if pis:
+            params["pis"] = ",".join(pis)
+        if team:
+            params["team"] = team
+        if threshold_days is not None:
+            params["threshold_days"] = str(threshold_days)
+
+        return self._get(
+            "/api/story_analysis_summary", params=params if params else None
+        )
+
+    def get_story_pip_data(
+        self,
+        pi: str,
+        art: Optional[str] = None,
+        team: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get planning accuracy data for user stories.
+
+        Returns story-level planning metrics including:
+        - Planned and completed story counts
+        - Story completion rate
+        - Story predictability
+        - Average and median story lead time
+        - Story flow efficiency
+
+        Args:
+            pi: PI to analyze (required)
+            art: Filter by ART
+            team: Filter by team name
+
+        Returns:
+            List of story planning accuracy records
+        """
+        params = {"pi": pi}
+        if art:
+            params["art"] = art
+        if team:
+            params["team"] = team
+
+        return self._get("/api/story_pip_data", params=params)
+
+    def get_story_waste_analysis(
+        self,
+        arts: Optional[List[str]] = None,
+        pis: Optional[List[str]] = None,
+        team: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Analyze waste in story-level development process.
+
+        Returns waste metrics including:
+        - Waiting time waste for each story stage
+        - Blocked stories count and duration
+        - Stories exceeding threshold
+
+        Args:
+            arts: List of ARTs to analyze
+            pis: List of PIs to analyze
+            team: Team name to filter by
+
+        Returns:
+            Story-level waste analysis data
+        """
+        params = {}
+        if arts:
+            params["arts"] = ",".join(arts)
+        if pis:
+            params["pis"] = ",".join(pis)
+        if team:
+            params["team"] = team
+
+        return self._get("/api/story_waste_analysis", params=params if params else None)
+
     def get_throughput_data(
         self,
         art: Optional[str] = None,

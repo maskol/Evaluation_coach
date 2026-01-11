@@ -1033,83 +1033,207 @@ async def generate_insights_endpoint(
                 use_story_level = analysis_level == "story"
                 data_source_name = "user stories" if use_story_level else "features"
 
+                # Generate insights based on analysis level
                 if use_story_level:
+                    print(f"📊 Generating story-level insights for {data_source_name}")
+
+                    try:
+                        # Import story insights generator
+                        from agents.nodes.story_insights import generate_story_insights
+
+                        # Get story-level analysis data
+                        print(f"📡 Fetching story analysis summary from DL Webb App...")
+                        story_analysis_summary = (
+                            leadtime_service.client.get_story_analysis_summary(**params)
+                        )
+                        print(f"✅ Received story analysis summary")
+
+                        # Get story planning data if PI is selected
+                        story_pip_data = []
+                        if selected_pis:
+                            pip_params = {}
+                            pip_params["pi"] = selected_pis[0]
+                            if selected_arts:
+                                pip_params["art"] = selected_arts[0]
+                            if scope == "team" and team:
+                                pip_params["team"] = team
+
+                            try:
+                                print(f"📡 Fetching story planning data...")
+                                story_pip_data = (
+                                    leadtime_service.client.get_story_pip_data(
+                                        **pip_params
+                                    )
+                                )
+                                print(
+                                    f"✅ Received story planning data: {len(story_pip_data) if isinstance(story_pip_data, list) else 0} records"
+                                )
+                            except Exception as e:
+                                print(f"⚠️  Could not fetch story PIP data: {e}")
+
+                        # Get story waste analysis
+                        print(f"📡 Fetching story waste analysis...")
+                        story_waste_analysis = (
+                            leadtime_service.client.get_story_waste_analysis(**params)
+                        )
+                        print(f"✅ Received story waste analysis")
+
+                        # Generate story-level insights
+                        print(f"🤖 Generating story-level insights...")
+                        insights = generate_story_insights(
+                            story_analysis_summary=story_analysis_summary,
+                            story_pip_data=story_pip_data,
+                            story_waste_analysis=story_waste_analysis,
+                            selected_arts=selected_arts,
+                            selected_pis=selected_pis,
+                            selected_team=team,
+                            llm_service=llm_service_for_insights,
+                        )
+                        print(f"✅ Generated {len(insights)} story-level insights")
+
+                    except Exception as story_error:
+                        print(f"❌ Story-level insights failed: {story_error}")
+                        print(
+                            f"   This likely means the DL Webb App story endpoints are not available"
+                        )
+                        print(
+                            f"   or the story data doesn't exist for the selected filters"
+                        )
+
+                        # Create an informational insight about the issue
+                        insights = [
+                            InsightResponse(
+                                id=0,
+                                title="Story-Level Insights Not Available",
+                                severity="info",
+                                confidence=1.0,
+                                scope=f"Team: {team}" if team else "Story Level",
+                                scope_id=None,
+                                observation=f"Story-level insight analysis is not currently available. Error: {str(story_error)[:200]}",
+                                interpretation="The DL Webb App backend may not have the story-level API endpoints implemented yet, or there may be no story data for the selected filters (PI: {}, ART: {}, Team: {}).".format(
+                                    ", ".join(selected_pis) if selected_pis else "None",
+                                    (
+                                        ", ".join(selected_arts)
+                                        if selected_arts
+                                        else "None"
+                                    ),
+                                    team if team else "None",
+                                ),
+                                root_causes=[
+                                    RootCause(
+                                        description="Story-level API endpoints not available in DL Webb App",
+                                        evidence=[
+                                            f"API Error: {str(story_error)[:100]}",
+                                            "Required endpoints: /api/story_analysis_summary, /api/story_pip_data, /api/story_waste_analysis",
+                                        ],
+                                        confidence=0.9,
+                                        reference="DL Webb App API",
+                                    )
+                                ],
+                                recommended_actions=[
+                                    Action(
+                                        timeframe="immediate",
+                                        description="Verify DL Webb App has story-level endpoints implemented (see CHANGELOG_STORY_API.md)",
+                                        owner="system_admin",
+                                        effort="Check backend logs",
+                                        dependencies=["DL Webb App backend access"],
+                                        success_signal="Story endpoints return 200 OK",
+                                    ),
+                                    Action(
+                                        timeframe="immediate",
+                                        description="Verify story data exists in database for selected PI/Team/ART filters",
+                                        owner="system_admin",
+                                        effort="Query database",
+                                        dependencies=["Database access"],
+                                        success_signal="Story records found in story_flow_leadtime table",
+                                    ),
+                                    Action(
+                                        timeframe="short_term",
+                                        description="Switch to Feature-Level analysis as a workaround until story endpoints are available",
+                                        owner="user",
+                                        effort="Change dropdown",
+                                        dependencies=[],
+                                        success_signal="Feature-level insights displayed",
+                                    ),
+                                ],
+                                expected_outcomes=ExpectedOutcome(
+                                    metrics_to_watch=[
+                                        "API availability",
+                                        "Data completeness",
+                                    ],
+                                    leading_indicators=[
+                                        "Endpoint health checks passing"
+                                    ],
+                                    lagging_indicators=[
+                                        "Story insights generating successfully"
+                                    ],
+                                    timeline="1-2 days",
+                                    risks=["May need DL Webb App backend update"],
+                                ),
+                                metric_references=[],
+                                evidence=[
+                                    f"Error type: {type(story_error).__name__}",
+                                    f"Error message: {str(story_error)[:200]}",
+                                ],
+                                status="active",
+                                created_at=datetime.utcnow(),
+                            )
+                        ]
+                else:
                     print(
-                        f"⚠️  Story-level insights requested but DL Webb App API only supports feature-level bottleneck analysis"
-                    )
-                    print(
-                        f"📊 Dashboard will show story data, but insights will reference features"
+                        f"📊 Generating feature-level insights for {data_source_name}"
                     )
 
-                # Get analysis summary (currently only supports feature level)
-                analysis_summary = leadtime_service.client.get_analysis_summary(
-                    **params
-                )
+                    # Get feature-level analysis summary
+                    analysis_summary = leadtime_service.client.get_analysis_summary(
+                        **params
+                    )
 
-                # Also get ART comparison for context, filtered by selected ARTs and PI
-                pip_params = {}
-                if selected_pis:
-                    pip_params["pi"] = selected_pis[0]  # Filter by PI
-                if selected_arts:
-                    pip_params["art"] = selected_arts[
-                        0
-                    ]  # Get pip_data for first selected ART
+                    # Also get ART comparison for context, filtered by selected ARTs and PI
+                    pip_params = {}
+                    if selected_pis:
+                        pip_params["pi"] = selected_pis[0]  # Filter by PI
+                    if selected_arts:
+                        pip_params["art"] = selected_arts[
+                            0
+                        ]  # Get pip_data for first selected ART
 
-                # Add team filter for team scope
-                if scope == "team" and team:
-                    pip_params["team"] = team
+                    # Add team filter for team scope
+                    if scope == "team" and team:
+                        pip_params["team"] = team
 
-                pip_data = leadtime_service.client.get_pip_data(**pip_params)
+                    pip_data = leadtime_service.client.get_pip_data(**pip_params)
 
-                if pip_data:
-                    art_comparison = [
-                        {
-                            "art_name": art.get("art_name", "Unknown"),
-                            "flow_efficiency": float(
-                                art.get("flow_efficiency_percent", 0)
-                            ),
-                            "planning_accuracy": float(art.get("pi_predictability", 0)),
-                            "quality_score": float(art.get("quality_score", 0)),
-                            "status": (
-                                "healthy"
-                                if float(art.get("flow_efficiency_percent", 0)) >= 70
-                                else "warning"
-                            ),
-                        }
-                        for art in pip_data
-                    ]
-
-                # Generate insights with LLM
-                insights = generate_advanced_insights(
-                    analysis_summary=analysis_summary,
-                    art_comparison=art_comparison,
-                    selected_arts=selected_arts,
-                    selected_pis=selected_pis,
-                    selected_team=team,
-                    llm_service=llm_service_for_insights,
-                )
-
-                # Add informational insight for story-level analysis
-                if use_story_level:
-                    story_level_info = InsightResponse(
-                        title="Story-Level Analysis: Limited Insights Available",
-                        observation="You have selected Story-Level analysis. The dashboard metrics show story-level data correctly, but the AI insights below are based on feature-level bottleneck analysis.",
-                        interpretation="Story-level bottleneck insights are not yet available from the data API. The insights shown reference 'features' even though your dashboard displays story-level metrics. This is a known limitation.",
-                        severity="info",
-                        confidence=1.0,
-                        scope=f"Team: {team}" if team else "Story Level",
-                        recommended_actions=[
+                    if pip_data:
+                        art_comparison = [
                             {
-                                "description": "Review the dashboard metrics for accurate story-level flow data",
-                                "timeframe": "immediate",
-                                "owner": "product_owner",
-                                "effort": "5 minutes",
+                                "art_name": art.get("art_name", "Unknown"),
+                                "flow_efficiency": float(
+                                    art.get("flow_efficiency_percent", 0)
+                                ),
+                                "planning_accuracy": float(
+                                    art.get("pi_predictability", 0)
+                                ),
+                                "quality_score": float(art.get("quality_score", 0)),
+                                "status": (
+                                    "healthy"
+                                    if float(art.get("flow_efficiency_percent", 0))
+                                    >= 70
+                                    else "warning"
+                                ),
                             }
-                        ],
-                        root_causes=[],
-                        expected_outcomes={},
+                            for art in pip_data
+                        ]
+
+                    # Generate feature-level insights with LLM
+                    insights = generate_advanced_insights(
+                        analysis_summary=analysis_summary,
+                        art_comparison=art_comparison,
+                        selected_arts=selected_arts,
+                        selected_pis=selected_pis,
+                        selected_team=team,
+                        llm_service=llm_service_for_insights,
                     )
-                    insights.insert(0, story_level_info)
 
                 print(f"✅ Generated {len(insights)} AI-powered insights")
 
