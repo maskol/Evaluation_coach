@@ -21,9 +21,17 @@ USE_OPENAI = OPENAI_API_KEY is not None and OPENAI_API_KEY.strip() != ""
 if USE_OPENAI:
     try:
         from openai import OpenAI
+        import httpx
 
+        # Create httpx client with strict timeouts
+        http_client = httpx.Client(
+            timeout=httpx.Timeout(30.0, connect=5.0)  # 30s total, 5s connect
+        )
+        
         openai_client = OpenAI(
-            api_key=OPENAI_API_KEY, timeout=300.0  # 5 minute timeout for longer reports
+            api_key=OPENAI_API_KEY,
+            http_client=http_client,
+            timeout=30.0,  # 30 second timeout for chat requests
         )
     except ImportError:
         USE_OPENAI = False
@@ -36,11 +44,20 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 ollama_client = None
 try:
     from openai import OpenAI
+    import httpx
 
     # Ollama has OpenAI-compatible API
+    # Configure timeout for Ollama (local models can be slow on first run)
+    ollama_http_client = httpx.Client(
+        timeout=httpx.Timeout(60.0, connect=5.0)  # 60s for Ollama (local inference can be slower)
+    )
+    
     ollama_client = OpenAI(
-        base_url=f"{OLLAMA_BASE_URL}/v1", api_key="ollama"
-    )  # Ollama doesn't need real API key
+        base_url=f"{OLLAMA_BASE_URL}/v1",
+        api_key="ollama",  # Ollama doesn't need real API key
+        http_client=ollama_http_client,
+        timeout=60.0,  # 60 second timeout for Ollama inference
+    )
 except Exception:
     pass
 
@@ -444,15 +461,33 @@ Level 5 - Optimizing: Continuous improvement culture, strategic agility, world-c
         compact_facts = self._compact_metrics_facts(facts or {})
 
         # Retrieve relevant knowledge using RAG based on user query
+        # Skip RAG for simple queries AND analysis queries to improve response time
         retrieved_docs: List[Dict[str, Any]] = []
-        try:
-            from backend.services.rag_service import get_rag_service
+        message_lower = message.lower()
+        skip_rag = any(
+            word in message_lower
+            for word in [
+                "hello",
+                "hi",
+                "help",
+                "what can you",
+                "explore",
+                "analyze",  # Skip for generic "analyze" queries
+                "identify",
+                "show me",
+            ]
+        )
 
-            rag = get_rag_service()
-            retrieved_docs = rag.retrieve(message, top_k=5)
-        except Exception as e:
-            print(f"⚠️ RAG retrieval failed: {e}")
-            # Continue without RAG knowledge
+        if not skip_rag:
+            try:
+                from backend.services.rag_service import get_rag_service
+
+                rag = get_rag_service()
+                # Reduced from top_k=5 to top_k=2 for faster retrieval
+                retrieved_docs = rag.retrieve(message, top_k=2)
+            except Exception as e:
+                print(f"⚠️ RAG retrieval failed: {e}")
+                # Continue without RAG knowledge
 
         context_obj = context or {}
         user_prompt = (
@@ -472,16 +507,7 @@ Level 5 - Optimizing: Continuous improvement culture, strategic agility, world-c
                     "role": "system",
                     "content": self._build_system_prompt(retrieved_docs),
                 },
-            ]
-            # Add prior conversation (already stored as HTML; that's ok)
-            messages.extend(history_msgs)
-            messages.append({"role": "user", "content": user_prompt})
-
-            response = client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                temperature=self.temperature,
-                max_tokens=650,  # Increased for structured expert responses
+            ]500,  # Reduced from 650 for faster responses
             )
             content = response.choices[0].message.content
             result = (content or "").strip()
@@ -491,6 +517,23 @@ Level 5 - Optimizing: Continuous improvement culture, strategic agility, world-c
             if "Evidence Used:" not in result:
                 result += "<br><br><strong>Evidence Used:</strong> (Response based on provided metrics)"
             return result
+        except Exception as e:
+            error_msg = str(e)
+            # Check if it's a timeout error
+            if "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
+                return (
+                    self._generate_default_response()
+                    + "<br><br><strong>Note:</strong> LLM response timed out (>30s). "
+                    + "The AI service is slow or unavailable. Try a simpler question."
+                )
+            # If LLM call fails at runtime, fall back gracefully.
+            return (
+                self._generate_default_response()
+                + "<br><br><strong>Note:</strong> LLM call failed at runtime. "
+                + f"Error: {error_msgault_response()
+                + "<br><br><strong>Note:</strong> LLM response timed out (>30s). "
+                + "Try a simpler question or check your LLM service configuration."
+            )
         except Exception as e:
             # If LLM call fails at runtime, fall back gracefully.
             return (

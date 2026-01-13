@@ -490,6 +490,7 @@ class LeadTimeClient:
         arts: Optional[List[str]] = None,
         pis: Optional[List[str]] = None,
         team: Optional[str] = None,
+        threshold_days: Optional[float] = None,
     ) -> Dict[str, Any]:
         """
         Analyze waste in story-level development process.
@@ -503,6 +504,7 @@ class LeadTimeClient:
             arts: List of ARTs to analyze
             pis: List of PIs to analyze
             team: Team name to filter by
+            threshold_days: Threshold in days for identifying waste
 
         Returns:
             Story-level waste analysis data
@@ -514,6 +516,8 @@ class LeadTimeClient:
             params["pis"] = ",".join(pis)
         if team:
             params["team"] = team
+        if threshold_days is not None:
+            params["threshold_days"] = str(threshold_days)
 
         return self._get("/api/story_waste_analysis", params=params if params else None)
 

@@ -95,15 +95,28 @@ def littles_law_analyzer_node(state: AgentState) -> Dict[str, Any]:
         if art_filter and art_filter not in ["Portfolio", "portfolio"]:
             print(f"🎯 Filtering for ART: {art_filter}")
 
+        # Determine analysis level (story vs feature)
+        analysis_level = state.get("analysis_level", "feature")
+        use_story_level = analysis_level == "story"
+        item_type = "stories" if use_story_level else "features"
+
+        print(f"📊 Analysis Level: {analysis_level} ({item_type})")
+
         # Get analysis summary (provides accurate aggregated metrics from DL Webb APP)
         print(f"📊 Fetching analysis summary for PI {pi_to_analyze}...")
         summary_params = {"pis": [pi_to_analyze]}
         if art_filter and art_filter not in ["Portfolio", "portfolio"]:
             summary_params["arts"] = [art_filter]
 
-        analysis_summary = leadtime_service.client.get_analysis_summary(
-            **summary_params
-        )
+        # Use story or feature analysis summary based on level
+        if use_story_level:
+            analysis_summary = leadtime_service.client.get_story_analysis_summary(
+                **summary_params
+            )
+        else:
+            analysis_summary = leadtime_service.client.get_analysis_summary(
+                **summary_params
+            )
 
         if analysis_summary:
             print(f"✅ Retrieved analysis summary with accurate metrics")
@@ -111,30 +124,41 @@ def littles_law_analyzer_node(state: AgentState) -> Dict[str, Any]:
             print("⚠️  No analysis summary available")
 
         # Get flow data with stage breakdown (with ART filter if applicable)
-        # Fetch without PI filter and filter client-side based on resolved_date for Done features
+        # Fetch without PI filter and filter client-side based on resolved_date for Done items
         print(f"📊 Fetching flow data with stage breakdown for PI {pi_to_analyze}...")
-        all_flow_data = leadtime_service.get_feature_leadtime_data(
-            art=(
-                art_filter
-                if art_filter and art_filter not in ["Portfolio", "portfolio"]
-                else None
-            ),
-        )
+
+        # Use story or feature flow data based on analysis level
+        if use_story_level:
+            all_flow_data = leadtime_service.get_story_leadtime_data(
+                art=(
+                    art_filter
+                    if art_filter and art_filter not in ["Portfolio", "portfolio"]
+                    else None
+                ),
+            )
+        else:
+            all_flow_data = leadtime_service.get_feature_leadtime_data(
+                art=(
+                    art_filter
+                    if art_filter and art_filter not in ["Portfolio", "portfolio"]
+                    else None
+                ),
+            )
 
         if not all_flow_data:
             print(f"⚠️  No flow data available")
             updates["warnings"] = [f"No flow data available for PI {pi_to_analyze}"]
             return updates
 
-        # Filter by PI - for Done features use resolved_date, for others use pi field
+        # Filter by PI - for Done items use resolved_date, for others use pi field
         flow_data = []
         for f in all_flow_data:
             feature_pi = None
             if f.get("status") == "Done" and f.get("resolved_date"):
-                # Calculate PI from resolved_date for Done features
+                # Calculate PI from resolved_date for Done items
                 feature_pi = _calculate_pi_from_date(f.get("resolved_date"))
             else:
-                # Use stored pi field for non-Done features
+                # Use stored pi field for non-Done items
                 feature_pi = f.get("pi")
 
             if feature_pi == pi_to_analyze:
@@ -146,28 +170,35 @@ def littles_law_analyzer_node(state: AgentState) -> Dict[str, Any]:
             return updates
 
         print(
-            f"✅ Retrieved {len(flow_data)} features for PI {pi_to_analyze} (filtered by resolved date for Done features)"
+            f"✅ Retrieved {len(flow_data)} {item_type} for PI {pi_to_analyze} (filtered by resolved date for Done {item_type})"
         )
 
         # Get throughput data for accurate total lead times
-        # Note: throughput data (leadtime_thr_data table) already has correct Delivered PI
+        # Note: For features, throughput data (leadtime_thr_data table) already has correct Delivered PI
+        # For stories, we use story_flow_leadtime data directly
         print(f"📊 Fetching throughput data for accurate lead times...")
-        throughput_data = leadtime_service.client.get_throughput_data(
-            pi=pi_to_analyze,
-            art=(
-                art_filter
-                if art_filter and art_filter not in ["Portfolio", "portfolio"]
-                else None
-            ),
-            limit=10000,
-        )
+
+        if use_story_level:
+            # For stories, use the flow_data itself as throughput data (already have lead times)
+            throughput_data = [f for f in flow_data if f.get("status") == "Done"]
+        else:
+            # For features, fetch from throughput endpoint
+            throughput_data = leadtime_service.client.get_throughput_data(
+                pi=pi_to_analyze,
+                art=(
+                    art_filter
+                    if art_filter and art_filter not in ["Portfolio", "portfolio"]
+                    else None
+                ),
+                limit=10000,
+            )
 
         # Create lookup for accurate lead times by issue_key
         accurate_leadtimes = {}
         if throughput_data:
-            for feature in throughput_data:
-                issue_key = feature.get("issue_key")
-                lead_time = feature.get("lead_time_days", 0)
+            for item in throughput_data:
+                issue_key = item.get("issue_key")
+                lead_time = item.get("lead_time_days") or item.get("total_leadtime", 0)
                 if issue_key and lead_time > 0:
                     accurate_leadtimes[issue_key] = lead_time
             print(
@@ -177,11 +208,11 @@ def littles_law_analyzer_node(state: AgentState) -> Dict[str, Any]:
 
         # Merge accurate lead times into flow_data
         merged_count = 0
-        for feature in flow_data:
-            issue_key = feature.get("issue_key") or feature.get("key")
-            old_leadtime = feature.get("total_leadtime", 0)
+        for item in flow_data:
+            issue_key = item.get("issue_key") or item.get("key")
+            old_leadtime = item.get("total_leadtime", 0)
             if issue_key and issue_key in accurate_leadtimes:
-                feature["total_leadtime"] = accurate_leadtimes[issue_key]
+                item["total_leadtime"] = accurate_leadtimes[issue_key]
                 merged_count += 1
                 print(
                     f"🔄 Merged {issue_key}: {old_leadtime:.1f} → {accurate_leadtimes[issue_key]:.1f} days"
@@ -192,34 +223,47 @@ def littles_law_analyzer_node(state: AgentState) -> Dict[str, Any]:
         else:
             print(f"⚠️  No lead times were merged - check issue_key matching")
 
-        # Log which features are being analyzed
+        # Log which items are being analyzed
         if flow_data:
-            print(f"📝 Features in analysis (Done status only):")
-            done_features = [f for f in flow_data if f.get("status") == "Done"]
-            for idx, feature in enumerate(done_features[:10], 1):  # Show first 10
-                feature_id = (
-                    feature.get("issue_key")
-                    or feature.get("key")
-                    or feature.get("id")
-                    or feature.get("feature_id")
+            print(f"📝 {item_type.capitalize()} in analysis (Done status only):")
+            done_items = [f for f in flow_data if f.get("status") == "Done"]
+            for idx, item in enumerate(done_items[:10], 1):  # Show first 10
+                item_id = (
+                    item.get("issue_key")
+                    or item.get("key")
+                    or item.get("id")
+                    or item.get("feature_id")
                     or "N/A"
                 )
-                art = feature.get("art", "N/A")
-                status = feature.get("status", "N/A")
-                leadtime = feature.get("total_leadtime", 0)
+                art = item.get("art", "N/A")
+                status = item.get("status", "N/A")
+                leadtime = item.get("total_leadtime", 0)
                 print(
-                    f"   {idx}. {feature_id} | ART: {art} | Status: {status} | Lead Time: {leadtime:.1f} days"
+                    f"   {idx}. {item_id} | ART: {art} | Status: {status} | Lead Time: {leadtime:.1f} days"
                 )
-            if len(done_features) > 10:
-                print(f"   ... and {len(done_features) - 10} more Done features")
-            print(f"📊 Total features: {len(flow_data)}, Done: {len(done_features)}")
+            if len(done_items) > 10:
+                print(f"   ... and {len(done_items) - 10} more Done {item_type}")
+            print(f"📊 Total {item_type}: {len(flow_data)}, Done: {len(done_items)}")
 
         # Get PI planning data (pip_data) - also filter by ART
         print(f"📋 Fetching PI planning data for {pi_to_analyze}...")
         pip_params = {"pi": pi_to_analyze}
         if art_filter and art_filter not in ["Portfolio", "portfolio"]:
             pip_params["art"] = art_filter
-        pip_data = leadtime_service.client.get_pip_data(**pip_params)
+
+        # Use story or feature planning data based on analysis level
+        pip_data = None
+        try:
+            if use_story_level:
+                # Story-level PIP data endpoint may not be available yet
+                pip_data = leadtime_service.client.get_story_pip_data(**pip_params)
+            else:
+                pip_data = leadtime_service.client.get_pip_data(**pip_params)
+        except Exception as pip_error:
+            print(
+                f"⚠️  Could not fetch {'story' if use_story_level else 'feature'} PIP data: {pip_error}"
+            )
+            print(f"   Continuing without planning accuracy data...")
 
         if pip_data:
             print(f"✅ Retrieved {len(pip_data)} planning records")
@@ -240,12 +284,13 @@ def littles_law_analyzer_node(state: AgentState) -> Dict[str, Any]:
             leadtime_service, pi_to_analyze, art_filter, lookback_pis=8
         )
 
-        # Calculate Little's Law metrics (with historical baseline)
+        # Calculate Little's Law metrics (with historical baseline and item type)
         metrics = _calculate_littles_law_metrics(
             flow_data,
             pi_to_analyze,
             analysis_summary,
             historical_baseline=historical_baseline,
+            item_type=item_type,  # Pass item type for proper labeling
         )
 
         if not metrics:
@@ -264,9 +309,11 @@ def littles_law_analyzer_node(state: AgentState) -> Dict[str, Any]:
         combined_metrics = {**metrics, **planning_metrics}
         updates["littles_law_metrics"] = combined_metrics
         print("📈 Little's Law Metrics:")
-        print(f"   • Throughput (λ): {metrics['throughput_per_day']:.2f} features/day")
+        print(
+            f"   • Throughput (λ): {metrics['throughput_per_day']:.2f} {item_type}/day"
+        )
         print(f"   • Lead Time (W): {metrics['avg_leadtime']:.1f} days")
-        print(f"   • Predicted WIP (L): {metrics['predicted_wip']:.1f} features")
+        print(f"   • Predicted WIP (L): {metrics['predicted_wip']:.1f} {item_type}")
         print(f"   • Flow Efficiency: {metrics['flow_efficiency']:.1f}%")
 
         if planning_metrics.get("total_planned"):
@@ -280,9 +327,9 @@ def littles_law_analyzer_node(state: AgentState) -> Dict[str, Any]:
                 f"   • Added Post-Planning: {planning_metrics.get('post_planning_count', 0)}"
             )
 
-        # Generate insights using combined data
+        # Generate insights using combined data (pass item_type for proper labeling)
         insights = _generate_comprehensive_insights(
-            state, combined_metrics, pi_to_analyze
+            state, combined_metrics, pi_to_analyze, item_type=item_type
         )
 
         if insights:
@@ -292,7 +339,7 @@ def littles_law_analyzer_node(state: AgentState) -> Dict[str, Any]:
             # Add to reasoning chain
             updates["reasoning_chain"] = [
                 f"Applied Little's Law analysis for PI {pi_to_analyze}",
-                f"Identified WIP optimization opportunity: {metrics['wip_reduction']:.1f} features",
+                f"Identified WIP optimization opportunity: {metrics['wip_reduction']:.1f} {item_type}",
                 f"Flow efficiency at {metrics['flow_efficiency']:.1f}% indicates {'high' if metrics['flow_efficiency'] < 50 else 'moderate'} waste",
             ]
 
@@ -455,16 +502,18 @@ def _calculate_littles_law_metrics(
     analysis_summary: Optional[Dict[str, Any]] = None,
     pi_duration_days: Optional[int] = None,
     historical_baseline: Optional[Dict[str, Any]] = None,
+    item_type: str = "features",
 ) -> Optional[Dict[str, Any]]:
     """
     Calculate Little's Law metrics from flow data.
 
     Args:
-        flow_data: List of features with lead time data
+        flow_data: List of items (features or stories) with lead time data
         pi: Program Increment identifier
         analysis_summary: Pre-calculated summary metrics from DL Webb APP (if available)
         pi_duration_days: Duration of PI in days (fetched from config if not provided)
         historical_baseline: Historical capacity baseline from past PIs
+        item_type: Type of items being analyzed ("features" or "stories")
 
     Returns:
         Dictionary with calculated metrics or None if insufficient data
@@ -1103,7 +1152,7 @@ def _analyze_missed_deliveries(
 
 
 def _generate_comprehensive_insights(
-    _state: AgentState, metrics: Dict[str, Any], pi: str
+    _state: AgentState, metrics: Dict[str, Any], pi: str, item_type: str = "features"
 ) -> List[Dict[str, Any]]:
     """
     Generate comprehensive insights combining Little's Law and planning analysis.
@@ -1115,35 +1164,55 @@ def _generate_comprehensive_insights(
     - Reasons for missed deliveries
 
     Enhanced with RAG for richer expert analysis.
+
+    Args:
+        _state: Agent state
+        metrics: Calculated metrics
+        pi: PI identifier
+        item_type: Type of items being analyzed ("features" or "stories")
     """
     insights = []
 
     # Prepare context for RAG enhancement
-    rag_context = {"metrics": metrics, "pi": pi}
+    rag_context = {"metrics": metrics, "pi": pi, "item_type": item_type}
+
+    # Check if LLM enhancement should be skipped (for performance)
+    # Can be controlled via state parameter
+    skip_llm_enhancement = _state.get("skip_littles_law_llm_enhancement", True)
+
+    if skip_llm_enhancement:
+        print(
+            "ℹ️  Skipping LLM enhancement for faster response (set skip_littles_law_llm_enhancement=False to enable)"
+        )
 
     # Generate flow insights (Little's Law)
-    flow_insight = _generate_flow_insight(metrics, pi)
+    flow_insight = _generate_flow_insight(metrics, pi, item_type)
     if flow_insight:
-        # Enhance with RAG if available
-        flow_insight = _enhance_insight_with_rag(flow_insight, rag_context)
+        # Enhance with RAG if available and not skipped
+        if not skip_llm_enhancement:
+            flow_insight = _enhance_insight_with_rag(flow_insight, rag_context)
         insights.append(flow_insight)
 
     # Generate planning accuracy insight
     if metrics.get("total_planned", 0) > 0:
-        planning_insight = _generate_planning_insight(metrics, pi)
+        planning_insight = _generate_planning_insight(metrics, pi, item_type)
         if planning_insight:
-            # Enhance with RAG if available
-            planning_insight = _enhance_insight_with_rag(planning_insight, rag_context)
+            # Enhance with RAG if available and not skipped
+            if not skip_llm_enhancement:
+                planning_insight = _enhance_insight_with_rag(
+                    planning_insight, rag_context
+                )
             insights.append(planning_insight)
 
     # Generate commitment analysis insight
     if metrics.get("committed_count", 0) > 0:
-        commitment_insight = _generate_commitment_insight(metrics, pi)
+        commitment_insight = _generate_commitment_insight(metrics, pi, item_type)
         if commitment_insight:
-            # Enhance with RAG if available
-            commitment_insight = _enhance_insight_with_rag(
-                commitment_insight, rag_context
-            )
+            # Enhance with RAG if available and not skipped
+            if not skip_llm_enhancement:
+                commitment_insight = _enhance_insight_with_rag(
+                    commitment_insight, rag_context
+                )
             insights.append(commitment_insight)
 
     return insights
@@ -1187,9 +1256,31 @@ def _enhance_insight_with_rag(
         # Build context for LLM
         metrics = context.get("metrics", {})
         pi = context.get("pi", "Unknown")
+        item_type = context.get("item_type", "features")
 
-        # Create a rich prompt for the LLM with scenario modeling format
-        prompt = f"""You are an expert Agile coach with 15+ years of experience analyzing flow metrics using Little's Law for SAFe organizations.
+        # Use a concise coaching template instead of RAG retrieval
+        # RAG retrieval can be slow and the full template is too large for the prompt
+        coaching_template = """Provide a comprehensive Little's Law analysis:
+
+## Analysis Structure:
+1. **Little's Law Formula**: State L = λ × W with actual values
+2. **Historical Context**: Compare current vs historical capacity (if available)
+3. **System WIP Calculation**: Calculate predicted WIP from throughput and lead time
+4. **Scenario Analysis**: Show WIP impact for current, +50%, and -30% throughput scenarios
+5. **Stage-Level Breakdown**: Map WIP to workflow stages (if data available)
+6. **WIP Impact Table**: Show how increased WIP affects lead time
+7. **Actionable Recommendations**: Provide 2-3 specific actions with owners and timelines
+
+## Requirements:
+- Use ACTUAL numbers from metrics (not placeholders)
+- Show all calculations explicitly (e.g., "0.2 × 70 = 14")
+- Create markdown tables for clarity
+- Focus on Little's Law relationships
+- Make it actionable for RTEs, PMs, and Scrum Masters
+- Connect to SAFe practices (PI Planning, ART Sync, flow metrics)"""
+
+        # Create prompt with metrics and retrieved template
+        prompt = f"""You are an expert Agile coach analyzing flow metrics using Little's Law for SAFe organizations.
 
 **Current Insight:**
 Title: {insight['title']}
@@ -1198,19 +1289,19 @@ Interpretation: {insight['interpretation']}
 
 **Flow Metrics (Little's Law Analysis):**
 - PI: {pi}
-- Throughput (λ): {metrics.get('throughput_per_day', 0):.2f} features/day
+- Throughput (λ): {metrics.get('throughput_per_day', 0):.2f} {item_type}/day
 - Average Lead Time (W): {metrics.get('avg_leadtime', 0):.1f} days
-- Predicted WIP (L): {metrics.get('predicted_wip', 0):.1f} features
+- Predicted WIP (L): {metrics.get('predicted_wip', 0):.1f} {item_type}
 - Flow Efficiency: {metrics.get('flow_efficiency', 0):.1f}%
 - Active Time: {metrics.get('avg_active_time', 0):.1f} days
 - Wait Time: {metrics.get('avg_wait_time', 0):.1f} days
-- Total Features: {metrics.get('total_features', 0)}
+- Total {item_type.capitalize()}: {metrics.get('total_features', 0)}
 - Lead Time Std Dev: {metrics.get('leadtime_stddev', 0):.1f} days
 - Lead Time Range: {metrics.get('leadtime_min', 0):.1f}-{metrics.get('leadtime_max', 0):.1f} days
 
 **Historical Capacity Baseline:**
 - Based on: {metrics.get('capacity_analysis', dict()).get('pis_in_baseline', 0)} previous PIs
-- Historical Avg Throughput: {metrics.get('capacity_analysis', dict()).get('historical_avg_throughput_per_day', 0):.2f} features/day
+- Historical Avg Throughput: {metrics.get('capacity_analysis', dict()).get('historical_avg_throughput_per_day', 0):.2f} {item_type}/day
 - Historical Avg Lead Time: {metrics.get('capacity_analysis', dict()).get('historical_avg_leadtime', 0):.1f} days
 - Throughput vs Baseline: {metrics.get('capacity_analysis', dict()).get('throughput_vs_baseline_pct', 0):+.1f}%
 - Lead Time vs Baseline: {metrics.get('capacity_analysis', dict()).get('leadtime_vs_baseline_pct', 0):+.1f}%
@@ -1222,109 +1313,18 @@ Interpretation: {insight['interpretation']}
 
 **Planning Metrics:**
 - Planning Accuracy: {metrics.get('planning_accuracy', 0):.1f}%
-- Committed Features: {metrics.get('committed_count', 0)}
-- Uncommitted Features: {metrics.get('uncommitted_count', 0)}
+- Committed {item_type.capitalize()}: {metrics.get('committed_count', 0)}
+- Uncommitted {item_type.capitalize()}: {metrics.get('uncommitted_count', 0)}
 - Post-Planning Additions: {metrics.get('post_planning_count', 0)}
 - Delivered Committed: {metrics.get('delivered_committed_count', 0)}
 - Missed Committed: {metrics.get('missed_committed_count', 0)}
 
-**Task:**
-Provide a comprehensive Little's Law analysis using this exact structure:
+**COACHING TEMPLATE:**
+{coaching_template}
 
-## 1️⃣ Little's Law Refresher (Applied)
-
-Start with the formula and clearly state:
-- **Little's Law**: L = λ × W
-- Rearrangements: WIP = Throughput × Lead Time, Throughput = WIP / Lead Time
-- Define: One Feature = flow unit, Time unit = calendar days
-
-## 1.5️⃣ Historical Capacity Context
-
-Compare current performance to historical baseline:
-- Show current vs historical throughput and lead time
-- Interpret capacity utilization percentage
-- Explain if current performance is sustainable or anomalous
-- Use historical data as proxy for realistic capacity planning
-
-## 2️⃣ System-Level Mapping (Entire Flow)
-
-Create 3 throughput scenarios based on the current {metrics.get('throughput_per_day', 0):.2f} features/day:
-- **Scenario A** (current): Calculate WIP = λ × W with actual values
-- **Scenario B** (improved, +50% throughput): Show what happens
-- **Scenario C** (degraded, -30% throughput): Show what happens
-
-For each scenario, provide:
-```
-WIP = throughput × {metrics.get('avg_leadtime', 0):.0f} days = X features
-```
-Add interpretation (e.g., "Your system should never exceed ~X Features in-flight...")
-
-## 3️⃣ Stage-Level Little's Law Mapping
-
-If stage data available, create a detailed table:
-| Stage | Days | WIP (= λ × days) | WIP Policy |
-|-------|------|------------------|------------|
-| In Analysis | X | X.X | ≤ X |
-| In Progress | Y | Y.Y | ≤ Y |
-...
-
-Show total WIP matches system-level calculation.
-
-## 4️⃣ What Happens If WIP Increases?
-
-Create an impact table showing relationship:
-| Total WIP | Resulting Lead Time |
-|-----------|-------------------|
-| Current | X days |
-| +25% | Y days |
-| +50% | Z days |
-
-Add warning: "Lead time grows linearly with WIP — this is the #1 hidden SAFe problem."
-
-## 5️⃣ Flow Control Rules You Should Enforce
-
-Provide specific, numeric rules:
-### 🔴 Hard WIP Limits (non-negotiable)
-- In Progress ≤ X Features
-- SIT ≤ Y Features
-- UAT ≤ Z Features
-- Total WIP ≤ N Features
-
-### 🟡 Aging Signals (flow health)
-- Any Feature in state > 1.5× target days → escalation
-- Any "Ready" state > 3 days → dependency issue
-- Any Feature > X days total → ART Sync review
-
-## 6️⃣ Why This Matters for SAFe
-
-Explain impact:
-- Turns Kanban policies into math
-- Makes lead time predictable
-- Prevents PI overcommitment
-- Gives RTEs & PMs objective arguments
-
-Provide before/after example:
-**Before**: "We have too much in progress"
-**After**: "Our WIP is X, so lead time will mathematically be ~Y days"
-
-## 7️⃣ Next Steps & Recommendations
-
-Offer 2-3 specific actions based on the data:
-- If flow efficiency < 50%: Focus on reducing wait time
-- If WIP > optimal: Implement strict WIP limits
-- If planning accuracy < 70%: Review commitment process
-
-**CRITICAL REQUIREMENTS:**
-1. Use ACTUAL numbers from the metrics (not placeholders)
-2. Show ALL calculations explicitly (e.g., "0.2 × 70 = 14")
-3. Create tables in markdown format
-4. Use emojis for section headers (1️⃣, 2️⃣, etc.)
-5. Be mathematically precise — this turns opinions into facts
-6. Focus on Little's Law relationship throughout
-7. Make it actionable for RTEs, PMs, and Scrum Masters
-8. Connect observations to SAFe practices explicitly
-
-Generate the complete analysis now, using the structure above with actual numbers."""
+**TASK:**
+Using the coaching template above, provide a comprehensive Little's Law analysis with ACTUAL numbers from the metrics.
+Replace all placeholders (X, Y, Z) with real calculated values. Show all math explicitly."""
 
         # Get enhanced analysis from LLM with RAG
         enhanced_text = _llm_service.enhance_insight_with_expert_analysis(
@@ -1349,16 +1349,16 @@ Generate the complete analysis now, using the structure above with actual number
 
 
 def _generate_flow_insight(
-    metrics: Dict[str, Any], pi: str
+    metrics: Dict[str, Any], pi: str, item_type: str = "features"
 ) -> Optional[Dict[str, Any]]:
     """Generate Little's Law flow optimization insight."""
 
     # Build observation
     observation_parts = [
-        f"During PI {pi} ({metrics['pi_duration_days']}-day period), {metrics['total_features']} features were completed.",
-        f"Throughput (λ) = {metrics['throughput_per_day']:.2f} features/day.",
+        f"During PI {pi} ({metrics['pi_duration_days']}-day period), {metrics['total_features']} {item_type} were completed.",
+        f"Throughput (λ) = {metrics['throughput_per_day']:.2f} {item_type}/day.",
         f"Average Lead Time (W) = {metrics['avg_leadtime']:.1f} days (range: {metrics['leadtime_min']:.1f}-{metrics['leadtime_max']:.1f}).",
-        f"Predicted WIP (L) = {metrics['predicted_wip']:.1f} features.",
+        f"Predicted WIP (L) = {metrics['predicted_wip']:.1f} {item_type}.",
         f"Flow Efficiency = {metrics['flow_efficiency']:.1f}% (active work time / total lead time).",
     ]
 
@@ -1373,7 +1373,7 @@ def _generate_flow_insight(
         num_historical_pis = capacity_analysis.get("pis_in_baseline", 0)
 
         observation_parts.append(
-            f"Historical Baseline ({num_historical_pis} PIs): {historical_throughput:.2f} features/day average. "
+            f"Historical Baseline ({num_historical_pis} PIs): {historical_throughput:.2f} {item_type}/day average. "
             f"Current throughput is {abs(throughput_change):.1f}% {'above' if throughput_change > 0 else 'below'} historical capacity "
             f"({capacity_util:.1f}% capacity utilization)."
         )
@@ -1529,7 +1529,7 @@ def _generate_flow_insight(
         actions.append(
             {
                 "timeframe": "short-term",
-                "description": f"Implement strict WIP limits: cap active features at {metrics['optimal_wip']:.0f} per team/ART",
+                "description": f"Implement strict WIP limits: cap active {item_type} at {metrics['optimal_wip']:.0f} per team/ART",
                 "owner": "Scrum Masters & Product Owners",
                 "effort": "Low",
                 "dependencies": ["Team agreement on WIP policy"],
@@ -1576,8 +1576,9 @@ def _generate_flow_insight(
     )
 
     # Create the main insight
+    level_label = "Story-Level" if item_type == "stories" else "Feature-Level"
     main_insight = {
-        "title": f"Little's Law Analysis: PI {pi} Flow Optimization",
+        "title": f"Little's Law Analysis: PI {pi} {level_label} Flow Optimization",
         "severity": metrics["severity"],
         "confidence": metrics["confidence"],
         "scope": "pi",
@@ -1637,7 +1638,7 @@ def _generate_flow_insight(
 
 
 def _generate_planning_insight(
-    metrics: Dict[str, Any], pi: str
+    metrics: Dict[str, Any], pi: str, item_type: str = "features"
 ) -> Optional[Dict[str, Any]]:
     """Generate planning accuracy and predictability insight."""
 
@@ -1651,8 +1652,8 @@ def _generate_planning_insight(
     # Build observation
     observation_parts = [
         f"PI {pi} planning data:",
-        f"{committed_count} committed features, {uncommitted_count} uncommitted features.",
-        f"{post_planning_count} features added after PI planning.",
+        f"{committed_count} committed {item_type}, {uncommitted_count} uncommitted {item_type}.",
+        f"{post_planning_count} {item_type} added after PI planning.",
         f"Planning accuracy: {planning_accuracy:.1f}% ({delivered_count} delivered, {missed_count} missed).",
     ]
 
@@ -1848,7 +1849,7 @@ def _generate_planning_insight(
 
 
 def _generate_commitment_insight(
-    metrics: Dict[str, Any], pi: str
+    metrics: Dict[str, Any], pi: str, item_type: str = "features"
 ) -> Optional[Dict[str, Any]]:
     """Generate commitment discipline and scope management insight."""
 
@@ -1863,8 +1864,8 @@ def _generate_commitment_insight(
     # Build observation
     observation_parts = [
         f"PI {pi} commitment breakdown:",
-        f"{committed_pct:.1f}% committed ({committed_count} features),",
-        f"{100 - committed_pct:.1f}% uncommitted ({uncommitted_count} features).",
+        f"{committed_pct:.1f}% committed ({committed_count} {item_type}),",
+        f"{100 - committed_pct:.1f}% uncommitted ({uncommitted_count} {item_type}).",
     ]
 
     # Build interpretation

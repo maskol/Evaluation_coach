@@ -135,8 +135,8 @@
                     <button class="main-tab" onclick="switchMainTab('insights')">
                         💡 Insights
                     </button>
-                    <button class="main-tab" onclick="switchMainTab('littleslaw')">
-                        🔬 Little's Law
+                    <button class="main-tab" onclick="switchMainTab('flowhealth')">
+                        🏥 Flow Health Check
                     </button>
                     <button class="main-tab" onclick="switchMainTab('metrics')">
                         📈 Metrics
@@ -246,6 +246,10 @@
                                 autocomplete="off">
                             <button type="submit" class="send-button" id="sendButton">
                                 Send
+                            </button>
+                            <button type="button" class="cancel-button" id="cancelButton" style="display: none;"
+                                onclick="cancelChatRequest()">
+                                ✕ Cancel
                             </button>
                         </form>
                     </div>
@@ -395,8 +399,8 @@
                     </div>
                 </div>
 
-                <!-- Little's Law Tab Content -->
-                <div class="main-tab-content" id="littleslawContent" style="display: none;">
+                <!-- Flow Health Check Tab Content -->
+                <div class="main-tab-content" id="flowhealthContent" style="display: none;">
                     <div class="messages">
                         <!-- Content will be dynamically loaded by JavaScript -->
                     </div>

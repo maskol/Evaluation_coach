@@ -1073,6 +1073,12 @@ function exportReport() {
     }, 1000);
 }
 
+// Global abort controller for chat requests
+let currentChatAbortController = null;
+let thinkingMessageElement = null;
+let thinkingStartTime = null;
+let thinkingTimer = null;
+
 async function sendMessage(event) {
     event.preventDefault();
 
@@ -1092,13 +1098,49 @@ async function sendMessage(event) {
     // Clear input
     input.value = '';
 
-    // Disable send button
+    // Create new abort controller for this request
+    currentChatAbortController = new AbortController();
+
+    // Add animated thinking indicator
+    thinkingStartTime = Date.now();
+    const thinkingMessage = {
+        type: 'agent',
+        content: '<div class="thinking-indicator"><div class="thinking-dots"><span>.</span><span>.</span><span>.</span></div><div class="thinking-text">AI Coach is thinking<span class="thinking-elapsed"></span></div></div>',
+        timestamp: new Date()
+    };
+    thinkingMessageElement = addMessage(thinkingMessage);
+
+    // Start timer to show elapsed time
+    thinkingTimer = setInterval(() => {
+        if (thinkingMessageElement) {
+            const elapsed = Math.floor((Date.now() - thinkingStartTime) / 1000);
+            const elapsedSpan = thinkingMessageElement.querySelector('.thinking-elapsed');
+            if (elapsedSpan) {
+                elapsedSpan.textContent = ` (${elapsed}s)`;
+                if (elapsed > 10) {
+                    elapsedSpan.style.color = '#f59e0b';
+                }
+                if (elapsed > 20) {
+                    elapsedSpan.style.color = '#ef4444';
+                }
+            }
+        }
+    }, 1000);
+
+    // Update UI - disable send, show cancel
     const sendButton = document.getElementById('sendButton');
+    const cancelButton = document.getElementById('cancelButton');
     sendButton.disabled = true;
     sendButton.textContent = 'Thinking...';
+    if (cancelButton) {
+        cancelButton.style.display = 'inline-block';
+    }
+
+    console.log('🚀 Sending chat request to API...');
+    const requestStartTime = Date.now();
 
     try {
-        // Send to API
+        // Send to API with abort signal
         const response = await fetch(`${API_BASE_URL}/v1/chat`, {
             method: 'POST',
             headers: {
@@ -1113,34 +1155,87 @@ async function sendMessage(event) {
                     time_range: appState.timeRange,
                     metric_focus: appState.metricFocus
                 }
-            })
+            }),
+            signal: currentChatAbortController.signal
         });
+
+        // Clear thinking timer
+        if (thinkingTimer) {
+            clearInterval(thinkingTimer);
+            thinkingTimer = null;
+        }
+
+        // Remove thinking indicator
+        if (thinkingMessageElement && thinkingMessageElement.parentElement) {
+            thinkingMessageElement.parentElement.removeChild(thinkingMessageElement);
+            thinkingMessageElement = null;
+        }
 
         if (response.ok) {
             const data = await response.json();
+            const elapsed = Math.floor((Date.now() - thinkingStartTime) / 1000);
+            const networkTime = Math.floor((Date.now() - requestStartTime) / 1000);
+            console.log(`✅ Response received in ${elapsed}s (network: ${networkTime}s)`);
             const agentMessage = {
                 type: 'agent',
                 content: data.message,
                 timestamp: new Date(data.timestamp)
             };
             addMessage(agentMessage);
+            updateStatusBar(`Response received in ${elapsed}s`);
         } else {
             throw new Error('API request failed');
         }
     } catch (error) {
-        console.error('Error sending message:', error);
-        // Fall back to local response
-        const responseText = generateAIResponse(messageText);
-        const agentMessage = {
-            type: 'agent',
-            content: responseText,
-            timestamp: new Date()
-        };
-        addMessage(agentMessage);
+        // Clear thinking timer
+        if (thinkingTimer) {
+            clearInterval(thinkingTimer);
+            thinkingTimer = null;
+        }
+
+        // Remove thinking indicator
+        if (thinkingMessageElement && thinkingMessageElement.parentElement) {
+            thinkingMessageElement.parentElement.removeChild(thinkingMessageElement);
+            thinkingMessageElement = null;
+        }
+
+        if (error.name === 'AbortError') {
+            // Request was cancelled by user
+            console.log('Chat request cancelled by user');
+            const cancelMessage = {
+                type: 'agent',
+                content: '⚠️ <strong>Request cancelled</strong><br><br>The chat request was stopped. Feel free to ask another question!',
+                timestamp: new Date()
+            };
+            addMessage(cancelMessage);
+        } else {
+            console.error('Error sending message:', error);
+            // Fall back to local response
+            const responseText = generateAIResponse(messageText);
+            const agentMessage = {
+                type: 'agent',
+                content: responseText,
+                timestamp: new Date()
+            };
+            addMessage(agentMessage);
+        }
     } finally {
-        // Re-enable send button
+        // Re-enable send button, hide cancel
         sendButton.disabled = false;
         sendButton.textContent = 'Send';
+        if (cancelButton) {
+            cancelButton.style.display = 'none';
+        }
+        currentChatAbortController = null;
+        thinkingStartTime = null;
+    }
+}
+
+// Cancel ongoing chat request
+function cancelChatRequest() {
+    if (currentChatAbortController) {
+        currentChatAbortController.abort();
+        updateStatusBar('Chat request cancelled');
     }
 }
 
@@ -1162,7 +1257,7 @@ function switchMainTab(tabName) {
     }
 
     // Show/hide tab content
-    const tabs = ['dashboard', 'chat', 'insights', 'littleslaw', 'metrics', 'admin'];
+    const tabs = ['dashboard', 'chat', 'insights', 'flowhealth', 'metrics', 'admin'];
     tabs.forEach(tab => {
         const content = document.getElementById(`${tab}Content`);
         if (content) {
@@ -1173,8 +1268,8 @@ function switchMainTab(tabName) {
     // Load data when switching to specific tabs
     if (tabName === 'insights') {
         renderInsightsTab();
-    } else if (tabName === 'littleslaw') {
-        renderLittlesLawTab();
+    } else if (tabName === 'flowhealth') {
+        renderFlowHealthTab();
     } else if (tabName === 'metrics') {
         loadMetricsCatalog();
     } else if (tabName === 'admin') {
@@ -1880,11 +1975,13 @@ window.addEventListener('click', (event) => {
 });
 
 // Export insight with comprehensive analysis data
-function exportInsight(index) {
+async function exportInsight(index) {
     const insight = appState.currentInsights?.[index];
     if (!insight) return;
 
     console.log('💾 Exporting insight with analysis data:', insight);
+
+    updateStatusBar('Preparing insight for export...');
 
     // Build comprehensive export data
     const exportData = {
@@ -1894,17 +1991,15 @@ function exportInsight(index) {
             application: 'Evaluation Coach',
             insight_index: index + 1
         },
-        insight: {
-            title: insight.title,
-            severity: insight.severity,
-            confidence: insight.confidence,
-            scope: insight.scope,
-            scope_id: insight.scope_id,
-            observation: insight.observation,
-            interpretation: insight.interpretation,
-            created_at: insight.created_at,
-            status: insight.status
-        },
+        title: insight.title,
+        severity: insight.severity,
+        confidence: insight.confidence,
+        scope: insight.scope,
+        scope_id: insight.scope_id,
+        observation: insight.observation,
+        interpretation: insight.interpretation,
+        created_at: insight.created_at,
+        status: insight.status,
         root_causes: (insight.root_causes || []).map(rc => ({
             description: rc.description,
             evidence: rc.evidence || [],
@@ -1923,35 +2018,79 @@ function exportInsight(index) {
             success_signal: action.success_signal
         })),
         expected_outcomes: insight.expected_outcomes || {},
-        analysis_data: {
-            evidence: insight.evidence || [],
-            metric_references: insight.metric_references || [],
-            // Include any additional analysis data stored in the insight
-            raw_data: insight.raw_data || null,
-            calculations: insight.calculations || null,
-            historical_comparison: insight.historical_comparison || null
-        },
-        filters_applied: {
-            art: appState.selectedART,
-            pi: appState.selectedPI,
-            team: appState.selectedTeam
-        }
+        evidence: insight.evidence || [],
+        metric_references: insight.metric_references || [],
     };
 
-    // Create formatted JSON
-    const json = JSON.stringify(exportData, null, 2);
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    const timestamp = new Date().toISOString().split('T')[0];
-    a.download = `insight-${insight.title.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-${timestamp}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    try {
+        // Call backend API to export insight to Excel
+        const queryParams = new URLSearchParams();
+        if (appState.selectedPI && appState.selectedPI !== 'all') {
+            queryParams.append('pis', appState.selectedPI);
+        }
+        if (appState.selectedART && appState.selectedART !== 'all') {
+            queryParams.append('arts', appState.selectedART);
+        }
+        if (appState.selectedTeam) {
+            queryParams.append('team', appState.selectedTeam);
+        }
+        queryParams.append('analysis_level', appState.analysisLevel || 'feature');
 
-    updateStatusBar(`Insight #${index + 1} exported with analysis data`);
+        const response = await fetch(`${API_BASE_URL}/v1/insights/export?${queryParams}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(exportData)
+        });
+
+        if (!response.ok) {
+            throw new Error(`Export failed: ${response.statusText}`);
+        }
+
+        // Download the Excel file
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+
+        // Extract filename from Content-Disposition header or use default
+        const contentDisposition = response.headers.get('Content-Disposition');
+        let filename = 'insight_export.xlsx';
+        if (contentDisposition) {
+            const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+            if (filenameMatch && filenameMatch[1]) {
+                filename = filenameMatch[1].replace(/['"]/g, '');
+            }
+        }
+
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        updateStatusBar(`✅ Insight #${index + 1} exported to Excel with all related ${appState.analysisLevel === 'story' ? 'stories' : 'features'}`);
+    } catch (error) {
+        console.error('Error exporting insight:', error);
+        updateStatusBar(`❌ Failed to export insight: ${error.message}`);
+
+        // Fallback to JSON export
+        console.log('Falling back to JSON export');
+        const json = JSON.stringify(exportData, null, 2);
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const timestamp = new Date().toISOString().split('T')[0];
+        a.download = `insight-${insight.title.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-${timestamp}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        updateStatusBar(`Insight #${index + 1} exported as JSON (Excel export unavailable)`);
+    }
 }
 
 // Print a single insight as a formatted report
@@ -3057,6 +3196,8 @@ function addMessage(message) {
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
 
     appState.messages.push(message);
+
+    return messageDiv;
 }
 
 // Generate AI response based on user input
@@ -3959,11 +4100,11 @@ function showTemplates() {
 // ============================================
 
 // Render Little's Law Analysis tab
-function renderLittlesLawTab() {
-    console.log('🔬 Loading Little\'s Law Analysis tab...');
+function renderFlowHealthTab() {
+    console.log('🏥 Loading Flow Health Check tab...');
 
-    const littleslawContent = document.getElementById('littleslawContent');
-    if (!littleslawContent) return;
+    const flowhealthContent = document.getElementById('flowhealthContent');
+    if (!flowhealthContent) return;
 
     // Build filter info respecting scope priority
     const filterParts = [
@@ -3990,88 +4131,187 @@ function renderLittlesLawTab() {
 
     const filterInfo = filterParts.join(' | ');
 
-    // Show initial view with Generate button
-    littleslawContent.innerHTML = `
-        <div class="messages">
+    // Render Flow Health Check interface
+    flowhealthContent.innerHTML = `
+        <div class="messages" style="padding: 20px;">
             <div class="active-context-inline">
-                <div class="active-context-title-inline">📊 Active Filters</div>
+                <div class="active-context-title-inline">📊 Active Context</div>
                 <div class="active-context-content-inline">
                     ${filterInfo}
                 </div>
             </div>
 
-            <div style="background: white; border-radius: 8px; padding: 40px; text-align: center;">
-                <div style="font-size: 48px; margin-bottom: 16px;">🔬</div>
-                <h2 style="margin-bottom: 16px; color: #333;">Little's Law Flow Analysis</h2>
-                <p style="color: #666; margin-bottom: 24px; line-height: 1.6;">
-                    Analyze your flow metrics, planning accuracy, and commitment discipline using Little's Law.
-                    <br>Get insights on WIP optimization, planning patterns, and delivery predictability.
-                </p>
-                <button 
-                    id="generateLittlesLawBtn"
-                    onclick="generateLittlesLawAnalysis()" 
-                    style="
-                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                        color: white;
-                        border: none;
-                        padding: 16px 32px;
-                        font-size: 16px;
-                        font-weight: 600;
-                        border-radius: 8px;
-                        cursor: pointer;
-                        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-                        transition: all 0.3s ease;
-                        display: inline-flex;
-                        align-items: center;
-                        gap: 8px;
-                    "
-                    onmouseover="if(!this.disabled) { this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 16px rgba(102, 126, 234, 0.5)'; }"
-                    onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(102, 126, 234, 0.4)'"
-                >
-                    <span id="generateLittlesLawBtnIcon">🚀</span>
-                    <span id="generateLittlesLawBtnText">Generate Little's Law Analysis</span>
-                </button>
-                <button 
-                    id="cancelLittlesLawBtn"
-                    onclick="cancelLittlesLawGeneration()" 
-                    style="
-                        background: #FF3B30;
-                        color: white;
-                        border: none;
-                        padding: 16px 32px;
-                        font-size: 16px;
-                        font-weight: 600;
-                        border-radius: 8px;
-                        cursor: pointer;
-       Cancel any existing request
-    if (appState.littleslawAbortController) {
-        appState.littleslawAbortController.abort();
-    }
+            <div style="background: white; border-radius: 8px; padding: 30px; margin-top: 20px;">
+                <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 24px;">
+                    <div style="font-size: 36px;">🏥</div>
+                    <div>
+                        <h2 style="margin: 0; color: #333;">Flow Health Check</h2>
+                        <p style="margin: 4px 0 0 0; color: #666; font-size: 14px;">Diagnose flow problems through systematic questioning</p>
+                    </div>
+                </div>
 
-    // Create new abort controller
-    appState.littleslawAbortController = new AbortController();
+                <!-- Quick Test Section -->
+                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; padding: 20px; margin-bottom: 24px; color: white;">
+                    <h3 style="margin: 0 0 12px 0; display: flex; align-items: center; gap: 8px;">
+                        <span>🧠</span> One-Minute Flow Health Test
+                    </h3>
+                    <p style="margin: 0 0 16px 0; opacity: 0.9; font-size: 14px;">Answer these three questions to quickly assess if flow is under control:</p>
+                    <div style="background: rgba(255,255,255,0.15); border-radius: 6px; padding: 16px; display: grid; gap: 12px;">
+                        <div style="display: flex; align-items: start; gap: 8px;">
+                            <span style="font-weight: bold; min-width: 20px;">1.</span>
+                            <span>How many items are in progress right now?</span>
+                        </div>
+                        <div style="display: flex; align-items: start; gap: 8px;">
+                            <span style="font-weight: bold; min-width: 20px;">2.</span>
+                            <span>What is our 85th percentile flow time?</span>
+                        </div>
+                        <div style="display: flex; align-items: start; gap: 8px;">
+                            <span style="font-weight: bold; min-width: 20px;">3.</span>
+                            <span>What would we stop if we started something new?</span>
+                        </div>
+                    </div>
+                    <p style="margin: 16px 0 0 0; font-size: 13px; font-style: italic; opacity: 0.9;">
+                        ⚠️ If people can't answer → flow is not under control
+                    </p>
+                </div>
 
-    //                  box-shadow: 0 4px 12px rgba(255, 59, 48, 0.4);
-                        transition: all 0.3s ease;
-                        display: none;
-                        align-items: center;
-                        gap: 8px;
-                        margin-left: 12px;
-                    "
-                    onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 16px rgba(255, 59, 48, 0.5)';"
-                    onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(255, 59, 48, 0.4)'"
-                >
-                    🛑 Cancel
-                </button>
-                <div style="margin-top: 16px; font-size: 12px; color: #8E8E93;">
-                    📊 Analyzes: Flow Efficiency • WIP Levels • Planning Accuracy • Commitment Discipline
+                <!-- Diagnostic Categories -->
+                <div class="flow-diagnostic-categories">
+                    ${renderFlowDiagnosticCategory('wip', '1️⃣ WIP / Flow Load', 'Are we overloaded?', [
+        'How many items are currently in progress — right now?',
+        'How many were in progress 4 weeks ago?',
+        'What happens to lead time when we start one more item?',
+        'Which work could we safely pause today?',
+        'Who decides when work is allowed to start?'
+    ], {
+        good: 'Clear numbers, explicit limits, trade-offs discussed',
+        bad: '"It depends", "everything is important", no start policy'
+    })}
+                    
+                    ${renderFlowDiagnosticCategory('time', '2️⃣ Flow Time', 'How fast do things really move?', [
+        'How long does a typical item take end-to-end?',
+        'What is the 85th percentile flow time?',
+        'Where does work wait the longest?',
+        'Which step adds the most delay but the least value?',
+        'How long does work wait before anyone touches it?'
+    ], {
+        good: 'Percentiles known, waiting points visible',
+        bad: 'Only averages known, delays blamed on people'
+    })}
+                    
+                    ${renderFlowDiagnosticCategory('velocity', '3️⃣ Flow Velocity', 'Do we have stable throughput?', [
+        'How stable has throughput been over the last 3–4 periods?',
+        'When velocity drops, what usually changed first?',
+        'Did we finish more, or just start more?',
+        'What is the smallest unit we reliably complete?'
+    ], {
+        good: 'Stable ranges, causes understood',
+        bad: 'Volatile delivery, explanations focus on effort'
+    })}
+                    
+                    ${renderFlowDiagnosticCategory('efficiency', '4️⃣ Flow Efficiency', 'How much time is actually work?', [
+        'How much of flow time is active work vs waiting?',
+        'What approvals or handoffs cause the longest delays?',
+        'Which delays protect us from risk — and which don\'t?',
+        'If we removed one step, which would improve flow most?'
+    ], {
+        good: 'Waiting is acknowledged and measured',
+        bad: "Focus on 'keeping people busy'"
+    })}
+                    
+                    ${renderFlowDiagnosticCategory('predictability', '5️⃣ Predictability', 'Can we trust our plans?', [
+        'How often do we deliver within our forecast range?',
+        'When plans fail, what changed mid-stream?',
+        'Which assumptions were wrong?',
+        'Did WIP change during the period?'
+    ], {
+        good: 'Variance explained by system changes',
+        bad: 'Misses blamed on execution or commitment'
+    })}
+                    
+                    ${renderFlowDiagnosticCategory('policies', '6️⃣ Decision-Making & Policies', 'Is flow designed or accidental?', [
+        'What are our explicit WIP limits?',
+        'What is our policy for starting work?',
+        'What is our policy for stopping work?',
+        'Who is allowed to override flow limits — and how often?'
+    ], {
+        good: 'Policies exist and are respected',
+        bad: 'Flow depends on pressure and escalation'
+    })}
+                    
+                    ${renderFlowDiagnosticCategory('leadership', '7️⃣ Executive Probing', 'Is leadership helping or harming flow?', [
+        'What do we usually do when delivery slows down?',
+        'When was the last time we stopped work instead of starting more?',
+        'How do we make trade-offs visible?',
+        'Which metric would tell us we are overloaded?'
+    ], {
+        good: '"We\'re over WIP limit", "We need to stop something"',
+        bad: '"We push harder", "We add people", "We escalate"'
+    })}
+                </div>
+
+                <!-- Flow Smell Checklist -->
+                <div style="background: #FFF9E6; border: 2px solid #FFD700; border-radius: 8px; padding: 20px; margin-top: 24px;">
+                    <h3 style="margin: 0 0 16px 0; color: #D97706; display: flex; align-items: center; gap: 8px;">
+                        <span>🚨</span> Flow Smell Checklist (Fast Diagnosis)
+                    </h3>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                        <div>
+                            <h4 style="margin: 0 0 8px 0; color: #DC2626; font-size: 14px;">❌ Bad Flow Indicators:</h4>
+                            <ul style="margin: 0; padding-left: 20px; font-size: 14px; color: #333;">
+                                <li>"Everyone is busy"</li>
+                                <li>"Just one more thing"</li>
+                                <li>"We'll catch up later"</li>
+                                <li>"We need better estimates"</li>
+                                <li>"This team is slow"</li>
+                            </ul>
+                        </div>
+                        <div>
+                            <h4 style="margin: 0 0 8px 0; color: #059669; font-size: 14px;">✅ Good Flow Indicators:</h4>
+                            <ul style="margin: 0; padding-left: 20px; font-size: 14px; color: #333;">
+                                <li>"We're over WIP limit"</li>
+                                <li>"We need to stop something"</li>
+                                <li>"Flow time increased when we added work"</li>
+                                <li>"Let's stabilize before forecasting"</li>
+                            </ul>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     `;
 }
 
-// Generate Little's Law analysis
+function renderFlowDiagnosticCategory(id, title, subtitle, questions, interpretation) {
+    return `
+        <div class="flow-diagnostic-card" style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin-bottom: 16px;">
+            <div style="margin-bottom: 16px;">
+                <h3 style="margin: 0 0 4px 0; color: #333; font-size: 18px;">${title}</h3>
+                <p style="margin: 0; color: #667eea; font-weight: 600; font-size: 14px;">${subtitle}</p>
+            </div>
+            
+            <div style="background: #F9FAFB; border-radius: 6px; padding: 16px; margin-bottom: 16px;">
+                <h4 style="margin: 0 0 12px 0; color: #666; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">Probing Questions:</h4>
+                <ul style="margin: 0; padding-left: 20px; display: grid; gap: 8px;">
+                    ${questions.map(q => `<li style="color: #333; font-size: 14px;">${q}</li>`).join('')}
+                </ul>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div style="background: #ECFDF5; border-left: 3px solid #10B981; padding: 12px; border-radius: 4px;">
+                    <div style="font-weight: 600; color: #059669; font-size: 13px; margin-bottom: 4px;">✅ Good Flow:</div>
+                    <div style="color: #065F46; font-size: 13px;">${interpretation.good}</div>
+                </div>
+                <div style="background: #FEF2F2; border-left: 3px solid #EF4444; padding: 12px; border-radius: 4px;">
+                    <div style="font-weight: 600; color: #DC2626; font-size: 13px; margin-bottom: 4px;">❌ Bad Flow:</div>
+                    <div style="color: #991B1B; font-size: 13px;">${interpretation.bad}</div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// Generate Little's Law analysis (kept for backward compatibility with API)
 async function generateLittlesLawAnalysis() {
     console.log('🔬 Generating Little\'s Law analysis...');
 

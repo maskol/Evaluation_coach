@@ -77,8 +77,13 @@ class Settings(BaseSettings):
 
     # Analysis Thresholds (configurable per organization)
     # These thresholds determine what counts as "exceeding threshold" in bottleneck analysis
-    bottleneck_threshold_days: float = 7.0  # Default: 7 days for all stages
+
+    # Feature-level thresholds
+    bottleneck_threshold_days: float = 7.0  # Default: 7 days for all feature stages
     planning_accuracy_threshold_pct: float = 70.0  # Default: 70% planning accuracy
+
+    # Story-level thresholds
+    story_bottleneck_threshold_days: float = 3.0  # Default: 3 days for all story stages
 
     # Strategic Targets for Feature Lead-Time (days)
     leadtime_target_2026: Optional[float] = None  # Target for 2026
@@ -90,8 +95,8 @@ class Settings(BaseSettings):
     planning_accuracy_target_2027: Optional[float] = None  # Target for 2027
     planning_accuracy_target_true_north: Optional[float] = None  # True North
 
-    # Stage-specific thresholds (optional overrides)
-    # If not set, uses bottleneck_threshold_days for all stages
+    # Feature stage-specific thresholds (optional overrides)
+    # If not set, uses bottleneck_threshold_days for all feature stages
     threshold_in_backlog: Optional[float] = None
     threshold_in_analysis: Optional[float] = None
     threshold_in_planned: Optional[float] = None
@@ -102,6 +107,16 @@ class Settings(BaseSettings):
     threshold_ready_for_uat: Optional[float] = None
     threshold_in_uat: Optional[float] = None
     threshold_ready_for_deployment: Optional[float] = None
+
+    # Story stage-specific thresholds (optional overrides)
+    # If not set, uses story_bottleneck_threshold_days for all story stages
+    story_threshold_refinement: Optional[float] = None
+    story_threshold_ready_for_development: Optional[float] = None
+    story_threshold_in_development: Optional[float] = None
+    story_threshold_in_review: Optional[float] = None
+    story_threshold_ready_for_test: Optional[float] = None
+    story_threshold_in_testing: Optional[float] = None
+    story_threshold_ready_for_deployment: Optional[float] = None
 
     # Feature Status Filtering
     # List of feature statuses to exclude from analysis (e.g., ['Cancelled', 'On Hold'])
@@ -137,7 +152,7 @@ class Settings(BaseSettings):
 
     def get_stage_threshold(self, stage: str) -> float:
         """
-        Get threshold for a specific stage.
+        Get threshold for a specific feature stage.
 
         Returns stage-specific threshold if configured, otherwise returns default.
 
@@ -145,7 +160,7 @@ class Settings(BaseSettings):
             stage: Stage name (e.g., 'in_progress', 'in_backlog')
 
         Returns:
-            Threshold in days for the specified stage
+            Threshold in days for the specified feature stage
         """
         threshold_attr = f"threshold_{stage}"
         stage_threshold = getattr(self, threshold_attr, None)
@@ -153,6 +168,26 @@ class Settings(BaseSettings):
             stage_threshold
             if stage_threshold is not None
             else self.bottleneck_threshold_days
+        )
+
+    def get_story_stage_threshold(self, stage: str) -> float:
+        """
+        Get threshold for a specific story stage.
+
+        Returns stage-specific threshold if configured, otherwise returns default.
+
+        Args:
+            stage: Stage name (e.g., 'in_development', 'refinement')
+
+        Returns:
+            Threshold in days for the specified story stage
+        """
+        threshold_attr = f"story_threshold_{stage}"
+        stage_threshold = getattr(self, threshold_attr, None)
+        return (
+            stage_threshold
+            if stage_threshold is not None
+            else self.story_bottleneck_threshold_days
         )
 
 

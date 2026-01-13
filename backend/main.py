@@ -117,14 +117,19 @@ def load_config_from_db():
     loaded_count = 0
     try:
         config_fields = [
+            # Strategic targets
             "leadtime_target_2026",
             "leadtime_target_2027",
             "leadtime_target_true_north",
             "planning_accuracy_target_2026",
             "planning_accuracy_target_2027",
             "planning_accuracy_target_true_north",
+            # Feature-level thresholds
             "bottleneck_threshold_days",
             "planning_accuracy_threshold_pct",
+            # Story-level thresholds
+            "story_bottleneck_threshold_days",
+            # Feature stage-specific thresholds
             "threshold_in_backlog",
             "threshold_in_analysis",
             "threshold_in_planned",
@@ -135,6 +140,14 @@ def load_config_from_db():
             "threshold_ready_for_uat",
             "threshold_in_uat",
             "threshold_ready_for_deployment",
+            # Story stage-specific thresholds
+            "story_threshold_refinement",
+            "story_threshold_ready_for_development",
+            "story_threshold_in_development",
+            "story_threshold_in_review",
+            "story_threshold_ready_for_test",
+            "story_threshold_in_testing",
+            "story_threshold_ready_for_deployment",
         ]
 
         for field in config_fields:
@@ -1026,12 +1039,15 @@ async def generate_insights_endpoint(
                     params["team"] = team
                     print(f"📊 Filtering insights for team: {team}")
 
-                # Add threshold from settings
-                params["threshold_days"] = settings.bottleneck_threshold_days
-
                 # Determine which data source to use based on analysis level
                 use_story_level = analysis_level == "story"
                 data_source_name = "user stories" if use_story_level else "features"
+
+                # Add appropriate threshold from settings (story vs feature)
+                if use_story_level:
+                    params["threshold_days"] = settings.story_bottleneck_threshold_days
+                else:
+                    params["threshold_days"] = settings.bottleneck_threshold_days
 
                 # Generate insights based on analysis level
                 if use_story_level:
@@ -1080,6 +1096,55 @@ async def generate_insights_endpoint(
 
                         # Generate story-level insights
                         print(f"🤖 Generating story-level insights...")
+
+                        # Debug: Check data structure
+                        print(
+                            f"📋 story_analysis_summary keys: {list(story_analysis_summary.keys())}"
+                        )
+                        if "bottleneck_analysis" in story_analysis_summary:
+                            bottleneck = story_analysis_summary["bottleneck_analysis"]
+                            print(
+                                f"📋 bottleneck_analysis keys: {list(bottleneck.keys())}"
+                            )
+                            if "stage_analysis" in bottleneck:
+                                stage_count = len(bottleneck["stage_analysis"])
+                                print(
+                                    f"📋 stage_analysis stages: {list(bottleneck['stage_analysis'].keys())} (count: {stage_count})"
+                                )
+                                if stage_count == 0:
+                                    print(
+                                        f"⚠️  stage_analysis is EMPTY - no stage-level metrics available"
+                                    )
+                            else:
+                                print(f"⚠️  No 'stage_analysis' in bottleneck_analysis")
+
+                            # Check other data sources
+                            stuck_items = bottleneck.get("stuck_items", [])
+                            print(f"📋 stuck_items count: {len(stuck_items)}")
+                            if stuck_items:
+                                print(f"   Sample stuck item: {stuck_items[0]}")
+
+                            wip_stats = bottleneck.get("wip_statistics", {})
+                            print(
+                                f"📋 wip_statistics keys: {list(wip_stats.keys()) if wip_stats else 'None'}"
+                            )
+
+                            flow_dist = bottleneck.get("flow_distribution", {})
+                            print(
+                                f"📋 flow_distribution keys: {list(flow_dist.keys()) if flow_dist else 'None'}"
+                            )
+                        else:
+                            print(
+                                f"⚠️  No 'bottleneck_analysis' in story_analysis_summary"
+                            )
+
+                        print(
+                            f"📋 story_pip_data count: {len(story_pip_data) if isinstance(story_pip_data, list) else 0}"
+                        )
+                        print(
+                            f"📋 story_waste_analysis keys: {list(story_waste_analysis.keys()) if story_waste_analysis else 'None'}"
+                        )
+
                         insights = generate_story_insights(
                             story_analysis_summary=story_analysis_summary,
                             story_pip_data=story_pip_data,
@@ -1279,6 +1344,7 @@ async def generate_insights_endpoint(
                                 else (selected_arts[0] if selected_arts else None)
                             ),
                             "selected_team": team if team else None,
+                            "analysis_level": analysis_level,  # Pass analysis level (story vs feature)
                         }
 
                         # Run Little's Law analyzer
@@ -1714,6 +1780,336 @@ async def export_executive_summary(
             )
     except Exception as e:
         print(f"❌ Error in export summary endpoint: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Export Individual Insight to Excel with all related features/stories
+@app.post("/api/v1/insights/export")
+async def export_insight_to_excel(
+    insight_data: Dict[str, Any],
+    pis: Optional[str] = None,
+    arts: Optional[str] = None,
+    team: Optional[str] = None,
+    analysis_level: str = "feature",
+    db: Session = Depends(get_db),
+):
+    """
+    Export a single insight to Excel with all related features/stories
+
+    Args:
+        insight_data: The complete insight object from frontend
+        pis: Comma-separated list of PIs
+        arts: Comma-separated list of ARTs
+        team: Team name filter
+        analysis_level: 'feature' or 'story'
+    """
+    try:
+        import pandas as pd
+        from io import BytesIO
+        from fastapi.responses import StreamingResponse
+        import re
+
+        print(f"📊 Exporting insight to Excel: {insight_data.get('title', 'Unknown')}")
+
+        # Parse filter parameters
+        selected_pis = (
+            [pi.strip() for pi in pis.split(",") if pi.strip()] if pis else []
+        )
+        selected_arts = (
+            [art.strip() for art in arts.split(",") if art.strip()] if arts else []
+        )
+
+        # Extract all issue keys mentioned in the insight
+        issue_keys = set()
+
+        # Extract from evidence
+        evidence_list = insight_data.get("evidence", [])
+        for evidence in evidence_list:
+            # Match patterns like "UCART-2228", "ACET-1234", etc.
+            matches = re.findall(r"[A-Z][A-Z0-9]+-\d+", str(evidence))
+            issue_keys.update(matches)
+
+        # Extract from root causes
+        root_causes = insight_data.get("root_causes", [])
+        for rc in root_causes:
+            rc_evidence = rc.get("evidence", [])
+            for evidence in rc_evidence:
+                matches = re.findall(r"[A-Z][A-Z0-9]+-\d+", str(evidence))
+                issue_keys.update(matches)
+
+        print(f"📋 Found {len(issue_keys)} unique issue keys in insight")
+
+        if leadtime_service and leadtime_service.is_available():
+            try:
+                params = {}
+                if selected_arts:
+                    params["arts"] = selected_arts
+                if selected_pis:
+                    params["pis"] = selected_pis
+                if team:
+                    params["team"] = team
+                params["threshold_days"] = settings.bottleneck_threshold_days
+
+                # Get analysis summary based on level
+                if analysis_level == "story" and team:
+                    # Story-level analysis
+                    analysis_summary = (
+                        leadtime_service.client.get_story_analysis_summary(**params)
+                    )
+                else:
+                    # Feature-level analysis
+                    analysis_summary = leadtime_service.client.get_analysis_summary(
+                        **params
+                    )
+
+                bottleneck_data = analysis_summary.get("bottleneck_analysis", {})
+                stuck_items = bottleneck_data.get("stuck_items", [])
+
+                # Get flow/leadtime data to find additional items
+                flow_data = []
+                if analysis_level == "story" and team:
+                    flow_params = {"limit": 50000}
+                    if selected_arts:
+                        flow_params["arts"] = selected_arts
+                    if selected_pis:
+                        flow_params["pis"] = selected_pis
+                    if team:
+                        flow_params["team"] = team
+                    flow_data = leadtime_service.client.get_story_flow_leadtime(
+                        **flow_params
+                    )
+                else:
+                    flow_params = {"limit": 50000}
+                    if selected_arts:
+                        flow_params["arts"] = selected_arts
+                    if selected_pis:
+                        flow_params["pis"] = selected_pis
+                    flow_data = leadtime_service.client.get_flow_leadtime(**flow_params)
+
+                # Filter items that match the issue keys from the insight
+                related_items = []
+
+                # Add stuck items that match
+                for item in stuck_items:
+                    if item.get("issue_key") in issue_keys:
+                        related_items.append(
+                            {
+                                "issue_key": item.get("issue_key"),
+                                "category": "Stuck Item",
+                                "art": item.get("art"),
+                                "team": item.get("team"),
+                                "current_stage": item.get("stage", ""),
+                                "days_in_stage": item.get("days_in_stage", 0),
+                                "summary": item.get("summary", ""),
+                                "status": item.get("status", ""),
+                                "pi": item.get("pi", ""),
+                                "total_leadtime": item.get("age", 0),
+                            }
+                        )
+
+                # Add flow data items that match
+                for item in flow_data:
+                    issue_key = item.get("issue_key")
+                    if issue_key in issue_keys and not any(
+                        ri["issue_key"] == issue_key for ri in related_items
+                    ):
+                        related_items.append(
+                            {
+                                "issue_key": issue_key,
+                                "category": "Flow Item",
+                                "art": item.get("art"),
+                                "team": item.get(
+                                    "development_team", item.get("team", "")
+                                ),
+                                "current_stage": item.get("current_status", ""),
+                                "days_in_stage": 0,
+                                "summary": item.get("summary", ""),
+                                "status": item.get(
+                                    "final_status", item.get("current_status", "")
+                                ),
+                                "pi": item.get("pi", ""),
+                                "total_leadtime": item.get(
+                                    "leadtime_days", item.get("age_days", 0)
+                                ),
+                            }
+                        )
+
+                # If we still don't have all items, add placeholders for missing ones
+                for issue_key in issue_keys:
+                    if not any(ri["issue_key"] == issue_key for ri in related_items):
+                        related_items.append(
+                            {
+                                "issue_key": issue_key,
+                                "category": "Mentioned in Insight",
+                                "art": selected_arts[0] if selected_arts else "",
+                                "team": team or "",
+                                "current_stage": "",
+                                "days_in_stage": 0,
+                                "summary": "",
+                                "status": "",
+                                "pi": selected_pis[0] if selected_pis else "",
+                                "total_leadtime": 0,
+                            }
+                        )
+
+                print(f"📊 Found {len(related_items)} total items for export")
+
+                # Create Excel workbook
+                output = BytesIO()
+                with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                    # Sheet 1: Insight Summary
+                    insight_summary = {
+                        "Field": [
+                            "Title",
+                            "Severity",
+                            "Confidence",
+                            "Scope",
+                            "Analysis Level",
+                            "Total Items",
+                            "Created At",
+                        ],
+                        "Value": [
+                            insight_data.get("title", ""),
+                            insight_data.get("severity", "").upper(),
+                            f"{insight_data.get('confidence', 0) * 100:.0f}%",
+                            insight_data.get("scope", ""),
+                            analysis_level.title(),
+                            len(related_items),
+                            insight_data.get("created_at", datetime.now().isoformat()),
+                        ],
+                    }
+                    summary_df = pd.DataFrame(insight_summary)
+                    summary_df.to_excel(
+                        writer, sheet_name="Insight Summary", index=False
+                    )
+
+                    # Sheet 2: Related Items (Features/Stories)
+                    if related_items:
+                        items_df = pd.DataFrame(related_items)
+                        # Reorder columns
+                        column_order = [
+                            "issue_key",
+                            "category",
+                            "art",
+                            "team",
+                            "current_stage",
+                            "days_in_stage",
+                            "total_leadtime",
+                            "summary",
+                            "status",
+                            "pi",
+                        ]
+                        column_order = [
+                            col for col in column_order if col in items_df.columns
+                        ]
+                        items_df = items_df[column_order]
+                        # Sort by days in stage descending
+                        items_df = items_df.sort_values(
+                            "days_in_stage", ascending=False
+                        )
+                        items_df.to_excel(
+                            writer,
+                            sheet_name=f"Related {analysis_level.title()}s",
+                            index=False,
+                        )
+                    else:
+                        # Create empty sheet
+                        empty_df = pd.DataFrame(
+                            columns=[
+                                "issue_key",
+                                "category",
+                                "art",
+                                "team",
+                                "current_stage",
+                                "days_in_stage",
+                                "summary",
+                            ]
+                        )
+                        empty_df.to_excel(
+                            writer,
+                            sheet_name=f"Related {analysis_level.title()}s",
+                            index=False,
+                        )
+
+                    # Sheet 3: Observation & Interpretation
+                    details = {
+                        "Section": ["Observation", "Interpretation"],
+                        "Content": [
+                            insight_data.get("observation", ""),
+                            insight_data.get("interpretation", ""),
+                        ],
+                    }
+                    details_df = pd.DataFrame(details)
+                    details_df.to_excel(writer, sheet_name="Details", index=False)
+
+                    # Sheet 4: Root Causes
+                    if root_causes:
+                        rc_data = []
+                        for rc in root_causes:
+                            rc_data.append(
+                                {
+                                    "Description": rc.get("description", ""),
+                                    "Confidence": f"{rc.get('confidence', 0) * 100:.0f}%",
+                                    "Evidence": "\n".join(rc.get("evidence", [])),
+                                    "Reference": rc.get("reference", ""),
+                                }
+                            )
+                        rc_df = pd.DataFrame(rc_data)
+                        rc_df.to_excel(writer, sheet_name="Root Causes", index=False)
+
+                    # Sheet 5: Recommended Actions
+                    actions = insight_data.get("recommended_actions", [])
+                    if actions:
+                        action_data = []
+                        for action in actions:
+                            action_data.append(
+                                {
+                                    "Timeframe": action.get("timeframe", "")
+                                    .replace("_", " ")
+                                    .title(),
+                                    "Description": action.get("description", ""),
+                                    "Owner": action.get("owner", "")
+                                    .replace("_", " ")
+                                    .title(),
+                                    "Effort": action.get("effort", ""),
+                                    "Success Signal": action.get("success_signal", ""),
+                                }
+                            )
+                        action_df = pd.DataFrame(action_data)
+                        action_df.to_excel(
+                            writer, sheet_name="Recommended Actions", index=False
+                        )
+
+                output.seek(0)
+
+                # Generate filename
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                title_slug = re.sub(
+                    r"[^a-z0-9]+", "_", insight_data.get("title", "insight").lower()
+                )[:50]
+                filename = f"insight_{title_slug}_{timestamp}.xlsx"
+
+                return StreamingResponse(
+                    output,
+                    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f"attachment; filename={filename}"},
+                )
+
+            except Exception as e:
+                print(f"❌ Error exporting insight: {e}")
+                import traceback
+
+                traceback.print_exc()
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to export insight: {str(e)}",
+                )
+        else:
+            raise HTTPException(
+                status_code=503, detail="Lead-time service not available"
+            )
+    except Exception as e:
+        print(f"❌ Error in export insight endpoint: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -2925,7 +3321,43 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
         db.commit()
 
         # Build coaching facts to ground the LLM response (avoid hallucinations)
+        # Skip expensive fact gathering for simple and generic queries
         facts: Dict[str, Any] = {}
+        message_lower = request.message.lower()
+        is_simple_query = any(
+            word in message_lower
+            for word in [
+                "hello",
+                "hi",
+                "help",
+                "what can you",
+                "explore",
+                "analyze",  # Generic "analyze" without specifics
+                "identify bottleneck",  # Generic bottleneck query
+            ]
+        )
+
+        # For generic queries, provide a helpful response without heavy data gathering
+        if is_simple_query and any(
+            word in message_lower for word in ["analyze", "identify", "bottleneck"]
+        ):
+            # Return quick response for generic analysis requests
+            return ChatResponse(
+                message=(
+                    "📊 <strong>I can help you analyze specific metrics!</strong><br><br>"
+                    "To provide detailed analysis, please be more specific:<br><br>"
+                    "🔍 <strong>Try asking:</strong><br>"
+                    "• 'What's our current flow efficiency?'<br>"
+                    "• 'Show me lead time trends'<br>"
+                    "• 'Which teams have high WIP?'<br>"
+                    "• 'What's blocking Feature X?'<br>"
+                    "• 'Show me planning accuracy for Q4'<br><br>"
+                    "Or use the <strong>Insights</strong> tab to generate comprehensive reports."
+                ),
+                context=request.context or {},
+                timestamp=datetime.utcnow(),
+            )
+
         try:
             facts["strategic_targets"] = {
                 "leadtime_target_2026": settings.leadtime_target_2026,
@@ -2938,52 +3370,60 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
         except Exception:
             facts["strategic_targets"] = {}
 
-        try:
-            from database import Insight
+        # Only fetch recent insights for non-simple queries
+        if not is_simple_query:
+            try:
+                from database import Insight
 
-            scope = (request.context or {}).get("scope") or "portfolio"
-            scope_id = (request.context or {}).get("scope_id")
-            q = db.query(Insight).filter(Insight.scope == scope)
-            if scope_id:
-                q = q.filter(Insight.scope_id == scope_id)
-            recent = q.order_by(Insight.created_at.desc()).limit(5).all()
-            facts["recent_insights"] = [
-                {
-                    "title": i.title,
-                    "severity": i.severity,
-                    "confidence": i.confidence,
-                    "observation": i.observation,
-                    "interpretation": i.interpretation,
-                }
-                for i in reversed(recent)
-            ]
-        except Exception:
+                scope = (request.context or {}).get("scope") or "portfolio"
+                scope_id = (request.context or {}).get("scope_id")
+                q = db.query(Insight).filter(Insight.scope == scope)
+                if scope_id:
+                    q = q.filter(Insight.scope_id == scope_id)
+                recent = (
+                    q.order_by(Insight.created_at.desc()).limit(3).all()
+                )  # Reduced from 5 to 3
+                facts["recent_insights"] = [
+                    {
+                        "title": i.title,
+                        "severity": i.severity,
+                        "confidence": i.confidence,
+                    }
+                    for i in reversed(recent)
+                ]
+            except Exception:
+                facts["recent_insights"] = []
+        else:
             facts["recent_insights"] = []
 
-        # Live metrics from LeadTime service (if available)
-        try:
-            if leadtime_service and leadtime_service.is_available():
-                ctx = request.context or {}
-                scope = ctx.get("scope") or "portfolio"
-                scope_id = ctx.get("scope_id")
+        # Live metrics from LeadTime service (only for complex queries)
+        if not is_simple_query:
+            try:
+                if leadtime_service and leadtime_service.is_available():
+                    ctx = request.context or {}
+                    scope = ctx.get("scope") or "portfolio"
+                    scope_id = ctx.get("scope_id")
 
-                selected_arts = [scope_id] if (scope == "art" and scope_id) else None
+                    selected_arts = (
+                        [scope_id] if (scope == "art" and scope_id) else None
+                    )
 
-                facts["leadtime"] = leadtime_service.get_leadtime_statistics(
-                    arts=selected_arts
-                )
-                facts["planning"] = leadtime_service.get_planning_accuracy(
-                    arts=selected_arts
-                )
-                facts["throughput"] = leadtime_service.get_throughput_metrics(
-                    arts=selected_arts
-                )
-                facts["bottlenecks"] = leadtime_service.identify_bottlenecks(
-                    arts=selected_arts
-                )
-        except Exception:
-            # If live metrics fail, we still continue with recent insights and targets
-            pass
+                    facts["leadtime"] = leadtime_service.get_leadtime_statistics(
+                        arts=selected_arts
+                    )
+                    facts["planning"] = leadtime_service.get_planning_accuracy(
+                        arts=selected_arts
+                    )
+                    facts["throughput"] = leadtime_service.get_throughput_metrics(
+                        arts=selected_arts
+                    )
+                    # Skip bottleneck analysis for faster response
+                    # facts["bottlenecks"] = leadtime_service.identify_bottlenecks(
+                    #     arts=selected_arts
+                    # )
+            except Exception:
+                # If live metrics fail, we still continue with recent insights and targets
+                pass
 
         # Generate AI response
         response = await llm_service.generate_response(
@@ -3033,6 +3473,116 @@ async def get_chat_history(
         {"role": msg.role, "content": msg.content, "timestamp": msg.created_at}
         for msg in reversed(messages)
     ]
+
+
+@app.get("/api/v1/flow-health-check")
+async def get_flow_health_check():
+    """Get Flow Health Check framework content from knowledge base"""
+    try:
+        from pathlib import Path
+
+        kb_path = (
+            Path(__file__).parent / "data" / "knowledge_base" / "flow_health_check.txt"
+        )
+
+        if not kb_path.exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Flow Health Check content not found",
+            )
+
+        with open(kb_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        # Parse the content into structured format
+        sections = content.split("---")
+        parsed_data = {"quick_test": {}, "categories": [], "flow_smells": {}}
+
+        for section in sections:
+            section = section.strip()
+            if not section or section.startswith("type:"):
+                continue
+
+            lines = [line.strip() for line in section.split("\n") if line.strip()]
+
+            # Parse One-Minute Test
+            if "One-Minute Flow Health Test" in section:
+                questions = []
+                for line in lines:
+                    if line.startswith(("1.", "2.", "3.")):
+                        questions.append(line[3:].strip())
+                parsed_data["quick_test"] = {
+                    "title": "One-Minute Flow Health Test",
+                    "questions": questions,
+                    "warning": "If people can't answer → flow is not under control",
+                }
+
+            # Parse Category sections
+            elif "Category " in section and "TITLE:" in section:
+                category = {}
+                current_key = None
+                items = []
+
+                for line in lines:
+                    if line.startswith("TITLE:"):
+                        category["title"] = line.replace("TITLE:", "").strip()
+                    elif line.startswith("SUBTITLE:"):
+                        category["subtitle"] = line.replace("SUBTITLE:", "").strip()
+                    elif line.startswith("PROBING_QUESTIONS:"):
+                        current_key = "questions"
+                        items = []
+                    elif line.startswith("GOOD_FLOW_INDICATORS:"):
+                        if current_key == "questions":
+                            category["questions"] = items
+                        current_key = "good"
+                        items = []
+                    elif line.startswith("BAD_FLOW_INDICATORS:"):
+                        if current_key == "good":
+                            category["good"] = " ".join(items)
+                        current_key = "bad"
+                        items = []
+                    elif line.startswith("- "):
+                        items.append(line[2:].strip())
+                    elif (
+                        current_key
+                        and line
+                        and not line.startswith(("#", "IMPORTANCE"))
+                    ):
+                        items.append(line)
+
+                if current_key == "bad" and items:
+                    category["bad"] = " ".join(items)
+
+                if "title" in category:
+                    parsed_data["categories"].append(category)
+
+            # Parse Flow Smell Checklist
+            elif "Flow Smell Checklist" in section:
+                bad_phrases = []
+                good_phrases = []
+                current_list = None
+
+                for line in lines:
+                    if line.startswith("BAD_FLOW_PHRASES:"):
+                        current_list = "bad"
+                    elif line.startswith("GOOD_FLOW_PHRASES:"):
+                        current_list = "good"
+                    elif line.startswith("- "):
+                        phrase = line[2:].strip().strip('"')
+                        if current_list == "bad":
+                            bad_phrases.append(phrase)
+                        elif current_list == "good":
+                            good_phrases.append(phrase)
+
+                parsed_data["flow_smells"] = {"bad": bad_phrases, "good": good_phrases}
+
+        return parsed_data
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error loading Flow Health Check: {str(e)}",
+        )
 
 
 # Metrics Endpoints
@@ -4271,14 +4821,19 @@ async def get_admin_config(db: Session = Depends(get_db)):
         Current configuration settings
     """
     thresholds = ThresholdConfig(
+        # Feature-level thresholds
         bottleneck_threshold_days=settings.bottleneck_threshold_days,
         planning_accuracy_threshold_pct=settings.planning_accuracy_threshold_pct,
+        # Story-level thresholds
+        story_bottleneck_threshold_days=settings.story_bottleneck_threshold_days,
+        # Strategic targets
         leadtime_target_2026=settings.leadtime_target_2026,
         leadtime_target_2027=settings.leadtime_target_2027,
         leadtime_target_true_north=settings.leadtime_target_true_north,
         planning_accuracy_target_2026=settings.planning_accuracy_target_2026,
         planning_accuracy_target_2027=settings.planning_accuracy_target_2027,
         planning_accuracy_target_true_north=settings.planning_accuracy_target_true_north,
+        # Feature stage-specific thresholds
         threshold_in_backlog=settings.threshold_in_backlog,
         threshold_in_analysis=settings.threshold_in_analysis,
         threshold_in_planned=settings.threshold_in_planned,
@@ -4289,6 +4844,14 @@ async def get_admin_config(db: Session = Depends(get_db)):
         threshold_ready_for_uat=settings.threshold_ready_for_uat,
         threshold_in_uat=settings.threshold_in_uat,
         threshold_ready_for_deployment=settings.threshold_ready_for_deployment,
+        # Story stage-specific thresholds
+        story_threshold_refinement=settings.story_threshold_refinement,
+        story_threshold_ready_for_development=settings.story_threshold_ready_for_development,
+        story_threshold_in_development=settings.story_threshold_in_development,
+        story_threshold_in_review=settings.story_threshold_in_review,
+        story_threshold_ready_for_test=settings.story_threshold_ready_for_test,
+        story_threshold_in_testing=settings.story_threshold_in_testing,
+        story_threshold_ready_for_deployment=settings.story_threshold_ready_for_deployment,
     )
 
     # Get show_inactive_arts from database
@@ -4370,14 +4933,19 @@ async def update_thresholds(thresholds: ThresholdConfig, db: Session = Depends(g
     """
     # Define all configuration fields
     config_updates = {
+        # Feature-level thresholds
         "bottleneck_threshold_days": thresholds.bottleneck_threshold_days,
         "planning_accuracy_threshold_pct": thresholds.planning_accuracy_threshold_pct,
+        # Story-level thresholds
+        "story_bottleneck_threshold_days": thresholds.story_bottleneck_threshold_days,
+        # Strategic targets
         "leadtime_target_2026": thresholds.leadtime_target_2026,
         "leadtime_target_2027": thresholds.leadtime_target_2027,
         "leadtime_target_true_north": thresholds.leadtime_target_true_north,
         "planning_accuracy_target_2026": thresholds.planning_accuracy_target_2026,
         "planning_accuracy_target_2027": thresholds.planning_accuracy_target_2027,
         "planning_accuracy_target_true_north": thresholds.planning_accuracy_target_true_north,
+        # Feature stage-specific thresholds
         "threshold_in_backlog": thresholds.threshold_in_backlog,
         "threshold_in_analysis": thresholds.threshold_in_analysis,
         "threshold_in_planned": thresholds.threshold_in_planned,
@@ -4388,6 +4956,14 @@ async def update_thresholds(thresholds: ThresholdConfig, db: Session = Depends(g
         "threshold_ready_for_uat": thresholds.threshold_ready_for_uat,
         "threshold_in_uat": thresholds.threshold_in_uat,
         "threshold_ready_for_deployment": thresholds.threshold_ready_for_deployment,
+        # Story stage-specific thresholds
+        "story_threshold_refinement": thresholds.story_threshold_refinement,
+        "story_threshold_ready_for_development": thresholds.story_threshold_ready_for_development,
+        "story_threshold_in_development": thresholds.story_threshold_in_development,
+        "story_threshold_in_review": thresholds.story_threshold_in_review,
+        "story_threshold_ready_for_test": thresholds.story_threshold_ready_for_test,
+        "story_threshold_in_testing": thresholds.story_threshold_in_testing,
+        "story_threshold_ready_for_deployment": thresholds.story_threshold_ready_for_deployment,
     }
 
     try:
@@ -5101,4 +5677,4 @@ app.mount("/", StaticFiles(directory=frontend_path, html=True), name="frontend")
 
 # Run server
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8850, reload=True)

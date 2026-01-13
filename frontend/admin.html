@@ -180,22 +180,45 @@
 
             <div class="info-box">
                 <h3>About Thresholds</h3>
-                <p>Thresholds determine when a feature is considered to be "exceeding the acceptable time" in a workflow
-                    stage. Features that exceed these thresholds are flagged in bottleneck analysis and insights.</p>
-                <p><strong>Current Behavior:</strong> The same threshold applies to all stages unless you set
+                <p>Thresholds determine when a feature or story is considered to be "exceeding the acceptable time" in a
+                    workflow
+                    stage. Items that exceed these thresholds are flagged in bottleneck analysis and insights.</p>
+                <p><strong>Current Behavior:</strong> The same threshold applies to all stages within each level
+                    (Feature/Story) unless you set
                     stage-specific overrides below.</p>
             </div>
 
             <form id="thresholdForm">
-                <!-- Global Threshold -->
+                <!-- Feature-Level Thresholds -->
+                <h3 style="margin-top: 24px; margin-bottom: 16px;">📊 Feature-Level Thresholds</h3>
+
+                <!-- Global Feature Threshold -->
                 <div class="form-group">
                     <label for="bottleneck_threshold_days">
-                        Global Threshold (Days) <span style="color: red;">*</span>
+                        Global Feature Threshold (Days) <span style="color: red;">*</span>
                     </label>
                     <input type="number" id="bottleneck_threshold_days" name="bottleneck_threshold_days" min="1"
                         max="90" step="0.5" required>
-                    <small>Default threshold applied to all stages (unless overridden below). Range: 1-90 days.</small>
+                    <small>Default threshold applied to all feature stages (unless overridden below). Range: 1-90
+                        days.</small>
                 </div>
+
+                <!-- Story-Level Thresholds -->
+                <h3 style="margin-top: 32px; margin-bottom: 16px;">📝 Story-Level Thresholds</h3>
+
+                <!-- Global Story Threshold -->
+                <div class="form-group">
+                    <label for="story_bottleneck_threshold_days">
+                        Global Story Threshold (Days) <span style="color: red;">*</span>
+                    </label>
+                    <input type="number" id="story_bottleneck_threshold_days" name="story_bottleneck_threshold_days"
+                        min="0.5" max="30" step="0.5" required>
+                    <small>Default threshold applied to all story stages (unless overridden below). Range: 0.5-30
+                        days.</small>
+                </div>
+
+                <!-- Planning Accuracy -->
+                <h3 style="margin-top: 32px; margin-bottom: 16px;">📈 Planning Accuracy</h3>
 
                 <div class="form-group">
                     <label for="planning_accuracy_threshold_pct">
@@ -263,6 +286,9 @@
                 <p style="color: var(--text-secondary); margin-bottom: 20px;">Leave blank to use the global threshold
                     for that stage.</p>
 
+                <!-- Feature Stage Overrides -->
+                <h4 style="margin-bottom: 12px; color: var(--primary-color);">Feature Stages</h4>
+
                 <div class="form-grid">
                     <div class="form-group">
                         <label for="threshold_in_backlog">In Backlog</label>
@@ -329,6 +355,60 @@
                         <label for="threshold_ready_for_deployment">Ready for Deployment</label>
                         <input type="number" id="threshold_ready_for_deployment" name="threshold_ready_for_deployment"
                             min="1" max="90" step="0.5">
+                        <small>Override for Ready for Deployment stage</small>
+                    </div>
+                </div>
+
+                <!-- Story Stage Overrides -->
+                <h4 style="margin-top: 24px; margin-bottom: 12px; color: var(--primary-color);">Story Stages</h4>
+
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="story_threshold_refinement">Refinement</label>
+                        <input type="number" id="story_threshold_refinement" name="story_threshold_refinement" min="0.5"
+                            max="30" step="0.5">
+                        <small>Override for Refinement stage</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="story_threshold_ready_for_development">Ready for Development</label>
+                        <input type="number" id="story_threshold_ready_for_development"
+                            name="story_threshold_ready_for_development" min="0.5" max="30" step="0.5">
+                        <small>Override for Ready for Development stage</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="story_threshold_in_development">In Development</label>
+                        <input type="number" id="story_threshold_in_development" name="story_threshold_in_development"
+                            min="0.5" max="30" step="0.5">
+                        <small>Override for In Development stage</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="story_threshold_in_review">In Review</label>
+                        <input type="number" id="story_threshold_in_review" name="story_threshold_in_review" min="0.5"
+                            max="30" step="0.5">
+                        <small>Override for In Review stage</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="story_threshold_ready_for_test">Ready for Test</label>
+                        <input type="number" id="story_threshold_ready_for_test" name="story_threshold_ready_for_test"
+                            min="0.5" max="30" step="0.5">
+                        <small>Override for Ready for Test stage</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="story_threshold_in_testing">In Testing</label>
+                        <input type="number" id="story_threshold_in_testing" name="story_threshold_in_testing" min="0.5"
+                            max="30" step="0.5">
+                        <small>Override for In Testing stage</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="story_threshold_ready_for_deployment">Ready for Deployment</label>
+                        <input type="number" id="story_threshold_ready_for_deployment"
+                            name="story_threshold_ready_for_deployment" min="0.5" max="30" step="0.5">
                         <small>Override for Ready for Deployment stage</small>
                     </div>
                 </div>

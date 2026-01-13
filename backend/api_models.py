@@ -296,12 +296,20 @@ class LeadTimeSummaryRequest(BaseModel):
 class ThresholdConfig(BaseModel):
     """Threshold configuration for bottleneck analysis."""
 
-    # Global threshold (applies to all stages unless overridden)
+    # Feature-level global threshold (applies to all feature stages unless overridden)
     bottleneck_threshold_days: float = Field(
         default=7.0,
         ge=1.0,
         le=90.0,
-        description="Default threshold in days for all stages",
+        description="Default threshold in days for all feature stages",
+    )
+
+    # Story-level global threshold (applies to all story stages unless overridden)
+    story_bottleneck_threshold_days: float = Field(
+        default=3.0,
+        ge=0.5,
+        le=30.0,
+        description="Default threshold in days for all story stages",
     )
 
     # Planning accuracy threshold
@@ -352,7 +360,7 @@ class ThresholdConfig(BaseModel):
         description="True North target for Planning Accuracy (long-term goal %)",
     )
 
-    # Stage-specific overrides (optional)
+    # Feature stage-specific overrides (optional)
     threshold_in_backlog: Optional[float] = Field(None, ge=1.0, le=90.0)
     threshold_in_analysis: Optional[float] = Field(None, ge=1.0, le=90.0)
     threshold_in_planned: Optional[float] = Field(None, ge=1.0, le=90.0)
@@ -363,6 +371,17 @@ class ThresholdConfig(BaseModel):
     threshold_ready_for_uat: Optional[float] = Field(None, ge=1.0, le=90.0)
     threshold_in_uat: Optional[float] = Field(None, ge=1.0, le=90.0)
     threshold_ready_for_deployment: Optional[float] = Field(None, ge=1.0, le=90.0)
+
+    # Story stage-specific overrides (optional)
+    story_threshold_refinement: Optional[float] = Field(None, ge=0.5, le=30.0)
+    story_threshold_ready_for_development: Optional[float] = Field(
+        None, ge=0.5, le=30.0
+    )
+    story_threshold_in_development: Optional[float] = Field(None, ge=0.5, le=30.0)
+    story_threshold_in_review: Optional[float] = Field(None, ge=0.5, le=30.0)
+    story_threshold_ready_for_test: Optional[float] = Field(None, ge=0.5, le=30.0)
+    story_threshold_in_testing: Optional[float] = Field(None, ge=0.5, le=30.0)
+    story_threshold_ready_for_deployment: Optional[float] = Field(None, ge=0.5, le=30.0)
 
 
 class AdminConfigResponse(BaseModel):
