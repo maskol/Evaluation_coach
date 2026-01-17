@@ -345,17 +345,17 @@ async function loadARTsAndTeams() {
                 // Clear existing options except the first one
                 artSelector.innerHTML = '<option value="">-- Select ART --</option>';
 
-                // Add real ARTs
+                // Add real ARTs (using art_key for value, art_name for display)
                 artsData.arts.forEach(art => {
                     const option = document.createElement('option');
-                    option.value = art;
-                    option.textContent = art;
+                    option.value = art.art_key;  // Use art_key (e.g., "UCART") for matching with teams
+                    option.textContent = art.art_name;  // Display full name
                     artSelector.appendChild(option);
                 });
                 console.log(`✅ Loaded ${artsData.count} ARTs`);
 
-                // Store full list of ARTs for admin panel (unfiltered)
-                appState.allARTs = artsData.arts;
+                // Store full list of ART keys for filtering
+                appState.allARTs = artsData.arts.map(art => art.art_key);
             }
         }
 
@@ -837,6 +837,9 @@ function selectScope(scope) {
         artSelection.style.display = 'block';
         teamSelection.style.display = 'block';
         analysisLevelSelection.style.display = 'block';
+
+        // Update team dropdown to show only teams from selected ART
+        updateTeamSelector();
     } else {
         artSelection.style.display = 'none';
         teamSelection.style.display = 'none';
@@ -3672,6 +3675,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (artSelector) {
         artSelector.addEventListener('change', (e) => {
             appState.selectedART = e.target.value;
+
+            // Update team dropdown if in team view to show only teams from selected ART
+            if (appState.scope === 'team') {
+                // Clear team selection when ART changes (team might not belong to new ART)
+                appState.selectedTeam = '';
+                updateTeamSelector();
+            }
+
             updateContext();
             // Reload dashboard when ART is selected in ART view
             if (appState.scope === 'art') {

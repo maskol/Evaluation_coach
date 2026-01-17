@@ -3,6 +3,7 @@ FastAPI main application for Evaluation Coach
 Provides REST API endpoints for frontend and LLM integration
 """
 
+import json
 import os
 import shutil
 from datetime import datetime, timedelta, timezone
@@ -1837,7 +1838,34 @@ async def export_insight_to_excel(
                 matches = re.findall(r"[A-Z][A-Z0-9]+-\d+", str(evidence))
                 issue_keys.update(matches)
 
+        # Extract from recommended actions (often contains issue keys)
+        recommended_actions = insight_data.get("recommended_actions", [])
+        for action in recommended_actions:
+            action_desc = action.get("description", "")
+            matches = re.findall(r"[A-Z][A-Z0-9]+-\d+", str(action_desc))
+            issue_keys.update(matches)
+
         print(f"📋 Found {len(issue_keys)} unique issue keys in insight")
+
+        # Detect insight type by checking title
+        insight_title = insight_data.get("title", "").lower()
+        is_bottleneck_insight = "bottleneck" in insight_title
+        is_waste_insight = "waste" in insight_title
+        bottleneck_stage = None
+
+        if is_bottleneck_insight:
+            # Extract stage name from title like "Critical Bottleneck in In Sit Stage"
+            stage_pattern = r"bottleneck in (.+?) stage"
+            stage_match = re.search(stage_pattern, insight_title, re.IGNORECASE)
+            if stage_match:
+                # Convert "In Sit" back to "in_sit"
+                bottleneck_stage = stage_match.group(1).lower().replace(" ", "_")
+                print(f"🎯 Detected bottleneck insight for stage: {bottleneck_stage}")
+
+        if is_waste_insight:
+            print(
+                f"🎯 Detected waste insight - will include all flow items with high waiting times"
+            )
 
         if leadtime_service and leadtime_service.is_available():
             try:
@@ -1865,6 +1893,34 @@ async def export_insight_to_excel(
                 bottleneck_data = analysis_summary.get("bottleneck_analysis", {})
                 stuck_items = bottleneck_data.get("stuck_items", [])
 
+                print(f"\n{'='*60}")
+                print(f"📊 EXPORT DEBUG - Bottleneck Analysis")
+                print(f"{'='*60}")
+                print(f"Is bottleneck insight: {is_bottleneck_insight}")
+                print(f"Bottleneck stage: {bottleneck_stage}")
+                print(f"Total stuck_items from API: {len(stuck_items)}")
+                print(f"Analysis level: {analysis_level}")
+                print(
+                    f"Filters - ARTs: {selected_arts}, PIs: {selected_pis}, Team: {team}"
+                )
+
+                if stuck_items:
+                    print(f"\n📊 Sample stuck item (first):")
+                    print(f"   {json.dumps(stuck_items[0], indent=2)}")
+                    stages_in_data = set(
+                        item.get("stage", "N/A") for item in stuck_items
+                    )
+                    print(f"\n📊 All unique stages in stuck_items:")
+                    for stage in sorted(stages_in_data):
+                        count = sum(
+                            1 for item in stuck_items if item.get("stage") == stage
+                        )
+                        print(f"   - {stage}: {count} items")
+                else:
+                    print(f"⚠️  stuck_items is EMPTY!")
+
+                print(f"{'='*60}\n")
+
                 # Get flow/leadtime data to find additional items
                 flow_data = []
                 if analysis_level == "story" and team:
@@ -1884,14 +1940,254 @@ async def export_insight_to_excel(
                         flow_params["arts"] = selected_arts
                     if selected_pis:
                         flow_params["pis"] = selected_pis
+                    if team:
+                        flow_params["development_team"] = team
                     flow_data = leadtime_service.client.get_flow_leadtime(**flow_params)
 
-                # Filter items that match the issue keys from the insight
+                # Filter items that match the insight
                 related_items = []
 
-                # Add stuck items that match
+                # For bottleneck insights, include ALL stuck items for that stage
+                if is_bottleneck_insight and bottleneck_stage:
+                    print(f"🔍 Including all stuck items for stage: {bottleneck_stage}")
+                    print(f"🔍 DEBUG: Checking {len(stuck_items)} stuck items")
+
+                    # Try both underscore and space formats for stage name
+                    stage_variations = [
+                        bottleneck_stage,  # e.g., "in_sit"
+                        bottleneck_stage.replace("_", " "),  # e.g., "in sit"
+                        bottleneck_stage.replace("_", " ").title(),  # e.g., "In Sit"
+                    ]
+
+                    for item in stuck_items:
+                        item_stage_raw = item.get("stage", "")
+                        item_stage_lower = item_stage_raw.lower()
+
+                        # Check if item stage matches any variation
+                        stage_matches = any(
+                            item_stage_lower == var.lower()
+                            or item_stage_lower.replace(" ", "_") == var.lower()
+                            or item_stage_lower.replace("_", " ") == var.lower()
+                            for var in stage_variations
+                        )
+
+                        if stage_matches:
+                            print(
+                                f"✅ DEBUG: Matched item {item.get('issue_key')} with stage '{item_stage_raw}'"
+                            )
+                            related_items.append(
+                                {
+                                    "issue_key": item.get("issue_key"),
+                                    "category": "Stuck Item",
+                                    "art": item.get("art"),
+                                    "team": item.get(
+                                        "team", item.get("development_team", "")
+                                    ),
+                                    "current_stage": item.get("stage", ""),
+                                    "days_in_stage": item.get("days_in_stage", 0),
+                                    "summary": item.get("summary", ""),
+                                    "status": item.get("status", ""),
+                                    "pi": item.get("pi", ""),
+                                    "total_leadtime": item.get(
+                                        "age", item.get("age_days", 0)
+                                    ),
+                                }
+                            )
+                    print(
+                        f"✅ Found {len(related_items)} stuck items in {bottleneck_stage} stage"
+                    )
+
+                    # If no stuck items found for bottleneck, try flow data with stage history
+                    if len(related_items) == 0:
+                        print(
+                            f"⚠️  No stuck items found, checking flow data for stage history..."
+                        )
+                        for item in flow_data:
+                            # Check if this item has stage history containing the bottleneck stage
+                            stage_history = item.get("stage_history", [])
+                            stages_duration = item.get("stages_duration", {})
+
+                            # Check current status or stage history
+                            current_status = item.get("current_status", "").lower()
+                            has_problematic_stage = False
+
+                            if current_status and any(
+                                current_status == var.lower()
+                                or current_status.replace(" ", "_") == var.lower()
+                                for var in stage_variations
+                            ):
+                                has_problematic_stage = True
+
+                            # Also check stages_duration keys
+                            if not has_problematic_stage and stages_duration:
+                                for stage_key in stages_duration.keys():
+                                    if any(
+                                        stage_key.lower() == var.lower()
+                                        or stage_key.lower().replace(" ", "_")
+                                        == var.lower()
+                                        for var in stage_variations
+                                    ):
+                                        has_problematic_stage = True
+                                        break
+
+                            if has_problematic_stage:
+                                issue_key = item.get("issue_key")
+                                if not any(
+                                    ri["issue_key"] == issue_key for ri in related_items
+                                ):
+                                    print(
+                                        f"✅ DEBUG: Found flow item {issue_key} with {bottleneck_stage} in history"
+                                    )
+                                    related_items.append(
+                                        {
+                                            "issue_key": issue_key,
+                                            "category": "Flow Item (Bottleneck Stage)",
+                                            "art": item.get("art"),
+                                            "team": item.get(
+                                                "development_team", item.get("team", "")
+                                            ),
+                                            "current_stage": item.get(
+                                                "current_status", ""
+                                            ),
+                                            "days_in_stage": stages_duration.get(
+                                                bottleneck_stage, 0
+                                            ),
+                                            "summary": item.get("summary", ""),
+                                            "status": item.get(
+                                                "final_status",
+                                                item.get("current_status", ""),
+                                            ),
+                                            "pi": item.get("pi", ""),
+                                            "total_leadtime": item.get(
+                                                "leadtime_days", item.get("age_days", 0)
+                                            ),
+                                        }
+                                    )
+                        print(
+                            f"✅ After checking flow data: {len(related_items)} total items"
+                        )
+
+                    # FINAL FALLBACK: If still no items for bottleneck, include ALL stuck items
+                    if len(related_items) == 0 and len(stuck_items) > 0:
+                        print(
+                            f"⚠️  No stage-specific matches found. Including stuck items with team filter"
+                        )
+                        for item in stuck_items:
+                            issue_key = item.get("issue_key")
+                            item_team = item.get(
+                                "team", item.get("development_team", "")
+                            ).upper()
+
+                            # Filter by team if specified
+                            if team and item_team != team.upper():
+                                continue
+
+                            if not any(
+                                ri["issue_key"] == issue_key for ri in related_items
+                            ):
+                                related_items.append(
+                                    {
+                                        "issue_key": issue_key,
+                                        "category": "Stuck Item",
+                                        "art": item.get("art"),
+                                        "team": item.get(
+                                            "team", item.get("development_team", "")
+                                        ),
+                                        "current_stage": item.get("stage", ""),
+                                        "days_in_stage": item.get("days_in_stage", 0),
+                                        "summary": item.get("summary", ""),
+                                        "status": item.get("status", ""),
+                                        "pi": item.get("pi", ""),
+                                        "total_leadtime": item.get(
+                                            "age", item.get("age_days", 0)
+                                        ),
+                                    }
+                                )
+                        print(
+                            f"✅ Final fallback complete (team filtered): {len(related_items)} items"
+                        )
+
+                # For waste insights, include all items with high waiting times
+                if is_waste_insight and len(related_items) == 0:
+                    print(
+                        f"🔍 Including items with high waiting times for waste insight"
+                    )
+                    print(f"🔍 DEBUG: Checking {len(flow_data)} flow items")
+
+                    # Get waste threshold (e.g., items with waiting time > 30 days)
+                    waste_threshold_days = 30
+
+                    for item in flow_data:
+                        issue_key = item.get("issue_key")
+
+                        # Calculate total waiting time from stage durations
+                        stages_duration = item.get("stages_duration", {})
+                        total_waiting = 0
+
+                        # Sum up waiting time in various stages (backlog, planned, etc.)
+                        waiting_stages = [
+                            "in_backlog",
+                            "in_planned",
+                            "ready_for_development",
+                        ]
+                        for stage in waiting_stages:
+                            stage_time = stages_duration.get(stage, 0)
+                            if isinstance(stage_time, (int, float)):
+                                total_waiting += stage_time
+
+                        # Also check if status is "Removed" or similar
+                        status = item.get("status", "").lower()
+                        final_status = item.get("final_status", "").lower()
+                        is_removed = (
+                            "removed" in status
+                            or "removed" in final_status
+                            or "cancelled" in status
+                            or "cancelled" in final_status
+                        )
+
+                        # Include if high waiting time or removed
+                        if total_waiting >= waste_threshold_days or is_removed:
+                            if not any(
+                                ri["issue_key"] == issue_key for ri in related_items
+                            ):
+                                related_items.append(
+                                    {
+                                        "issue_key": issue_key,
+                                        "category": (
+                                            "Waste - Removed"
+                                            if is_removed
+                                            else "Waste - High Waiting"
+                                        ),
+                                        "art": item.get("art"),
+                                        "team": item.get(
+                                            "development_team", item.get("team", "")
+                                        ),
+                                        "current_stage": item.get("current_status", ""),
+                                        "days_in_stage": 0,
+                                        "summary": item.get("summary", ""),
+                                        "status": item.get(
+                                            "final_status",
+                                            item.get("current_status", ""),
+                                        ),
+                                        "pi": item.get("pi", ""),
+                                        "total_leadtime": item.get(
+                                            "leadtime_days",
+                                            item.get(
+                                                "total_leadtime",
+                                                item.get("age_days", 0),
+                                            ),
+                                        ),
+                                        "waiting_time": total_waiting,
+                                    }
+                                )
+
+                    print(f"✅ Found {len(related_items)} items contributing to waste")
+
+                # Add stuck items that match issue keys from evidence
                 for item in stuck_items:
-                    if item.get("issue_key") in issue_keys:
+                    if item.get("issue_key") in issue_keys and not any(
+                        ri["issue_key"] == item.get("issue_key") for ri in related_items
+                    ):
                         related_items.append(
                             {
                                 "issue_key": item.get("issue_key"),
@@ -1994,6 +2290,7 @@ async def export_insight_to_excel(
                             "team",
                             "current_stage",
                             "days_in_stage",
+                            "waiting_time",  # Include waiting_time for waste insights
                             "total_leadtime",
                             "summary",
                             "status",
@@ -2003,10 +2300,15 @@ async def export_insight_to_excel(
                             col for col in column_order if col in items_df.columns
                         ]
                         items_df = items_df[column_order]
-                        # Sort by days in stage descending
-                        items_df = items_df.sort_values(
-                            "days_in_stage", ascending=False
-                        )
+                        # Sort by waiting time if available, otherwise days in stage
+                        if "waiting_time" in items_df.columns:
+                            items_df = items_df.sort_values(
+                                "waiting_time", ascending=False
+                            )
+                        else:
+                            items_df = items_df.sort_values(
+                                "days_in_stage", ascending=False
+                            )
                         items_df.to_excel(
                             writer,
                             sheet_name=f"Related {analysis_level.title()}s",
@@ -3216,6 +3518,7 @@ async def generate_insights_basic(
                 db=db,
                 current_leadtime=current_leadtime,
                 current_planning_accuracy=current_planning_accuracy,
+                team=request.team,
             )
 
             # Merge leadtime insights with strategic target insights
@@ -3232,6 +3535,7 @@ async def generate_insights_basic(
             scope_id=request.scope_id,
             time_range=request.time_range,
             db=db,
+            team=request.team,
         )
         return insights
     except Exception as e:
@@ -3324,39 +3628,21 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
         # Skip expensive fact gathering for simple and generic queries
         facts: Dict[str, Any] = {}
         message_lower = request.message.lower()
-        is_simple_query = any(
-            word in message_lower
-            for word in [
-                "hello",
-                "hi",
-                "help",
-                "what can you",
-                "explore",
-                "analyze",  # Generic "analyze" without specifics
-                "identify bottleneck",  # Generic bottleneck query
-            ]
-        )
 
-        # For generic queries, provide a helpful response without heavy data gathering
-        if is_simple_query and any(
-            word in message_lower for word in ["analyze", "identify", "bottleneck"]
-        ):
-            # Return quick response for generic analysis requests
-            return ChatResponse(
-                message=(
-                    "📊 <strong>I can help you analyze specific metrics!</strong><br><br>"
-                    "To provide detailed analysis, please be more specific:<br><br>"
-                    "🔍 <strong>Try asking:</strong><br>"
-                    "• 'What's our current flow efficiency?'<br>"
-                    "• 'Show me lead time trends'<br>"
-                    "• 'Which teams have high WIP?'<br>"
-                    "• 'What's blocking Feature X?'<br>"
-                    "• 'Show me planning accuracy for Q4'<br><br>"
-                    "Or use the <strong>Insights</strong> tab to generate comprehensive reports."
-                ),
-                context=request.context or {},
-                timestamp=datetime.utcnow(),
+        # Only treat truly generic greetings/help requests as simple queries
+        # Allow analysis queries with specific context (like "flow metrics", "bottlenecks", etc.) to proceed
+        is_simple_query = (
+            any(
+                word in message_lower
+                for word in [
+                    "hello",
+                    "hi",
+                    "help",
+                    "what can you",
+                ]
             )
+            and len(request.message.strip()) < 30
+        )  # Short, generic messages only
 
         try:
             facts["strategic_targets"] = {
@@ -3849,15 +4135,30 @@ async def download_template():
 
 @app.get("/api/arts")
 async def get_arts():
-    """Get list of all ARTs from lead-time server"""
+    """Get list of all ARTs with keys from lead-time server"""
     if not leadtime_service:
         return {"arts": [], "message": "Lead-time service not available"}
 
     try:
-        filters = leadtime_service.get_available_filters()
+        # Get full ART data with keys for proper team filtering
+        arts_data = leadtime_service.client.get_arts()
+
+        # Transform to include both key and name
+        arts_with_keys = []
+        for art in arts_data:
+            arts_with_keys.append(
+                {
+                    "art_key": art.get("art_key_jira"),  # e.g., "UCART"
+                    "art_name": art.get("art_name"),  # e.g., "Unified Comms ART"
+                }
+            )
+
+        # Sort ARTs alphabetically by name
+        arts_with_keys.sort(key=lambda x: x.get("art_name", "").lower())
+
         return {
-            "arts": filters.get("arts", []),
-            "count": len(filters.get("arts", [])),
+            "arts": arts_with_keys,
+            "count": len(arts_with_keys),
             "source": "DL Webb App",
         }
     except Exception as e:

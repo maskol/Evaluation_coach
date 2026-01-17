@@ -95,6 +95,11 @@ def littles_law_analyzer_node(state: AgentState) -> Dict[str, Any]:
         if art_filter and art_filter not in ["Portfolio", "portfolio"]:
             print(f"🎯 Filtering for ART: {art_filter}")
 
+        # Get team filter if analyzing specific team
+        team_filter = state.get("selected_team")
+        if team_filter:
+            print(f"🎯 Filtering for Team: {team_filter}")
+
         # Determine analysis level (story vs feature)
         analysis_level = state.get("analysis_level", "feature")
         use_story_level = analysis_level == "story"
@@ -135,6 +140,7 @@ def littles_law_analyzer_node(state: AgentState) -> Dict[str, Any]:
                     if art_filter and art_filter not in ["Portfolio", "portfolio"]
                     else None
                 ),
+                team=team_filter,
             )
         else:
             all_flow_data = leadtime_service.get_feature_leadtime_data(
@@ -143,6 +149,7 @@ def littles_law_analyzer_node(state: AgentState) -> Dict[str, Any]:
                     if art_filter and art_filter not in ["Portfolio", "portfolio"]
                     else None
                 ),
+                team=team_filter,
             )
 
         if not all_flow_data:
@@ -190,6 +197,7 @@ def littles_law_analyzer_node(state: AgentState) -> Dict[str, Any]:
                     if art_filter and art_filter not in ["Portfolio", "portfolio"]
                     else None
                 ),
+                team=team_filter,
                 limit=10000,
             )
 

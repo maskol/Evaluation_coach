@@ -577,6 +577,7 @@ class InsightsService:
         db: Session,
         current_leadtime: Optional[float] = None,
         current_planning_accuracy: Optional[float] = None,
+        team: Optional[str] = None,
     ) -> List[InsightResponse]:
         """
         Generate actionable insights based on metric analysis
@@ -588,6 +589,7 @@ class InsightsService:
             db: Database session
             current_leadtime: Actual current feature lead-time (optional, for strategic targets)
             current_planning_accuracy: Actual current planning accuracy (optional, for strategic targets)
+            team: Team name filter (optional, for team scope)
 
         Returns:
             List of generated insights
@@ -619,8 +621,10 @@ class InsightsService:
             )
             insights_data.extend(target_insights)
 
-        # Add Little's Law insight if PI/ART is specified and leadtime service is available
-        if scope_id and (scope == "pi" or scope == "portfolio" or scope == "art"):
+        # Add Little's Law insight if PI/ART/Team is specified and leadtime service is available
+        if scope_id and (
+            scope == "pi" or scope == "portfolio" or scope == "art" or scope == "team"
+        ):
             try:
                 from services.leadtime_service import LeadTimeService
 
@@ -646,15 +650,20 @@ class InsightsService:
 
                     if pi_to_analyze:
                         scope_desc = (
-                            f"ART {art_to_filter}"
-                            if art_to_filter
-                            else f"PI {pi_to_analyze}"
+                            f"Team {team}"
+                            if team
+                            else (
+                                f"ART {art_to_filter}"
+                                if art_to_filter
+                                else f"PI {pi_to_analyze}"
+                            )
                         )
                         print(f"📊 Generating Little's Law insight for {scope_desc}...")
                         try:
                             # Fetch flow_leadtime data (without PI filter - will filter client-side)
                             all_flow_data = leadtime_service.client.get_flow_leadtime(
                                 art=art_to_filter,  # Filter by ART if in ART scope
+                                development_team=team,  # Filter by team if in team scope
                                 limit=10000,
                             )
 

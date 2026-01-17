@@ -27,7 +27,7 @@ if USE_OPENAI:
         http_client = httpx.Client(
             timeout=httpx.Timeout(30.0, connect=5.0)  # 30s total, 5s connect
         )
-        
+
         openai_client = OpenAI(
             api_key=OPENAI_API_KEY,
             http_client=http_client,
@@ -49,9 +49,11 @@ try:
     # Ollama has OpenAI-compatible API
     # Configure timeout for Ollama (local models can be slow on first run)
     ollama_http_client = httpx.Client(
-        timeout=httpx.Timeout(60.0, connect=5.0)  # 60s for Ollama (local inference can be slower)
+        timeout=httpx.Timeout(
+            60.0, connect=5.0
+        )  # 60s for Ollama (local inference can be slower)
     )
-    
+
     ollama_client = OpenAI(
         base_url=f"{OLLAMA_BASE_URL}/v1",
         api_key="ollama",  # Ollama doesn't need real API key
@@ -507,7 +509,15 @@ Level 5 - Optimizing: Continuous improvement culture, strategic agility, world-c
                     "role": "system",
                     "content": self._build_system_prompt(retrieved_docs),
                 },
-            ]500,  # Reduced from 650 for faster responses
+                {"role": "user", "content": user_prompt},
+            ]
+
+            response = client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=self.temperature,
+                max_tokens=500,  # Reduced from 650 for faster responses
+                timeout=30.0,
             )
             content = response.choices[0].message.content
             result = (content or "").strip()
@@ -530,16 +540,7 @@ Level 5 - Optimizing: Continuous improvement culture, strategic agility, world-c
             return (
                 self._generate_default_response()
                 + "<br><br><strong>Note:</strong> LLM call failed at runtime. "
-                + f"Error: {error_msgault_response()
-                + "<br><br><strong>Note:</strong> LLM response timed out (>30s). "
-                + "Try a simpler question or check your LLM service configuration."
-            )
-        except Exception as e:
-            # If LLM call fails at runtime, fall back gracefully.
-            return (
-                self._generate_default_response()
-                + "<br><br><strong>Note:</strong> LLM call failed at runtime. "
-                + f"Error: {str(e)}"
+                + f"Error: {error_msg}"
             )
 
     def _generate_wip_response(self, context: Optional[Dict]) -> str:

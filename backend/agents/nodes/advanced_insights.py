@@ -211,6 +211,14 @@ def _analyze_bottlenecks(
                 item for item in stuck_items if item.get("art") in selected_arts
             ]
 
+        # Filter by team if specified (critical for team view accuracy)
+        if selected_team:
+            stuck_items = [
+                item
+                for item in stuck_items
+                if item.get("development_team") == selected_team
+            ]
+
         stage_stuck_items = [
             item for item in stuck_items if item.get("stage") == stage_name
         ]
@@ -219,177 +227,402 @@ def _analyze_bottlenecks(
         )[:3]
 
         if score > 50:  # Significant bottleneck
-            scope_desc = _format_scope(selected_arts, selected_pis, selected_team)
+            # Skip this insight if filtering by team and no items from that team in this stage
+            if selected_team and len(stage_stuck_items) == 0:
+                print(
+                    f"⚠️  Skipping bottleneck insight for {stage_name}: no items from team {selected_team} in this stage"
+                )
+            else:
+                scope_desc = _format_scope(selected_arts, selected_pis, selected_team)
 
-            # Build stuck items evidence
-            stuck_evidence = []
-            if top_stuck:
-                for item in top_stuck:
-                    issue_key = item.get("issue_key", "Unknown")
-                    days = item.get("days_in_stage", 0)
-                    stuck_evidence.append(
-                        f"{issue_key}: {days:.1f} days in {stage_name}"
-                    )
+                # Build stuck items evidence
+                stuck_evidence = []
+                if top_stuck:
+                    for item in top_stuck:
+                        issue_key = item.get("issue_key", "Unknown")
+                        days = item.get("days_in_stage", 0)
+                        stuck_evidence.append(
+                            f"{issue_key}: {days:.1f} days in {stage_name}"
+                        )
 
-            insights.append(
-                InsightResponse(
-                    id=0,
-                    title=f"Critical Bottleneck in {stage_name.replace('_', ' ').title()} Stage",
-                    severity="critical" if score > 70 else "warning",
-                    confidence=0.9,
-                    scope=scope_desc,
-                    scope_id=None,
-                    observation=f"The {stage_name.replace('_', ' ')} stage has a bottleneck score of {score:.1f}%. Average time: {mean_time:.1f} days, with {items_exceeding:,} stage occurrences exceeding threshold (max: {max_time:.0f} days).",
-                    interpretation=f"Features are spending excessive time in {stage_name.replace('_', ' ')}. This stage is a critical constraint in your delivery flow. The high number of stage occurrences exceeding threshold ({items_exceeding:,}) and extreme outliers (max {max_time:.0f} days) indicate systemic issues requiring immediate attention. Note: A single feature may be counted multiple times if it exceeded threshold in multiple stages.",
-                    root_causes=[
-                        RootCause(
-                            description="Severe flow blockage with items stuck in stage",
-                            evidence=(
-                                stuck_evidence
-                                if stuck_evidence
-                                else [
-                                    f"Mean duration: {mean_time:.1f} days",
-                                    f"Maximum observed: {max_time:.0f} days",
-                                    f"{items_exceeding:,} stage occurrences exceeding threshold",
-                                ]
+                insights.append(
+                    InsightResponse(
+                        id=0,
+                        title=f"Critical Bottleneck in {stage_name.replace('_', ' ').title()} Stage",
+                        severity="critical" if score > 70 else "warning",
+                        confidence=0.9,
+                        scope=scope_desc,
+                        scope_id=None,
+                        observation=f"The {stage_name.replace('_', ' ')} stage has a bottleneck score of {score:.1f}%. Average time: {mean_time:.1f} days, with {items_exceeding:,} stage occurrences exceeding threshold (max: {max_time:.0f} days).",
+                        interpretation=f"Features are spending excessive time in {stage_name.replace('_', ' ')}. This stage is a critical constraint in your delivery flow. The high number of stage occurrences exceeding threshold ({items_exceeding:,}) and extreme outliers (max {max_time:.0f} days) indicate systemic issues requiring immediate attention. Note: A single feature may be counted multiple times if it exceeded threshold in multiple stages.",
+                        root_causes=[
+                            RootCause(
+                                description="Severe flow blockage with items stuck in stage",
+                                evidence=(
+                                    stuck_evidence
+                                    if stuck_evidence
+                                    else [
+                                        f"Mean duration: {mean_time:.1f} days",
+                                        f"Maximum observed: {max_time:.0f} days",
+                                        f"{items_exceeding:,} stage occurrences exceeding threshold",
+                                    ]
+                                ),
+                                confidence=0.95,
+                                reference=f"{stage_name} stage metrics",
                             ),
-                            confidence=0.95,
-                            reference=f"{stage_name} stage metrics",
-                        ),
-                        RootCause(
-                            description="Process inefficiencies or resource constraints",
-                            evidence=[
-                                f"Bottleneck score of {score:.1f}% indicates systemic issues",
-                                f"High variability: avg {mean_time:.1f} days, max {max_time:.0f} days",
+                            RootCause(
+                                description="Process inefficiencies or resource constraints",
+                                evidence=[
+                                    f"Bottleneck score of {score:.1f}% indicates systemic issues",
+                                    f"High variability: avg {mean_time:.1f} days, max {max_time:.0f} days",
+                                ],
+                                confidence=0.85,
+                                reference="Workflow stage analysis",
+                            ),
+                        ],
+                        recommended_actions=[
+                            Action(
+                                timeframe="immediate",
+                                description=f"Review top stuck items in {stage_name.replace('_', ' ')} - investigate {', '.join([i.get('issue_key', '') for i in top_stuck[:3]][:3]) if top_stuck else 'longest running items'} to identify common blockers",
+                                owner="delivery_manager",
+                                effort="2-4 hours",
+                                dependencies=[],
+                                success_signal=f"Root cause identified and documented for stuck items",
+                            ),
+                            Action(
+                                timeframe="short_term",
+                                description=f"Implement strict WIP limits for {stage_name.replace('_', ' ')} stage (recommended: 5-10 items max per team) and establish daily standup focus on blocked items",
+                                owner="scrum_master",
+                                effort="1 week",
+                                dependencies=["Team agreement on WIP limits"],
+                                success_signal=f"Mean time reduced to <{mean_time * 0.7:.1f} days within 2 PIs",
+                            ),
+                            Action(
+                                timeframe="medium_term",
+                                description="Value stream mapping workshop to identify and eliminate waste in this stage. Consider pairing/swarming practices for stuck items.",
+                                owner="engineering_manager",
+                                effort="2-4 weeks",
+                                dependencies=["Budget approval", "Training materials"],
+                                success_signal=f"Max time reduced to <{max_time * 0.5:.0f} days, items exceeding threshold reduced by 40%",
+                            ),
+                        ],
+                        expected_outcomes=ExpectedOutcome(
+                            metrics_to_watch=[
+                                f"{stage_name}_mean_time",
+                                f"{stage_name}_max_time",
+                                f"{stage_name}_items_exceeding_threshold",
+                                "overall_lead_time",
                             ],
-                            confidence=0.85,
-                            reference="Workflow stage analysis",
+                            leading_indicators=[
+                                "WIP count trending down",
+                                "Fewer items exceeding threshold",
+                                "Cycle time stabilizing",
+                            ],
+                            lagging_indicators=[
+                                f"Mean time in stage reduced to <{mean_time * 0.7:.1f} days",
+                                "Items exceeding threshold reduced by 40%+",
+                            ],
+                            timeline="4-8 weeks",
+                            risks=[
+                                "Team resistance to WIP limits",
+                                "Initial productivity dip during process changes",
+                                "Hidden dependencies may emerge when items move faster",
+                            ],
                         ),
-                    ],
-                    recommended_actions=[
-                        Action(
-                            timeframe="immediate",
-                            description=f"Review top stuck items in {stage_name.replace('_', ' ')} - investigate {', '.join([i.get('issue_key', '') for i in top_stuck[:3]][:3]) if top_stuck else 'longest running items'} to identify common blockers",
-                            owner="delivery_manager",
-                            effort="2-4 hours",
-                            dependencies=[],
-                            success_signal=f"Root cause identified and documented for stuck items",
-                        ),
-                        Action(
-                            timeframe="short_term",
-                            description=f"Implement strict WIP limits for {stage_name.replace('_', ' ')} stage (recommended: 5-10 items max per team) and establish daily standup focus on blocked items",
-                            owner="scrum_master",
-                            effort="1 week",
-                            dependencies=["Team agreement on WIP limits"],
-                            success_signal=f"Mean time reduced to <{mean_time * 0.7:.1f} days within 2 PIs",
-                        ),
-                        Action(
-                            timeframe="medium_term",
-                            description="Value stream mapping workshop to identify and eliminate waste in this stage. Consider pairing/swarming practices for stuck items.",
-                            owner="engineering_manager",
-                            effort="2-4 weeks",
-                            dependencies=["Budget approval", "Training materials"],
-                            success_signal=f"Max time reduced to <{max_time * 0.5:.0f} days, items exceeding threshold reduced by 40%",
-                        ),
-                    ],
-                    expected_outcomes=ExpectedOutcome(
-                        metrics_to_watch=[
+                        metric_references=[
+                            f"{stage_name}_bottleneck_score",
                             f"{stage_name}_mean_time",
                             f"{stage_name}_max_time",
-                            f"{stage_name}_items_exceeding_threshold",
-                            "overall_lead_time",
                         ],
-                        leading_indicators=[
-                            "WIP count trending down",
-                            "Fewer items exceeding threshold",
-                            "Cycle time stabilizing",
-                        ],
-                        lagging_indicators=[
-                            f"Mean time in stage reduced to <{mean_time * 0.7:.1f} days",
-                            "Items exceeding threshold reduced by 40%+",
-                        ],
-                        timeline="4-8 weeks",
-                        risks=[
-                            "Team resistance to WIP limits",
-                            "Initial productivity dip during process changes",
-                            "Hidden dependencies may emerge when items move faster",
-                        ],
-                    ),
-                    metric_references=[
-                        f"{stage_name}_bottleneck_score",
-                        f"{stage_name}_mean_time",
-                        f"{stage_name}_max_time",
-                    ],
-                    evidence=[
-                        f"Bottleneck score: {score:.1f}%",
-                        f"Mean duration: {mean_time:.1f} days",
-                        f"Maximum duration: {max_time:.0f} days",
-                        f"Stage occurrences exceeding threshold: {items_exceeding:,}",
-                    ]
-                    + (stuck_evidence[:3] if stuck_evidence else []),
-                    status="active",
-                    created_at=datetime.now(),
+                        evidence=[
+                            f"Bottleneck score: {score:.1f}%",
+                            f"Mean duration: {mean_time:.1f} days",
+                            f"Maximum duration: {max_time:.0f} days",
+                            f"Stage occurrences exceeding threshold: {items_exceeding:,}",
+                        ]
+                        + (stuck_evidence[:3] if stuck_evidence else []),
+                        status="active",
+                        created_at=datetime.now(),
+                    )
                 )
-            )
 
     # Multiple bottlenecks
     if len(sorted_bottlenecks) >= 3:
         top_3 = sorted_bottlenecks[:3]
         if all(b.get("bottleneck_score", 0) > 40 for b in top_3):
-            stage_names = [b.get("stage", "").replace("_", " ").title() for b in top_3]
-            total_mean = sum(b.get("mean_time", 0) for b in top_3)
+            # When filtering by team, check which bottleneck stages actually have items from this team
+            if selected_team:
+                # Get stuck items for this team
+                team_stuck_items = [
+                    item
+                    for item in stuck_items
+                    if item.get("development_team") == selected_team
+                ]
 
-            # Note: Don't sum items_exceeding_threshold as same feature can appear in multiple stages
-            stage_details = [
-                f"{b.get('stage', '').replace('_', ' ').title()} ({b.get('items_exceeding_threshold', 0):,} occurrences)"
-                for b in top_3
-            ]
+                # Recalculate stage details based on team's actual stuck items
+                team_stage_counts = {}
+                for item in team_stuck_items:
+                    stage = item.get("stage", "unknown")
+                    team_stage_counts[stage] = team_stage_counts.get(stage, 0) + 1
 
-            insights.append(
-                InsightResponse(
-                    id=0,
-                    title="Multiple Workflow Bottlenecks Detected",
-                    severity="warning",
-                    confidence=0.85,
-                    scope=_format_scope(selected_arts, selected_pis, selected_team),
-                    scope_id=None,
-                    observation=f"Three stages showing bottleneck behavior: {', '.join(stage_details)}. Combined average time: {total_mean:.1f} days.",
-                    interpretation="Multiple bottlenecks indicate systemic workflow issues rather than isolated problems. The entire delivery pipeline needs optimization. This suggests issues with overall process design, resource allocation, or dependencies between stages. Note: Same features may appear in multiple stages if they exceeded thresholds throughout their journey.",
-                    root_causes=[
-                        RootCause(
-                            description="Workflow design issues - sequential dependencies",
-                            evidence=[
-                                f"{len(top_3)} stages with bottleneck scores >40"
+                # Filter top_3 to only include stages where team has items
+                relevant_bottlenecks = [
+                    b for b in top_3 if team_stage_counts.get(b.get("stage", ""), 0) > 0
+                ]
+
+                if len(relevant_bottlenecks) < 2:
+                    # Not enough bottleneck stages with team items - skip this insight
+                    print(
+                        f"⚠️  Skipping multiple bottlenecks insight: team {selected_team} has items in only {len(relevant_bottlenecks)} bottleneck stage(s)"
+                    )
+                else:
+                    stage_names = [
+                        b.get("stage", "").replace("_", " ").title()
+                        for b in relevant_bottlenecks
+                    ]
+                    total_mean = sum(
+                        b.get("mean_time", 0) for b in relevant_bottlenecks
+                    )
+
+                    # Use team-specific counts
+                    stage_details = [
+                        f"{b.get('stage', '').replace('_', ' ').title()} ({team_stage_counts.get(b.get('stage', ''), 0)} occurrences)"
+                        for b in relevant_bottlenecks
+                    ]
+
+                    insights.append(
+                        InsightResponse(
+                            id=0,
+                            title="Multiple Workflow Bottlenecks Detected",
+                            severity="warning",
+                            confidence=0.85,
+                            scope=_format_scope(
+                                selected_arts, selected_pis, selected_team
+                            ),
+                            scope_id=None,
+                            observation=f"{len(relevant_bottlenecks)} stages showing bottleneck behavior: {', '.join(stage_details)}. Combined average time: {total_mean:.1f} days.",
+                            interpretation="Multiple bottlenecks indicate systemic workflow issues rather than isolated problems. The entire delivery pipeline needs optimization. This suggests issues with overall process design, resource allocation, or dependencies between stages.",
+                            root_causes=[
+                                RootCause(
+                                    description="Workflow design issues - sequential dependencies",
+                                    evidence=[
+                                        f"{len(relevant_bottlenecks)} stages with bottleneck scores >40 affecting this team"
+                                    ],
+                                    confidence=0.8,
+                                    reference="Bottleneck analysis",
+                                )
                             ],
-                            confidence=0.8,
-                            reference="Bottleneck analysis",
+                            recommended_actions=[
+                                Action(
+                                    timeframe="immediate",
+                                    description="Conduct value stream mapping workshop to identify waste and handoff delays",
+                                    owner="agile_coach",
+                                    effort="1 day workshop",
+                                    dependencies=["Key stakeholders available"],
+                                    success_signal="Value stream map created with identified improvement areas",
+                                )
+                            ],
+                            expected_outcomes=ExpectedOutcome(
+                                metrics_to_watch=[
+                                    "overall_lead_time",
+                                    "flow_efficiency",
+                                ],
+                                leading_indicators=["Reduced handoff times"],
+                                lagging_indicators=["30% reduction in total lead time"],
+                                timeline="8-12 weeks",
+                                risks=[
+                                    "Significant process changes may disrupt current work"
+                                ],
+                            ),
+                            metric_references=[
+                                "bottleneck_scores",
+                                "overall_lead_time",
+                            ],
+                            evidence=[
+                                f"{len(relevant_bottlenecks)} stages with bottleneck scores >40: {', '.join(stage_names)}"
+                            ],
+                            status="active",
+                            created_at=datetime.now(),
                         )
-                    ],
-                    recommended_actions=[
-                        Action(
-                            timeframe="immediate",
-                            description="Conduct value stream mapping workshop to identify waste and handoff delays",
-                            owner="agile_coach",
-                            effort="1 day workshop",
-                            dependencies=["Key stakeholders available"],
-                            success_signal="Value stream map created with identified improvement areas",
-                        )
-                    ],
-                    expected_outcomes=ExpectedOutcome(
-                        metrics_to_watch=["overall_lead_time", "flow_efficiency"],
-                        leading_indicators=["Reduced handoff times"],
-                        lagging_indicators=["30% reduction in total lead time"],
-                        timeline="8-12 weeks",
-                        risks=["Significant process changes may disrupt current work"],
-                    ),
-                    metric_references=["bottleneck_scores", "overall_lead_time"],
-                    evidence=[
-                        f"Three stages with bottleneck scores >40: {', '.join(stage_names)}"
-                    ],
-                    status="active",
-                    created_at=datetime.now(),
+                    )
+            else:
+                # No team filter - use original ART-level data
+                stage_names = [
+                    b.get("stage", "").replace("_", " ").title() for b in top_3
+                ]
+                total_mean = sum(b.get("mean_time", 0) for b in top_3)
+
+                # Note: Don't sum items_exceeding_threshold as same feature can appear in multiple stages
+                stage_details = [
+                    f"{b.get('stage', '').replace('_', ' ').title()} ({b.get('items_exceeding_threshold', 0):,} occurrences)"
+                    for b in top_3
+                ]
+
+                insights.append(
+                    InsightResponse(
+                        id=0,
+                        title="Multiple Workflow Bottlenecks Detected",
+                        severity="warning",
+                        confidence=0.85,
+                        scope=_format_scope(selected_arts, selected_pis, selected_team),
+                        scope_id=None,
+                        observation=f"Three stages showing bottleneck behavior: {', '.join(stage_details)}. Combined average time: {total_mean:.1f} days.",
+                        interpretation="Multiple bottlenecks indicate systemic workflow issues rather than isolated problems. The entire delivery pipeline needs optimization. This suggests issues with overall process design, resource allocation, or dependencies between stages. Note: Same features may appear in multiple stages if they exceeded thresholds throughout their journey.",
+                        root_causes=[
+                            RootCause(
+                                description="Workflow design issues - sequential dependencies",
+                                evidence=[
+                                    f"{len(top_3)} stages with bottleneck scores >40"
+                                ],
+                                confidence=0.8,
+                                reference="Bottleneck analysis",
+                            )
+                        ],
+                        recommended_actions=[
+                            Action(
+                                timeframe="immediate",
+                                description="Conduct value stream mapping workshop to identify waste and handoff delays",
+                                owner="agile_coach",
+                                effort="1 day workshop",
+                                dependencies=["Key stakeholders available"],
+                                success_signal="Value stream map created with identified improvement areas",
+                            )
+                        ],
+                        expected_outcomes=ExpectedOutcome(
+                            metrics_to_watch=["overall_lead_time", "flow_efficiency"],
+                            leading_indicators=["Reduced handoff times"],
+                            lagging_indicators=["30% reduction in total lead time"],
+                            timeline="8-12 weeks",
+                            risks=[
+                                "Significant process changes may disrupt current work"
+                            ],
+                        ),
+                        metric_references=["bottleneck_scores", "overall_lead_time"],
+                        evidence=[
+                            f"Three stages with bottleneck scores >40: {', '.join(stage_names)}"
+                        ],
+                        status="active",
+                        created_at=datetime.now(),
+                    )
                 )
+
+    # Check for extremely stuck items (>200 days) that might not be in the top bottleneck stage
+    all_stuck_items = bottleneck_data.get("stuck_items", [])
+
+    # Filter by team if specified
+    if selected_team:
+        all_stuck_items = [
+            item
+            for item in all_stuck_items
+            if item.get("development_team") == selected_team
+        ]
+
+    # Filter by ART if specified
+    if selected_arts:
+        all_stuck_items = [
+            item for item in all_stuck_items if item.get("art") in selected_arts
+        ]
+
+    # Find extremely stuck items (>200 days)
+    extreme_stuck = [
+        item for item in all_stuck_items if item.get("days_in_stage", 0) > 200
+    ]
+
+    if extreme_stuck:
+        # Sort by days stuck
+        extreme_stuck_sorted = sorted(
+            extreme_stuck, key=lambda x: x.get("days_in_stage", 0), reverse=True
+        )[:5]
+
+        # Get unique stages
+        affected_stages = list(
+            set(item.get("stage", "unknown") for item in extreme_stuck)
+        )
+        max_days = max(item.get("days_in_stage", 0) for item in extreme_stuck)
+        avg_days = sum(item.get("days_in_stage", 0) for item in extreme_stuck) / len(
+            extreme_stuck
+        )
+
+        # Build evidence list
+        evidence_items = [
+            f"{item.get('issue_key', 'Unknown')}: {item.get('days_in_stage', 0):.0f} days in {item.get('stage', 'unknown')}"
+            for item in extreme_stuck_sorted[:3]
+        ]
+
+        scope_desc = _format_scope(selected_arts, selected_pis, selected_team)
+
+        insights.append(
+            InsightResponse(
+                id=0,
+                title=f"Extremely Long Stuck Items Detected ({len(extreme_stuck)} items >200 days)",
+                severity="critical",
+                confidence=0.95,
+                scope=scope_desc,
+                scope_id=None,
+                observation=f"Found {len(extreme_stuck)} items stuck for more than 200 days across {len(affected_stages)} stage(s). Longest: {max_days:.0f} days, Average: {avg_days:.0f} days.",
+                interpretation=f"Items stuck for this long indicate severe systemic issues - these are essentially 'dead' in the workflow. They're consuming WIP limits, degrading metrics, and likely represent blocked or abandoned work. Immediate action required to either resolve, cancel, or escalate these items.",
+                root_causes=[
+                    RootCause(
+                        description="Critical blockages or abandoned work",
+                        evidence=evidence_items,
+                        confidence=0.95,
+                        reference="Stuck items analysis",
+                    ),
+                    RootCause(
+                        description="Lack of visibility and governance on aged items",
+                        evidence=[
+                            f"Average stuck time: {avg_days:.0f} days",
+                            f"Maximum: {max_days:.0f} days",
+                        ],
+                        confidence=0.9,
+                        reference="Workflow monitoring",
+                    ),
+                ],
+                recommended_actions=[
+                    Action(
+                        timeframe="immediate",
+                        description=f"Emergency review of top stuck items: {', '.join([item.get('issue_key', '') for item in extreme_stuck_sorted[:3]])}. Determine if they should be cancelled, escalated, or actively unblocked.",
+                        owner="delivery_manager",
+                        effort="2 hours",
+                        dependencies=[],
+                        success_signal="Disposition decided for all items >200 days",
+                    ),
+                    Action(
+                        timeframe="short_term",
+                        description="Implement automated alerts for items exceeding 90 days in any stage. Weekly review process for all items >60 days.",
+                        owner="scrum_master",
+                        effort="1 week",
+                        dependencies=["Monitoring tools configuration"],
+                        success_signal="No items exceed 150 days without active escalation",
+                    ),
+                ],
+                expected_outcomes=ExpectedOutcome(
+                    metrics_to_watch=["max_age_by_stage", "items_exceeding_threshold"],
+                    leading_indicators=[
+                        "Reduction in items >90 days",
+                        "Faster issue resolution or cancellation",
+                    ],
+                    lagging_indicators=[
+                        f"Zero items exceed 200 days",
+                        "Average stuck time <60 days",
+                    ],
+                    timeline="2-4 weeks",
+                    risks=[
+                        "May reveal uncomfortable truths about blocked work",
+                        "Cancelling items may impact commitments",
+                    ],
+                ),
+                metric_references=["max_days_in_stage", "stuck_items_count"],
+                evidence=[
+                    f"{len(extreme_stuck)} items stuck >200 days",
+                    f"Longest: {max_days:.0f} days",
+                    f"Average: {avg_days:.0f} days",
+                ]
+                + evidence_items[:3],
+                status="active",
+                created_at=datetime.now(),
             )
+        )
 
     return insights
 
@@ -413,6 +646,16 @@ def _analyze_stuck_item_patterns(
     # Filter by ART if specified
     if selected_arts:
         stuck_items = [item for item in stuck_items if item.get("art") in selected_arts]
+        if not stuck_items:
+            return insights
+
+    # Filter by team if specified (critical for team view accuracy)
+    if selected_team:
+        stuck_items = [
+            item
+            for item in stuck_items
+            if item.get("development_team") == selected_team
+        ]
         if not stuck_items:
             return insights
 
@@ -915,6 +1158,14 @@ def _analyze_flow_efficiency(
     if not art_comparison:
         return insights
 
+    # Skip this ART comparison insight when filtering by team
+    # (Team-specific flow efficiency should be analyzed differently)
+    if selected_team:
+        print(
+            f"⚠️  Skipping ART-level flow efficiency insight when filtering by team {selected_team}"
+        )
+        return insights
+
     # Find ARTs with low flow efficiency
     low_flow_arts = [
         art for art in art_comparison if art.get("flow_efficiency", 0) < 30
@@ -1188,6 +1439,13 @@ def _analyze_art_load_balance(
     insights = []
 
     if not art_comparison or len(art_comparison) < 3:
+        return insights
+
+    # Skip ART comparison insights when filtering by team
+    if selected_team:
+        print(
+            f"⚠️  Skipping ART load balance insight when filtering by team {selected_team}"
+        )
         return insights
 
     # Calculate load metrics per ART
@@ -1857,6 +2115,15 @@ def _generate_executive_summary(
         bottleneck_data = analysis_summary.get("bottleneck_analysis", {})
         wip_stats = bottleneck_data.get("wip_statistics", {})
         stuck_items = bottleneck_data.get("stuck_items", [])
+
+        # Filter stuck items by team if specified (critical for team view accuracy)
+        if selected_team:
+            stuck_items = [
+                item
+                for item in stuck_items
+                if item.get("development_team") == selected_team
+            ]
+
         leadtime_data = analysis_summary.get("leadtime_analysis", {})
         waste_data = analysis_summary.get("waste_analysis", {})
         planning_data = analysis_summary.get("planning_accuracy", {})

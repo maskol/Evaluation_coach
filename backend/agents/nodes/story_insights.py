@@ -168,6 +168,15 @@ def _analyze_story_bottlenecks(
 
             # Get stuck stories for this stage
             stuck_items = bottleneck_data.get("stuck_items", [])
+
+            # Filter by team if specified (critical for team view accuracy)
+            if selected_team:
+                stuck_items = [
+                    item
+                    for item in stuck_items
+                    if item.get("development_team") == selected_team
+                ]
+
             stage_stuck = [
                 item for item in stuck_items if item.get("stage") == stage_name
             ][:3]
@@ -255,6 +264,15 @@ def _analyze_story_stuck_items(
     insights = []
 
     stuck_items = bottleneck_data.get("stuck_items", [])
+
+    # Filter by team if specified (critical for team view accuracy)
+    if selected_team:
+        stuck_items = [
+            item
+            for item in stuck_items
+            if item.get("development_team") == selected_team
+        ]
+
     if len(stuck_items) < 3:
         return insights
 

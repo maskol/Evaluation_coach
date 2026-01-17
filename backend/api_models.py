@@ -37,6 +37,7 @@ class AnalysisRequest(BaseModel):
     scope_id: Optional[str] = None
     time_range: TimeRange = TimeRange.LAST_PI
     metric_focus: Optional[str] = None
+    team: Optional[str] = None  # Team name for team scope
 
 
 class ChatRequest(BaseModel):
