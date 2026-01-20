@@ -207,6 +207,27 @@ curl "http://localhost:8000/api/analysis/summary?pi=25Q1,25Q2,25Q3,25Q4&art=C4AR
 
 ## Status
 
-🔴 **OPEN** - Awaiting DL Webb APP fix
+✅ **RESOLVED** - Fixed by DL Webb APP team on 2026-01-20
 
-Once fixed, users will be able to see C4ART-87 as the example in their bottleneck insights for historical analysis! 🎉
+### Verification Results
+
+```
+Test Results:
+✅ PASS: include_completed parameter controls stuck_items filtering
+✅ PASS: C4ART-87 appears in stuck_items with include_completed=true
+✅ PASS: C4ART-87 is the #1 stuck item (highest days: 255.9)
+✅ PASS: C4ART-87 has correct days_in_stage (~255.9)
+✅ PASS: C4ART-87 stage is 'in_progress'
+
+Stuck Items Response (Top 5):
+1. C4ART-87: 255.9 days in in_progress (Done)  ⬅️ NOW VISIBLE!
+2. C4ART-30: 225.0 days in in_progress (Done)
+3. C4ART-96: 218.8 days in in_progress (Done)
+4. C4ART-97: 195.1 days in in_progress (Done)
+5. C4ART-8: 188.9 days in in_backlog (Done)
+```
+
+Users can now see C4ART-87 as the example in their bottleneck insights for historical analysis! 🎉
+
+### Known Issue
+⚠️ `stage_analysis` is returning empty - this is a separate issue from stuck_items and does not impact the include_completed feature functionality.
