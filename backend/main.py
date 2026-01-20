@@ -205,112 +205,19 @@ def save_config_to_db(db: Session, config_key: str, config_value: Optional[float
         raise e
 
 
-def filter_stuck_items_for_analysis(
-    analysis_summary: Dict[str, Any], selected_pis: List[str], db: Session
-) -> Dict[str, Any]:
-    """
-    Filter stuck_items based on whether analysis is historical or current.
-
-    - For historical PI analysis: Include all stuck items (even completed ones)
-    - For current/active PI analysis: Exclude completed items
-
-    Uses PI configuration dates to determine if selected PIs are current/active.
-    A PI is considered current if today's date falls within its date range.
-
-    Args:
-        analysis_summary: The analysis summary from DL Webb API
-        selected_pis: List of selected PIs
-        db: Database session to query PI configurations
-
-    Returns:
-        Modified analysis_summary with appropriately filtered stuck_items
-    """
-    try:
-        # Get today's date
-        today = datetime.now().date()
-
-        # Get PI configurations from database
-        config_entry = (
-            db.query(RuntimeConfiguration)
-            .filter(RuntimeConfiguration.config_key == "pi_configurations")
-            .first()
-        )
-
-        is_historical = True  # Default to historical (keep all items)
-
-        if config_entry and config_entry.config_value and selected_pis:
-            import json
-
-            pi_configurations = json.loads(config_entry.config_value)
-
-            # Check if any selected PI is current (today falls within PI date range)
-            for selected_pi in selected_pis:
-                for pi_config in pi_configurations:
-                    if pi_config.get("pi") == selected_pi:
-                        start_date = datetime.strptime(
-                            pi_config["start_date"], "%Y-%m-%d"
-                        ).date()
-                        end_date = datetime.strptime(
-                            pi_config["end_date"], "%Y-%m-%d"
-                        ).date()
-
-                        if start_date <= today <= end_date:
-                            is_historical = False
-                            print(
-                                f"📅 PI {selected_pi} is CURRENT ({pi_config['start_date']} to {pi_config['end_date']}, today: {today})"
-                            )
-                            break
-                        else:
-                            print(
-                                f"📅 PI {selected_pi} is historical ({pi_config['start_date']} to {pi_config['end_date']}, today: {today})"
-                            )
-                        break
-
-                if not is_historical:
-                    break
-
-        print(
-            f"📊 Stuck items filtering: Selected PIs={selected_pis}, Today={today}, Is Historical={is_historical}"
-        )
-
-        # Filter stuck_items in bottleneck_analysis
-        if "bottleneck_analysis" in analysis_summary:
-            stuck_items = analysis_summary["bottleneck_analysis"].get("stuck_items", [])
-
-            if not is_historical and stuck_items:
-                # For current/active analysis, filter out completed items
-                completed_statuses = {
-                    "DONE",
-                    "CLOSED",
-                    "RESOLVED",
-                    "CANCELLED",
-                    "CANCELED",
-                }
-                original_count = len(stuck_items)
-
-                filtered_items = [
-                    item
-                    for item in stuck_items
-                    if item.get("status", "").upper() not in completed_statuses
-                ]
-
-                analysis_summary["bottleneck_analysis"]["stuck_items"] = filtered_items
-                print(
-                    f"   ✂️  Filtered stuck_items: {original_count} → {len(filtered_items)} (removed {original_count - len(filtered_items)} completed items)"
-                )
-            else:
-                print(
-                    f"   📋 Historical analysis: Keeping all {len(stuck_items)} stuck_items (including completed)"
-                )
-
-    except Exception as e:
-        print(f"⚠️  Error filtering stuck_items: {e}")
-        import traceback
-
-        traceback.print_exc()
-        # On error, return original unmodified data
-
-    return analysis_summary
+# DEPRECATED: This function is no longer needed as of 2026-01-20
+# DL Webb APP now correctly handles the include_completed parameter,
+# so client-side filtering is redundant and has been removed.
+# Keeping this as a comment for historical reference.
+#
+# Previously, this function filtered stuck_items on the client side because
+# DL Webb APP didn't support the include_completed parameter. Now that
+# DL Webb APP implements this feature, it correctly returns:
+# - Only active items when include_completed=false (current analysis)
+# - All items including completed when include_completed=true (historical analysis)
+#
+# See: HISTORICAL_ANALYSIS_INCLUDE_COMPLETED.md and
+#      DL_WEBB_APP_INCLUDE_COMPLETED_IMPLEMENTATION.md
 
 
 def get_excluded_feature_statuses(db: Session) -> List[str]:
@@ -1408,10 +1315,8 @@ async def generate_insights_endpoint(
                         **params
                     )
 
-                    # Filter stuck_items based on historical vs current analysis
-                    analysis_summary = filter_stuck_items_for_analysis(
-                        analysis_summary, selected_pis, db
-                    )
+                    # Note: DL Webb APP now handles include_completed parameter correctly,
+                    # so no additional filtering needed here
 
                     # Also get ART comparison for context, filtered by selected ARTs and PI
                     pip_params = {}
@@ -1619,10 +1524,8 @@ async def export_executive_summary(
                     **params
                 )
 
-                # Filter stuck_items based on historical vs current analysis
-                analysis_summary = filter_stuck_items_for_analysis(
-                    analysis_summary, selected_pis, db
-                )
+                # Note: DL Webb APP now handles include_completed parameter correctly,
+                # so no additional filtering needed here
 
                 bottleneck_data = analysis_summary.get("bottleneck_analysis", {})
                 wip_stats = bottleneck_data.get("wip_statistics", {})
