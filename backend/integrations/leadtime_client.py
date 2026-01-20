@@ -385,6 +385,7 @@ class LeadTimeClient:
         pis: Optional[List[str]] = None,
         team: Optional[str] = None,
         threshold_days: Optional[float] = None,
+        include_completed: Optional[bool] = None,
     ) -> Dict[str, Any]:
         """
         Get comprehensive summary of all analyses.
@@ -396,6 +397,7 @@ class LeadTimeClient:
             pis: List of PIs to analyze
             team: Team name to filter by
             threshold_days: Threshold in days for identifying items exceeding limit
+            include_completed: Include completed/done items in stuck_items (for historical analysis)
 
         Returns:
             Comprehensive analysis summary
@@ -409,6 +411,8 @@ class LeadTimeClient:
             params["development_team"] = team
         if threshold_days is not None:
             params["threshold_days"] = str(threshold_days)
+        if include_completed is not None:
+            params["include_completed"] = "true" if include_completed else "false"
 
         return self._get("/api/analysis/summary", params=params if params else None)
 
@@ -420,6 +424,7 @@ class LeadTimeClient:
         pis: Optional[List[str]] = None,
         team: Optional[str] = None,
         threshold_days: Optional[float] = None,
+        include_completed: Optional[bool] = None,
     ) -> Dict[str, Any]:
         """
         Get comprehensive bottleneck analysis summary for user stories.
@@ -435,6 +440,7 @@ class LeadTimeClient:
             pis: List of PIs to analyze
             team: Team name to filter by
             threshold_days: Threshold in days for identifying stuck stories
+            include_completed: Include completed/done items in stuck_items (for historical analysis)
 
         Returns:
             Story-level bottleneck analysis summary
@@ -448,6 +454,8 @@ class LeadTimeClient:
             params["team"] = team
         if threshold_days is not None:
             params["threshold_days"] = str(threshold_days)
+        if include_completed is not None:
+            params["include_completed"] = "true" if include_completed else "false"
 
         return self._get(
             "/api/story_analysis_summary", params=params if params else None

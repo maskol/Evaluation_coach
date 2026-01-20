@@ -292,6 +292,9 @@ def littles_law_analyzer_node(state: AgentState) -> Dict[str, Any]:
             leadtime_service, pi_to_analyze, art_filter, lookback_pis=8
         )
 
+        # Get list of selected PIs from state (for multi-PI analysis context)
+        selected_pis = state.get("selected_pis", [pi_to_analyze])
+
         # Calculate Little's Law metrics (with historical baseline and item type)
         metrics = _calculate_littles_law_metrics(
             flow_data,
@@ -299,6 +302,7 @@ def littles_law_analyzer_node(state: AgentState) -> Dict[str, Any]:
             analysis_summary,
             historical_baseline=historical_baseline,
             item_type=item_type,  # Pass item type for proper labeling
+            selected_pis=selected_pis,  # Pass all selected PIs for context
         )
 
         if not metrics:
@@ -511,6 +515,7 @@ def _calculate_littles_law_metrics(
     pi_duration_days: Optional[int] = None,
     historical_baseline: Optional[Dict[str, Any]] = None,
     item_type: str = "features",
+    selected_pis: Optional[List[str]] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     Calculate Little's Law metrics from flow data.
@@ -522,6 +527,7 @@ def _calculate_littles_law_metrics(
         pi_duration_days: Duration of PI in days (fetched from config if not provided)
         historical_baseline: Historical capacity baseline from past PIs
         item_type: Type of items being analyzed ("features" or "stories")
+        selected_pis: List of all selected PIs (for multi-PI context)
 
     Returns:
         Dictionary with calculated metrics or None if insufficient data
@@ -786,6 +792,9 @@ def _calculate_littles_law_metrics(
 
     return {
         "pi": pi,
+        "pi_list": (
+            selected_pis if selected_pis and len(selected_pis) > 1 else None
+        ),  # Include list if multiple PIs
         "total_features": total_features,
         "pi_duration_days": pi_duration_days,
         # Little's Law components
@@ -1361,9 +1370,22 @@ def _generate_flow_insight(
 ) -> Optional[Dict[str, Any]]:
     """Generate Little's Law flow optimization insight."""
 
+    # Check if analyzing multiple PIs
+    pi_list = metrics.get("pi_list", [])
+    if not pi_list and isinstance(pi, str) and "," in pi:
+        pi_list = [p.strip() for p in pi.split(",")]
+
+    # Determine the appropriate PI label
+    if pi_list and len(pi_list) > 1:
+        pi_label = f"{len(pi_list)} PIs ({', '.join(pi_list)})"
+        pi_context = f"Aggregated across {len(pi_list)} PIs ({', '.join(pi_list)})"
+    else:
+        pi_label = f"PI {pi}"
+        pi_context = f"During PI {pi}"
+
     # Build observation
     observation_parts = [
-        f"During PI {pi} ({metrics['pi_duration_days']}-day period), {metrics['total_features']} {item_type} were completed.",
+        f"{pi_context} ({metrics['pi_duration_days']}-day period), {metrics['total_features']} {item_type} were completed.",
         f"Throughput (λ) = {metrics['throughput_per_day']:.2f} {item_type}/day.",
         f"Average Lead Time (W) = {metrics['avg_leadtime']:.1f} days (range: {metrics['leadtime_min']:.1f}-{metrics['leadtime_max']:.1f}).",
         f"Predicted WIP (L) = {metrics['predicted_wip']:.1f} {item_type}.",
@@ -1586,11 +1608,11 @@ def _generate_flow_insight(
     # Create the main insight
     level_label = "Story-Level" if item_type == "stories" else "Feature-Level"
     main_insight = {
-        "title": f"Little's Law Analysis: PI {pi} {level_label} Flow Optimization",
+        "title": f"Little's Law Analysis: {pi_label} {level_label} Flow Optimization",
         "severity": metrics["severity"],
         "confidence": metrics["confidence"],
-        "scope": "pi",
-        "scope_id": pi,
+        "scope": "pi" if not pi_list or len(pi_list) == 1 else "portfolio",
+        "scope_id": pi if not pi_list or len(pi_list) == 1 else None,
         "observation": " ".join(observation_parts),
         "interpretation": " ".join(interpretation_parts),
         "root_causes": (
@@ -1657,9 +1679,22 @@ def _generate_planning_insight(
     delivered_count = metrics.get("delivered_committed_count", 0)
     missed_count = metrics.get("missed_committed_count", 0)
 
+    # Check if analyzing multiple PIs (indicated by comma-separated string or presence of pi_list in metrics)
+    pi_list = metrics.get("pi_list", [])
+    if not pi_list and isinstance(pi, str) and "," in pi:
+        pi_list = [p.strip() for p in pi.split(",")]
+
+    # Determine the appropriate PI label for the title and observation
+    if pi_list and len(pi_list) > 1:
+        pi_label = f"{len(pi_list)} PIs ({', '.join(pi_list)})"
+        pi_context = f"Aggregated across {len(pi_list)} PIs ({', '.join(pi_list)})"
+    else:
+        pi_label = f"PI {pi}"
+        pi_context = f"PI {pi} planning data"
+
     # Build observation
     observation_parts = [
-        f"PI {pi} planning data:",
+        f"{pi_context}:",
         f"{committed_count} committed {item_type}, {uncommitted_count} uncommitted {item_type}.",
         f"{post_planning_count} {item_type} added after PI planning.",
         f"Planning accuracy: {planning_accuracy:.1f}% ({delivered_count} delivered, {missed_count} missed).",
@@ -1801,11 +1836,11 @@ def _generate_planning_insight(
         severity = "success"
 
     return {
-        "title": f"PI {pi} Planning Accuracy & Predictability",
+        "title": f"{pi_label} Planning Accuracy & Predictability",
         "severity": severity,
         "confidence": 0.92,
-        "scope": "pi",
-        "scope_id": pi,
+        "scope": "pi" if not pi_list or len(pi_list) == 1 else "portfolio",
+        "scope_id": pi if not pi_list or len(pi_list) == 1 else None,
         "observation": " ".join(observation_parts),
         "interpretation": " ".join(interpretation_parts),
         "root_causes": (
@@ -1869,9 +1904,22 @@ def _generate_commitment_insight(
     if total_planned == 0:
         return None
 
+    # Check if analyzing multiple PIs
+    pi_list = metrics.get("pi_list", [])
+    if not pi_list and isinstance(pi, str) and "," in pi:
+        pi_list = [p.strip() for p in pi.split(",")]
+
+    # Determine the appropriate PI label
+    if pi_list and len(pi_list) > 1:
+        pi_label = f"{len(pi_list)} PIs ({', '.join(pi_list)})"
+        pi_context = f"Aggregated across {len(pi_list)} PIs ({', '.join(pi_list)})"
+    else:
+        pi_label = f"PI {pi}"
+        pi_context = f"PI {pi}"
+
     # Build observation
     observation_parts = [
-        f"PI {pi} commitment breakdown:",
+        f"{pi_context} commitment breakdown:",
         f"{committed_pct:.1f}% committed ({committed_count} {item_type}),",
         f"{100 - committed_pct:.1f}% uncommitted ({uncommitted_count} {item_type}).",
     ]
@@ -1975,11 +2023,11 @@ def _generate_commitment_insight(
         severity = "success"
 
     return {
-        "title": f"PI {pi} Commitment Discipline",
+        "title": f"{pi_label} Commitment Discipline",
         "severity": severity,
         "confidence": 0.88,
-        "scope": "pi",
-        "scope_id": pi,
+        "scope": "pi" if not pi_list or len(pi_list) == 1 else "portfolio",
+        "scope_id": pi if not pi_list or len(pi_list) == 1 else None,
         "observation": " ".join(observation_parts),
         "interpretation": " ".join(interpretation_parts),
         "root_causes": (

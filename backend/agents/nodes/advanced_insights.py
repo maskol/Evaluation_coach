@@ -222,8 +222,23 @@ def _analyze_bottlenecks(
         stage_stuck_items = [
             item for item in stuck_items if item.get("stage") == stage_name
         ]
+
+        # Group by issue_key and keep the maximum days_in_stage for each feature in this stage
+        stage_stuck_by_issue = {}
+        for item in stage_stuck_items:
+            issue_key = item.get("issue_key", "")
+            days = item.get("days_in_stage", 0)
+            if issue_key:
+                if issue_key not in stage_stuck_by_issue or days > stage_stuck_by_issue[
+                    issue_key
+                ].get("days_in_stage", 0):
+                    stage_stuck_by_issue[issue_key] = item
+
+        # Sort by maximum days for each feature
         top_stuck = sorted(
-            stage_stuck_items, key=lambda x: x.get("days_in_stage", 0), reverse=True
+            stage_stuck_by_issue.values(),
+            key=lambda x: x.get("days_in_stage", 0),
+            reverse=True,
         )[:3]
 
         if score > 50:  # Significant bottleneck
@@ -245,6 +260,18 @@ def _analyze_bottlenecks(
                             f"{issue_key}: {days:.1f} days in {stage_name}"
                         )
 
+                    # If historical max is significantly higher than current stuck items, add context
+                    highest_current = top_stuck[0].get("days_in_stage", 0)
+                    if max_time > highest_current * 1.5:  # More than 50% higher
+                        stuck_evidence.append(
+                            f"Note: Historical maximum was {max_time:.0f} days. Currently stuck items shown above are still active; historical max may be from a completed/cancelled item."
+                        )
+                # If no currently stuck items but we have a historical max, note that
+                elif max_time > 0:
+                    stuck_evidence.append(
+                        f"No items currently stuck in this stage (historical max: {max_time:.0f} days from completed/cancelled items)"
+                    )
+
                 insights.append(
                     InsightResponse(
                         id=0,
@@ -254,7 +281,7 @@ def _analyze_bottlenecks(
                         scope=scope_desc,
                         scope_id=None,
                         observation=f"The {stage_name.replace('_', ' ')} stage has a bottleneck score of {score:.1f}%. Average time: {mean_time:.1f} days, with {items_exceeding:,} stage occurrences exceeding threshold (max: {max_time:.0f} days).",
-                        interpretation=f"Features are spending excessive time in {stage_name.replace('_', ' ')}. This stage is a critical constraint in your delivery flow. The high number of stage occurrences exceeding threshold ({items_exceeding:,}) and extreme outliers (max {max_time:.0f} days) indicate systemic issues requiring immediate attention. Note: A single feature may be counted multiple times if it exceeded threshold in multiple stages.",
+                        interpretation=f"Features are spending excessive time in {stage_name.replace('_', ' ')}. This stage is a critical constraint in your delivery flow. The high number of stage occurrences exceeding threshold ({items_exceeding:,}) and extreme outliers (max historical: {max_time:.0f} days) indicate systemic issues requiring immediate attention. Note: A single feature may be counted multiple times if it exceeded threshold in multiple stages.",
                         root_causes=[
                             RootCause(
                                 description="Severe flow blockage with items stuck in stage",
@@ -263,7 +290,7 @@ def _analyze_bottlenecks(
                                     if stuck_evidence
                                     else [
                                         f"Mean duration: {mean_time:.1f} days",
-                                        f"Maximum observed: {max_time:.0f} days",
+                                        f"Maximum observed (historical): {max_time:.0f} days",
                                         f"{items_exceeding:,} stage occurrences exceeding threshold",
                                     ]
                                 ),
@@ -1172,7 +1199,21 @@ def _analyze_flow_efficiency(
     ]
 
     if low_flow_arts:
-        art_names = [art.get("art_name", "Unknown") for art in low_flow_arts[:5]]
+        # Get ART names, filtering out Unknown/empty values
+        art_names = []
+        for art in low_flow_arts[:5]:
+            name = art.get("art_name") or art.get("art_key") or art.get("name")
+            if name and name != "Unknown" and name.strip():
+                art_names.append(name)
+
+        # If no valid names found, use count instead
+        if not art_names:
+            art_names_str = f"{len(low_flow_arts)} ARTs"
+        else:
+            art_names_str = ", ".join(art_names)
+            if len(low_flow_arts) > len(art_names):
+                art_names_str += f" (+{len(low_flow_arts) - len(art_names)} more)"
+
         avg_flow = sum(art.get("flow_efficiency", 0) for art in low_flow_arts) / len(
             low_flow_arts
         )
@@ -1185,7 +1226,7 @@ def _analyze_flow_efficiency(
                 confidence=0.85,
                 scope=_format_scope(selected_arts, selected_pis, selected_team),
                 scope_id=None,
-                observation=f"ARTs with flow efficiency <30%: {', '.join(art_names)}. Average: {avg_flow:.1f}%.",
+                observation=f"ARTs with flow efficiency <30%: {art_names_str}. Average: {avg_flow:.1f}%.",
                 interpretation="These ARTs are spending >70% of cycle time in waiting states (backlog, planned) vs. active development. Industry target is >40% flow efficiency.",
                 root_causes=[
                     RootCause(
@@ -2116,6 +2157,12 @@ def _generate_executive_summary(
         wip_stats = bottleneck_data.get("wip_statistics", {})
         stuck_items = bottleneck_data.get("stuck_items", [])
 
+        # Filter stuck items by ART if specified
+        if selected_arts:
+            stuck_items = [
+                item for item in stuck_items if item.get("art") in selected_arts
+            ]
+
         # Filter stuck items by team if specified (critical for team view accuracy)
         if selected_team:
             stuck_items = [
@@ -2187,8 +2234,22 @@ def _generate_executive_summary(
         critical_bottlenecks = [b for b in bottleneck_stages if b["score"] > 50]
 
         # Extract stuck items analysis
+        # Group by issue_key and keep the stage with maximum days_in_stage for each feature
+        stuck_by_issue = {}
+        for item in stuck_items:
+            issue_key = item.get("issue_key", "")
+            days = item.get("days_in_stage", 0)
+            if issue_key:
+                if issue_key not in stuck_by_issue or days > stuck_by_issue[
+                    issue_key
+                ].get("days_in_stage", 0):
+                    stuck_by_issue[issue_key] = item
+
+        # Now sort by the maximum days for each feature
         top_stuck = sorted(
-            stuck_items, key=lambda x: x.get("days_in_stage", 0), reverse=True
+            stuck_by_issue.values(),
+            key=lambda x: x.get("days_in_stage", 0),
+            reverse=True,
         )[:5]
         total_stuck_days = sum(item.get("days_in_stage", 0) for item in stuck_items)
 

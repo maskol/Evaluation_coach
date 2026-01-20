@@ -169,6 +169,12 @@ def _analyze_story_bottlenecks(
             # Get stuck stories for this stage
             stuck_items = bottleneck_data.get("stuck_items", [])
 
+            # Filter by ART if specified
+            if selected_arts:
+                stuck_items = [
+                    item for item in stuck_items if item.get("art") in selected_arts
+                ]
+
             # Filter by team if specified (critical for team view accuracy)
             if selected_team:
                 stuck_items = [
@@ -264,6 +270,10 @@ def _analyze_story_stuck_items(
     insights = []
 
     stuck_items = bottleneck_data.get("stuck_items", [])
+
+    # Filter by ART if specified
+    if selected_arts:
+        stuck_items = [item for item in stuck_items if item.get("art") in selected_arts]
 
     # Filter by team if specified (critical for team view accuracy)
     if selected_team:

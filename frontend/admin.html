@@ -548,6 +548,36 @@
             </div>
         </div>
 
+        <!-- Default Filters Configuration -->
+        <div class="config-section">
+            <h2>🔍 Default Filters</h2>
+            <p style="color: #666; margin-bottom: 16px;">Configure default filters for Portfolio view. These selections
+                will be automatically applied when the dashboard loads.</p>
+
+            <div class="form-group">
+                <label>Default PIs</label>
+                <div id="defaultPISelector"
+                    style="max-height: 200px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 4px; padding: 8px; background: white;">
+                    <div style="color: #8E8E93; text-align: center; padding: 20px;">Loading PIs...</div>
+                </div>
+                <small>Select which PIs should be preselected in Portfolio view</small>
+            </div>
+
+            <div class="form-group" style="margin-top: 20px;">
+                <label>Default ARTs</label>
+                <div id="defaultARTSelector"
+                    style="max-height: 300px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 4px; padding: 8px; background: white;">
+                    <div style="color: #8E8E93; text-align: center; padding: 20px;">Loading ARTs...</div>
+                </div>
+                <small>Select which ARTs should be preselected in Portfolio view</small>
+            </div>
+
+            <div class="button-group">
+                <button type="button" class="btn-save" onclick="saveDefaultFilters()">💾 Save Default Filters</button>
+                <button type="button" class="btn-reset" onclick="clearDefaultFilters()">🗑️ Clear All Filters</button>
+            </div>
+        </div>
+
         <!-- Connection Info -->
         <div class="config-section">
             <h2>🔌 Lead-Time Data Server</h2>
@@ -563,7 +593,128 @@
         document.addEventListener('DOMContentLoaded', () => {
             loadConfiguration();
             loadPIConfig();
+            // Load default filters after ARTs and PIs are loaded
+            setTimeout(() => {
+                initializeDefaultFilters();
+            }, 1000);
         });
+
+        async function initializeDefaultFilters() {
+            try {
+                // Load ARTs from API
+                const artsResponse = await fetch(`${API_BASE_URL}/api/arts`);
+                if (artsResponse.ok) {
+                    const artsData = await artsResponse.json();
+                    // Filter out null/empty values and sort ascending
+                    const artKeys = artsData.arts
+                        .map(art => art.art_key)
+                        .filter(key => key && key.trim() !== '')
+                        .sort();
+
+                    // Load PIs from API
+                    const piResponse = await fetch(`${API_BASE_URL}/api/admin/config/pi`);
+                    const piData = await piResponse.json();
+                    // Filter out null/empty values and sort ascending
+                    const pis = piData.pi_configurations
+                        .map(pi => pi.pi)
+                        .filter(pi => pi && pi.trim() !== '')
+                        .sort();
+
+                    // Populate admin default filters
+                    populateAdminDefaultFilters(pis, artKeys);
+                }
+            } catch (error) {
+                console.error('Error loading default filters:', error);
+            }
+        }
+
+        // Default Filters Functions
+        function populateAdminDefaultFilters(availablePIs, availableARTs) {
+            // Get saved defaults
+            const savedDefaults = JSON.parse(localStorage.getItem('defaultFilters') || '{"pis":[],"arts":[]}');
+
+            // Populate default PI selector
+            const defaultPISelector = document.getElementById('defaultPISelector');
+            if (defaultPISelector && availablePIs && availablePIs.length > 0) {
+                defaultPISelector.innerHTML = `
+                    <label style="display: block; padding: 4px; cursor: pointer; font-weight: 600; border-bottom: 1px solid #eee; margin-bottom: 8px;">
+                        <input type="checkbox" id="selectAllDefaultPIs" style="margin-right: 8px;">
+                        <span>Select All</span>
+                    </label>
+                    ${availablePIs.map(pi => `
+                        <label style="display: block; padding: 4px; cursor: pointer;">
+                            <input type="checkbox" class="default-pi-checkbox" value="${pi}" style="margin-right: 8px;" 
+                                   ${savedDefaults.pis.includes(pi) ? 'checked' : ''}>
+                            <span>${pi}</span>
+                        </label>
+                    `).join('')}
+                `;
+
+                // Add select all handler
+                const selectAllPIs = document.getElementById('selectAllDefaultPIs');
+                if (selectAllPIs) {
+                    selectAllPIs.addEventListener('change', function () {
+                        document.querySelectorAll('.default-pi-checkbox').forEach(cb => cb.checked = this.checked);
+                    });
+                }
+            }
+
+            // Populate default ART selector
+            const defaultARTSelector = document.getElementById('defaultARTSelector');
+            if (defaultARTSelector && availableARTs && availableARTs.length > 0) {
+                defaultARTSelector.innerHTML = `
+                    <label style="display: block; padding: 4px; cursor: pointer; font-weight: 600; border-bottom: 1px solid #eee; margin-bottom: 8px;">
+                        <input type="checkbox" id="selectAllDefaultARTs" style="margin-right: 8px;">
+                        <span>Select All</span>
+                    </label>
+                    ${availableARTs.map(art => `
+                        <label style="display: block; padding: 4px; cursor: pointer;">
+                            <input type="checkbox" class="default-art-checkbox" value="${art}" style="margin-right: 8px;" 
+                                   ${savedDefaults.arts.includes(art) ? 'checked' : ''}>
+                            <span>${art}</span>
+                        </label>
+                    `).join('')}
+                `;
+
+                // Add select all handler
+                const selectAllARTs = document.getElementById('selectAllDefaultARTs');
+                if (selectAllARTs) {
+                    selectAllARTs.addEventListener('change', function () {
+                        document.querySelectorAll('.default-art-checkbox').forEach(cb => cb.checked = this.checked);
+                    });
+                }
+            }
+
+            console.log('⚙️ Admin default filters populated');
+        }
+
+        function saveDefaultFilters() {
+            const defaultPICheckboxes = document.querySelectorAll('#defaultPISelector .default-pi-checkbox:checked');
+            const defaultARTCheckboxes = document.querySelectorAll('#defaultARTSelector .default-art-checkbox:checked');
+
+            const defaults = {
+                pis: Array.from(defaultPICheckboxes).map(cb => cb.value),
+                arts: Array.from(defaultARTCheckboxes).map(cb => cb.value)
+            };
+
+            localStorage.setItem('defaultFilters', JSON.stringify(defaults));
+
+            alert(`✅ Default filters saved!\n\nPIs: ${defaults.pis.length > 0 ? defaults.pis.join(', ') : 'All'}\nARTs: ${defaults.arts.length > 0 ? defaults.arts.join(', ') : 'All'}\n\nThese filters will be applied when you return to the dashboard.`);
+        }
+
+        function clearDefaultFilters() {
+            if (!confirm('Clear all default filters? This will reset the dashboard to show all PIs and ARTs.')) {
+                return;
+            }
+
+            localStorage.removeItem('defaultFilters');
+
+            // Uncheck all checkboxes
+            document.querySelectorAll('#defaultPISelector input[type="checkbox"]').forEach(cb => cb.checked = false);
+            document.querySelectorAll('#defaultARTSelector input[type="checkbox"]').forEach(cb => cb.checked = false);
+
+            alert('✅ Default filters cleared! Return to the dashboard to see all PIs and ARTs.');
+        }
 
         async function loadConfiguration() {
             console.log('🔄 Loading configuration...');

@@ -96,26 +96,49 @@ function loadLLMConfig() {
         return;
     }
 
-    const savedConfig = localStorage.getItem('llmConfig');
-    if (savedConfig) {
-        try {
-            const config = JSON.parse(savedConfig);
-            modelSelect.value = config.model || 'gpt-4o-mini';
-            temperatureInput.value = config.temperature || 0.7;
-            tempValue.textContent = config.temperature || 0.7;
+    // First, try to fetch from backend to get the actual current configuration
+    fetch(`${API_BASE_URL}/v1/config/llm`)
+        .then(response => response.json())
+        .then(backendConfig => {
+            // Use backend config as the source of truth
+            modelSelect.value = backendConfig.model || 'llama3.1:8b';
+            temperatureInput.value = backendConfig.temperature || 0.7;
+            tempValue.textContent = backendConfig.temperature || 0.7;
+
+            // Also save to localStorage for offline use
+            localStorage.setItem('llmConfig', JSON.stringify(backendConfig));
+
             updateLLMStatus();
-            console.log('📋 Loaded LLM config:', config);
-        } catch (e) {
-            console.warn('⚠️ Failed to parse saved LLM config, using defaults:', e.message);
-            // Use defaults silently
-            modelSelect.value = 'gpt-4o-mini';
-            temperatureInput.value = 0.7;
-            tempValue.textContent = 0.7;
-        }
-    } else {
-        // No saved config - use defaults silently (first run)
-        console.log('📋 No saved LLM config found, using defaults');
-    }
+            console.log('📋 Loaded LLM config from backend:', backendConfig);
+        })
+        .catch(error => {
+            console.warn('⚠️ Failed to fetch LLM config from backend, trying localStorage:', error.message);
+
+            // Fallback to localStorage if backend is unavailable
+            const savedConfig = localStorage.getItem('llmConfig');
+            if (savedConfig) {
+                try {
+                    const config = JSON.parse(savedConfig);
+                    modelSelect.value = config.model || 'llama3.1:8b';
+                    temperatureInput.value = config.temperature || 0.7;
+                    tempValue.textContent = config.temperature || 0.7;
+                    updateLLMStatus();
+                    console.log('📋 Loaded LLM config from localStorage:', config);
+                } catch (e) {
+                    console.warn('⚠️ Failed to parse saved LLM config, using defaults:', e.message);
+                    // Use defaults silently
+                    modelSelect.value = 'llama3.1:8b';
+                    temperatureInput.value = 0.7;
+                    tempValue.textContent = 0.7;
+                }
+            } else {
+                // No saved config - use defaults silently (first run)
+                console.log('📋 No saved LLM config found, using defaults');
+                modelSelect.value = 'llama3.1:8b';
+                temperatureInput.value = 0.7;
+                tempValue.textContent = 0.7;
+            }
+        });
 }
 
 function saveLLMConfig() {
@@ -155,10 +178,10 @@ function getLLMConfig() {
         try {
             return JSON.parse(savedConfig);
         } catch (e) {
-            return { model: 'gpt-4o-mini', temperature: 0.7 };
+            return { model: 'llama3.1:8b', temperature: 0.7 };
         }
     }
-    return { model: 'gpt-4o-mini', temperature: 0.7 };
+    return { model: 'llama3.1:8b', temperature: 0.7 };
 }
 
 // Strategic Targets Functions
@@ -4749,6 +4772,50 @@ async function openPIReportDialog() {
         updateStatusBar('Error loading PIs');
     }
 
+    // Load available ARTs
+    try {
+        const artsResponse = await fetch(`${API_BASE_URL}/arts`);
+        const artsData = await artsResponse.json();
+
+        const artContainer = document.getElementById('piReportARTSelect');
+        if (artsData.arts && artsData.arts.length > 0) {
+            // Filter and sort ARTs
+            const sortedARTs = artsData.arts
+                .filter(art => art.art_key && art.art_key.trim() !== '')
+                .sort((a, b) => a.art_key.localeCompare(b.art_key));
+
+            artContainer.innerHTML = '';
+            sortedARTs.forEach(art => {
+                const checkboxWrapper = document.createElement('div');
+                checkboxWrapper.style.cssText = 'padding: 8px; margin: 4px 0; border-radius: 4px; transition: background 0.2s;';
+                checkboxWrapper.onmouseover = () => checkboxWrapper.style.background = '#f5f5f5';
+                checkboxWrapper.onmouseout = () => checkboxWrapper.style.background = 'transparent';
+
+                const label = document.createElement('label');
+                label.style.cssText = 'display: flex; align-items: center; cursor: pointer;';
+
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'art-checkbox';
+                checkbox.value = art.art_key;
+                checkbox.style.cssText = 'margin-right: 8px; width: 18px; height: 18px; cursor: pointer;';
+                checkbox.onchange = updateARTSelectionCount;
+
+                const text = document.createElement('span');
+                text.textContent = `${art.art_key} - ${art.art_name}`;
+                text.style.cssText = 'color: #333; font-size: 14px;';
+
+                label.appendChild(checkbox);
+                label.appendChild(text);
+                checkboxWrapper.appendChild(label);
+                artContainer.appendChild(checkboxWrapper);
+            });
+            updateARTSelectionCount();
+        }
+    } catch (error) {
+        console.error('Error loading ARTs:', error);
+    }
+
     // Load available AI models
     await loadAvailableModels();
 }
@@ -4824,6 +4891,10 @@ async function generatePIReport() {
         return;
     }
 
+    // Get selected ARTs
+    const artCheckboxes = document.querySelectorAll('.art-checkbox:checked');
+    const selectedARTs = Array.from(artCheckboxes).map(cb => cb.value);
+
     // Cancel any existing request
     if (appState.piReportAbortController) {
         appState.piReportAbortController.abort();
@@ -4840,6 +4911,7 @@ async function generatePIReport() {
     generateBtn.disabled = true;
     generateBtn.textContent = '⏳ Generating Report...';
     const piText = selectedPIs.length === 1 ? selectedPIs[0] : `${selectedPIs.length} PIs`;
+    const artText = selectedARTs.length > 0 ? ` for ${selectedARTs.length} ART${selectedARTs.length !== 1 ? 's' : ''}` : '';
 
     // Show cancel button
     const cancelBtn = document.getElementById('cancelPIReportBtn');
@@ -4849,13 +4921,18 @@ async function generatePIReport() {
 
     // Show model info in status if non-default
     const modelInfo = selectedModel ? ` using ${selectedModel}` : '';
-    updateStatusBar(`Generating comprehensive report for ${piText}${modelInfo}... This may take 30-60 seconds.`);
+    updateStatusBar(`Generating comprehensive report for ${piText}${artText}${modelInfo}... This may take 30-60 seconds.`);
 
     try {
         const requestBody = {
             pis: selectedPIs,
             compare_with_previous: compareWithPrevious,
         };
+
+        // Add ARTs if selected
+        if (selectedARTs.length > 0) {
+            requestBody.arts = selectedARTs;
+        }
 
         // Add model if selected
         if (selectedModel) {
@@ -5120,6 +5197,36 @@ function selectYear2025() {
     updatePISelectionCount();
 }
 
+// ART selection functions for PI Report
+function updateARTSelectionCount() {
+    const checkboxes = document.querySelectorAll('.art-checkbox:checked');
+    const count = checkboxes.length;
+    const countElement = document.getElementById('artSelectionCount');
+    if (countElement) {
+        if (count === 0) {
+            countElement.textContent = 'All ARTs (leave empty for all)';
+            countElement.style.color = '#8E8E93';
+            countElement.style.fontWeight = 'normal';
+        } else {
+            countElement.textContent = `${count} ART${count !== 1 ? 's' : ''} selected`;
+            countElement.style.color = '#007AFF';
+            countElement.style.fontWeight = '600';
+        }
+    }
+}
+
+function selectAllReportARTs() {
+    const checkboxes = document.querySelectorAll('.art-checkbox');
+    checkboxes.forEach(cb => cb.checked = true);
+    updateARTSelectionCount();
+}
+
+function deselectAllReportARTs() {
+    const checkboxes = document.querySelectorAll('.art-checkbox');
+    checkboxes.forEach(cb => cb.checked = false);
+    updateARTSelectionCount();
+}
+
 // Export Executive Summary to Excel
 async function exportExecutiveSummary() {
     try {
@@ -5133,11 +5240,15 @@ async function exportExecutiveSummary() {
         }
 
         if (appState.selectedARTs && appState.selectedARTs.length > 0) {
-            // Don't send ARTs filter if all ARTs are selected
-            if (!appState.allARTs || appState.selectedARTs.length < appState.allARTs.length) {
-                params.append('arts', appState.selectedARTs.join(','));
-            }
+            // Always send ART filter if there are selected ARTs
+            // This ensures proper filtering even when a single ART is selected
+            params.append('arts', appState.selectedARTs.join(','));
+            console.log('📊 Export: Filtering for ARTs:', appState.selectedARTs);
+        } else {
+            console.log('📊 Export: No ARTs selected');
         }
+
+        console.log('📊 Export URL:', `${API_BASE_URL}/v1/insights/export-summary?${params.toString()}`);
 
         // Fetch Excel file
         const response = await fetch(`${API_BASE_URL}/v1/insights/export-summary?${params.toString()}`);
@@ -5191,6 +5302,9 @@ window.updatePISelectionCount = updatePISelectionCount;
 window.selectAllPIs = selectAllPIs;
 window.deselectAllPIs = deselectAllPIs;
 window.selectYear2025 = selectYear2025;
+window.updateARTSelectionCount = updateARTSelectionCount;
+window.selectAllReportARTs = selectAllReportARTs;
+window.deselectAllReportARTs = deselectAllReportARTs;
 window.exportExecutiveSummary = exportExecutiveSummary;
 
 console.log('📊 Evaluation Coach app.js loaded successfully');

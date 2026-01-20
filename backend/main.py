@@ -205,6 +205,114 @@ def save_config_to_db(db: Session, config_key: str, config_value: Optional[float
         raise e
 
 
+def filter_stuck_items_for_analysis(
+    analysis_summary: Dict[str, Any], selected_pis: List[str], db: Session
+) -> Dict[str, Any]:
+    """
+    Filter stuck_items based on whether analysis is historical or current.
+
+    - For historical PI analysis: Include all stuck items (even completed ones)
+    - For current/active PI analysis: Exclude completed items
+
+    Uses PI configuration dates to determine if selected PIs are current/active.
+    A PI is considered current if today's date falls within its date range.
+
+    Args:
+        analysis_summary: The analysis summary from DL Webb API
+        selected_pis: List of selected PIs
+        db: Database session to query PI configurations
+
+    Returns:
+        Modified analysis_summary with appropriately filtered stuck_items
+    """
+    try:
+        # Get today's date
+        today = datetime.now().date()
+
+        # Get PI configurations from database
+        config_entry = (
+            db.query(RuntimeConfiguration)
+            .filter(RuntimeConfiguration.config_key == "pi_configurations")
+            .first()
+        )
+
+        is_historical = True  # Default to historical (keep all items)
+
+        if config_entry and config_entry.config_value and selected_pis:
+            import json
+
+            pi_configurations = json.loads(config_entry.config_value)
+
+            # Check if any selected PI is current (today falls within PI date range)
+            for selected_pi in selected_pis:
+                for pi_config in pi_configurations:
+                    if pi_config.get("pi") == selected_pi:
+                        start_date = datetime.strptime(
+                            pi_config["start_date"], "%Y-%m-%d"
+                        ).date()
+                        end_date = datetime.strptime(
+                            pi_config["end_date"], "%Y-%m-%d"
+                        ).date()
+
+                        if start_date <= today <= end_date:
+                            is_historical = False
+                            print(
+                                f"📅 PI {selected_pi} is CURRENT ({pi_config['start_date']} to {pi_config['end_date']}, today: {today})"
+                            )
+                            break
+                        else:
+                            print(
+                                f"📅 PI {selected_pi} is historical ({pi_config['start_date']} to {pi_config['end_date']}, today: {today})"
+                            )
+                        break
+
+                if not is_historical:
+                    break
+
+        print(
+            f"📊 Stuck items filtering: Selected PIs={selected_pis}, Today={today}, Is Historical={is_historical}"
+        )
+
+        # Filter stuck_items in bottleneck_analysis
+        if "bottleneck_analysis" in analysis_summary:
+            stuck_items = analysis_summary["bottleneck_analysis"].get("stuck_items", [])
+
+            if not is_historical and stuck_items:
+                # For current/active analysis, filter out completed items
+                completed_statuses = {
+                    "DONE",
+                    "CLOSED",
+                    "RESOLVED",
+                    "CANCELLED",
+                    "CANCELED",
+                }
+                original_count = len(stuck_items)
+
+                filtered_items = [
+                    item
+                    for item in stuck_items
+                    if item.get("status", "").upper() not in completed_statuses
+                ]
+
+                analysis_summary["bottleneck_analysis"]["stuck_items"] = filtered_items
+                print(
+                    f"   ✂️  Filtered stuck_items: {original_count} → {len(filtered_items)} (removed {original_count - len(filtered_items)} completed items)"
+                )
+            else:
+                print(
+                    f"   📋 Historical analysis: Keeping all {len(stuck_items)} stuck_items (including completed)"
+                )
+
+    except Exception as e:
+        print(f"⚠️  Error filtering stuck_items: {e}")
+        import traceback
+
+        traceback.print_exc()
+        # On error, return original unmodified data
+
+    return analysis_summary
+
+
 def get_excluded_feature_statuses(db: Session) -> List[str]:
     """
     Get list of feature statuses to exclude from analysis.
@@ -1050,6 +1158,51 @@ async def generate_insights_endpoint(
                 else:
                     params["threshold_days"] = settings.bottleneck_threshold_days
 
+                # Determine if this is historical analysis (for DL Webb API)
+                # If all selected PIs are in the past, include completed items in stuck_items
+                if selected_pis:
+                    today = datetime.now().date()
+                    config_entry = (
+                        db.query(RuntimeConfiguration)
+                        .filter(RuntimeConfiguration.config_key == "pi_configurations")
+                        .first()
+                    )
+
+                    if config_entry and config_entry.config_value:
+                        import json
+
+                        pi_configurations = json.loads(config_entry.config_value)
+
+                        # Check if any selected PI is current
+                        is_current = False
+                        for selected_pi in selected_pis:
+                            for pi_config in pi_configurations:
+                                if pi_config.get("pi") == selected_pi:
+                                    start_date = datetime.strptime(
+                                        pi_config["start_date"], "%Y-%m-%d"
+                                    ).date()
+                                    end_date = datetime.strptime(
+                                        pi_config["end_date"], "%Y-%m-%d"
+                                    ).date()
+
+                                    if start_date <= today <= end_date:
+                                        is_current = True
+                                        break
+                                    break
+                            if is_current:
+                                break
+
+                        # For historical analysis, tell DL Webb API to include completed items
+                        if not is_current:
+                            params["include_completed"] = True
+                            print(
+                                f"📅 Historical analysis detected - requesting completed items from DL Webb API"
+                            )
+                        else:
+                            print(
+                                f"📅 Current analysis detected - excluding completed items"
+                            )
+
                 # Generate insights based on analysis level
                 if use_story_level:
                     print(f"📊 Generating story-level insights for {data_source_name}")
@@ -1255,6 +1408,11 @@ async def generate_insights_endpoint(
                         **params
                     )
 
+                    # Filter stuck_items based on historical vs current analysis
+                    analysis_summary = filter_stuck_items_for_analysis(
+                        analysis_summary, selected_pis, db
+                    )
+
                     # Also get ART comparison for context, filtered by selected ARTs and PI
                     pip_params = {}
                     if selected_pis:
@@ -1289,6 +1447,10 @@ async def generate_insights_endpoint(
                                 ),
                             }
                             for art in pip_data
+                            # Filter out entries without valid art_name
+                            if art.get("art_name")
+                            and art.get("art_name") != "Unknown"
+                            and str(art.get("art_name")).strip()
                         ]
 
                     # Generate feature-level insights with LLM
@@ -1305,7 +1467,9 @@ async def generate_insights_endpoint(
 
                 # Add Little's Law analysis if requested with agent graph
                 if use_agent_graph and selected_pis:
-                    print(f"🔬 Adding Little's Law analysis for PI: {selected_pis[0]}")
+                    print(
+                        f"🔬 Adding Little's Law analysis for {len(selected_pis) if len(selected_pis) > 1 else ''} PI{': ' if len(selected_pis) == 1 else 's: '}{', '.join(selected_pis)}"
+                    )
                     try:
                         from agents.nodes.littles_law_analyzer import (
                             littles_law_analyzer_node,
@@ -1320,7 +1484,8 @@ async def generate_insights_endpoint(
 
                         # Create a minimal state for Little's Law analyzer
                         ll_state = {
-                            "scope_id": selected_pis[0],
+                            "scope_id": selected_pis[0],  # Primary PI for data fetching
+                            "selected_pis": selected_pis,  # All selected PIs for context
                             "scope_type": (
                                 "Team"
                                 if scope == "team"
@@ -1436,6 +1601,10 @@ async def export_executive_summary(
             [art.strip() for art in arts.split(",") if art.strip()] if arts else []
         )
 
+        # Log incoming parameters for debugging
+        print(f"📊 Excel Export: Received arts parameter: '{arts}'")
+        print(f"📊 Excel Export: Parsed selected_arts: {selected_arts}")
+
         if leadtime_service and leadtime_service.is_available():
             try:
                 params = {}
@@ -1448,6 +1617,11 @@ async def export_executive_summary(
                 # Get analysis summary
                 analysis_summary = leadtime_service.client.get_analysis_summary(
                     **params
+                )
+
+                # Filter stuck_items based on historical vs current analysis
+                analysis_summary = filter_stuck_items_for_analysis(
+                    analysis_summary, selected_pis, db
                 )
 
                 bottleneck_data = analysis_summary.get("bottleneck_analysis", {})
@@ -1465,9 +1639,31 @@ async def export_executive_summary(
                 # Note: We'll filter by ART/PI client-side since the server may have issues with multiple ARTs
                 flow_data = leadtime_service.client.get_flow_leadtime(**flow_params)
 
+                print(
+                    f"📊 Excel Export: Fetched {len(flow_data)} features before filtering"
+                )
+                print(f"📊 Excel Export: Filtering for ARTs: {selected_arts}")
+
                 # Filter by selected ARTs and PIs
                 if selected_arts:
-                    flow_data = [f for f in flow_data if f.get("art") in selected_arts]
+                    original_count = len(flow_data)
+                    # Normalize selected ARTs for comparison (trim and uppercase)
+                    normalized_selected_arts = [
+                        art.strip().upper() for art in selected_arts
+                    ]
+                    flow_data = [
+                        f
+                        for f in flow_data
+                        if f.get("art", "").strip().upper() in normalized_selected_arts
+                    ]
+                    print(
+                        f"📊 Excel Export: After ART filter: {len(flow_data)} features (removed {original_count - len(flow_data)})"
+                    )
+                    # Debug: Show sample of ARTs in filtered data
+                    arts_in_data = set(f.get("art") for f in flow_data[:20])
+                    print(
+                        f"📊 Excel Export: Sample ARTs in filtered data: {arts_in_data}"
+                    )
                 if selected_pis:
                     # Helper to calculate PI from resolved date
                     def get_feature_pi(feature):
@@ -1590,11 +1786,41 @@ async def export_executive_summary(
                 # Sort by days in stage descending
                 stuck_items.sort(key=lambda x: x.get("days_in_stage", 0), reverse=True)
 
+                # CRITICAL: Apply ART filter again to stuck_items as a safety check
+                # This ensures no items from other ARTs slip through
+                print(
+                    f"📊 Excel Export: Applying safety ART filter. selected_arts={selected_arts}"
+                )
+                if selected_arts:
+                    normalized_selected_arts = [
+                        art.strip().upper() for art in selected_arts
+                    ]
+                    before_filter = len(stuck_items)
+                    stuck_items = [
+                        item
+                        for item in stuck_items
+                        if item.get("art", "").strip().upper()
+                        in normalized_selected_arts
+                    ]
+                    filtered_out = before_filter - len(stuck_items)
+                    if filtered_out > 0:
+                        print(
+                            f"⚠️ Excel Export: Filtered out {filtered_out} stuck items from wrong ARTs (keeping only {selected_arts})"
+                        )
+
                 # Log what we found
                 arts_in_stuck = set(item.get("art") for item in stuck_items)
                 print(
                     f"📊 Excel Export: Found {len(stuck_items)} stuck items across {len(arts_in_stuck)} ARTs: {arts_in_stuck}"
                 )
+
+                # Debug: Show first few stuck items to verify ARTs
+                if stuck_items:
+                    print("📊 Excel Export: First 5 stuck items:")
+                    for item in stuck_items[:5]:
+                        print(
+                            f"  - {item.get('issue_key')}: ART={item.get('art')}, Team={item.get('team')}, Days={item.get('days_in_stage')}"
+                        )
 
                 # Create Excel workbook with multiple sheets
                 output = BytesIO()
@@ -1960,8 +2186,17 @@ async def export_insight_to_excel(
                     ]
 
                     for item in stuck_items:
+                        item_art = item.get("art", "").strip().upper()
                         item_stage_raw = item.get("stage", "")
                         item_stage_lower = item_stage_raw.lower()
+
+                        # Filter by ART if specified
+                        if selected_arts:
+                            normalized_selected_arts = [
+                                art.strip().upper() for art in selected_arts
+                            ]
+                            if item_art not in normalized_selected_arts:
+                                continue
 
                         # Check if item stage matches any variation
                         stage_matches = any(
@@ -2070,13 +2305,22 @@ async def export_insight_to_excel(
                     # FINAL FALLBACK: If still no items for bottleneck, include ALL stuck items
                     if len(related_items) == 0 and len(stuck_items) > 0:
                         print(
-                            f"⚠️  No stage-specific matches found. Including stuck items with team filter"
+                            f"⚠️  No stage-specific matches found. Including stuck items with ART and team filter"
                         )
                         for item in stuck_items:
                             issue_key = item.get("issue_key")
+                            item_art = item.get("art", "").strip().upper()
                             item_team = item.get(
                                 "team", item.get("development_team", "")
                             ).upper()
+
+                            # Filter by ART if specified
+                            if selected_arts:
+                                normalized_selected_arts = [
+                                    art.strip().upper() for art in selected_arts
+                                ]
+                                if item_art not in normalized_selected_arts:
+                                    continue
 
                             # Filter by team if specified
                             if team and item_team != team.upper():

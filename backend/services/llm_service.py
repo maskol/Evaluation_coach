@@ -734,7 +734,7 @@ Keep it conversational, actionable, and grounded in real-world experience. Do no
                     {"role": "user", "content": prompt},
                 ],
                 temperature=self.temperature,
-                max_tokens=250,  # Increased to accommodate RAG-enhanced responses
+                max_tokens=500,  # Increased to allow longer, more comprehensive expert insights
             )
 
             expert_commentary = response.choices[0].message.content.strip()
